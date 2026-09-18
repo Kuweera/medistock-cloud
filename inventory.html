@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStock Cloud — Inventory</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --text:#e8e8ea; --muted:#9aa0aa;
+    --accent:#3b82f6; --accent2:#22c55e; --danger:#ef4444; --border:#2a2e38;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh;
+    padding:16px; padding-bottom:80px;
+  }
+  h1{font-size:19px; margin:0;}
+  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:#1d2230; color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:14px; margin:0 0 12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:#0d0f14; color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  .chk{display:flex; align-items:center; gap:8px; margin:10px 0;}
+  .chk input{width:auto;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:14px;}
+  .btn-toggle{background:transparent; color:var(--accent); border:1px solid var(--accent); width:100%; padding:10px; margin-bottom:12px;}
+  .fab{
+    position:fixed; bottom:20px; right:20px; width:56px; height:56px; border-radius:50%;
+    background:var(--accent); color:#fff; font-size:28px; display:flex; align-items:center;
+    justify-content:center; box-shadow:0 4px 14px rgba(0,0,0,.4);
+  }
+  .drug-item{
+    border-bottom:1px solid var(--border); padding:12px 0; display:flex; flex-direction:column; gap:2px;
+  }
+  .drug-item:last-child{border-bottom:none;}
+  .drug-name{font-size:15px; font-weight:600;}
+  .drug-meta{font-size:12px; color:var(--muted);}
+  .drug-stock{font-size:13px; margin-top:2px;}
+  .low{color:var(--danger); font-weight:600;}
+  .search{margin-bottom:12px;}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:20px 0;}
+  .hint{font-size:11px; color:var(--muted); margin-top:6px;}
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Inventory</h1>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+
+<div class="card">
+  <input class="search" type="text" id="searchBox" placeholder="Search drugs…">
+</div>
+
+<div class="card" id="listCard">
+  <h2>Stock <span id="countTag"></span></h2>
+  <div id="drugList"><div class="empty">Loading…</div></div>
+</div>
+
+<!-- ADD DRUG FORM (hidden by default) -->
+<div class="card hidden" id="formCard">
+  <h2 id="formTitle">Add Drug</h2>
+
+  <label>Drug name *</label>
+  <input type="text" id="f_name" placeholder="e.g. Paracetamol 500mg">
+
+  <label>Generic name</label>
+  <input type="text" id="f_generic" placeholder="e.g. Paracetamol">
+
+  <div class="row">
+    <div>
+      <label>Drug class</label>
+      <select id="f_class"></select>
+    </div>
+    <div>
+      <label>Dosage form</label>
+      <select id="f_form"></select>
+    </div>
+  </div>
+  <div class="row" style="margin-top:6px;">
+    <div>
+      <input type="text" id="f_newClass" placeholder="New class name…">
+      <button class="btn-toggle" style="margin-top:6px; margin-bottom:0; padding:8px;" onclick="addNewClass()">+ Add class</button>
+    </div>
+    <div>
+      <input type="text" id="f_newForm" placeholder="New dosage form…">
+      <button class="btn-toggle" style="margin-top:6px; margin-bottom:0; padding:8px;" onclick="addNewForm()">+ Add form</button>
+    </div>
+  </div>
+
+  <label>Supplier</label>
+  <input type="text" id="f_supplier" placeholder="e.g. ABC Suppliers">
+
+  <h2 style="margin-top:18px;">Packaging</h2>
+  <div class="row">
+    <div>
+      <label>Stock unit (bulk)</label>
+      <input type="text" id="f_stockUnit" placeholder="e.g. Packet">
+    </div>
+    <div>
+      <label>Base unit (smallest)</label>
+      <input type="text" id="f_baseUnit" placeholder="e.g. Tablet">
+    </div>
+  </div>
+
+  <div class="chk">
+    <input type="checkbox" id="f_hasIntermediate" checked>
+    <label style="margin:0;">Has an in-between unit (e.g. a strip inside a packet)</label>
+  </div>
+
+  <div id="intermediateFields">
+    <label>Intermediate unit</label>
+    <input type="text" id="f_intermediateUnit" placeholder="e.g. Strip">
+    <div class="row">
+      <div>
+        <label>Intermediate units per stock unit</label>
+        <input type="number" id="f_intermediatePerStock" min="1" placeholder="e.g. 10">
+      </div>
+      <div>
+        <label>Base units per intermediate unit</label>
+        <input type="number" id="f_basePerIntermediate" min="1" placeholder="e.g. 10">
+      </div>
+    </div>
+  </div>
+  <div id="directBaseField" class="hidden">
+    <label>Base units per stock unit (direct)</label>
+    <input type="number" id="f_basePerStockDirect" min="1" placeholder="e.g. 100">
+  </div>
+  <div class="hint" id="calcPreview" style="font-size:13px; color:var(--text); margin-top:10px;">1 stock unit = — base units</div>
+
+  <h2 style="margin-top:18px;">Pricing</h2>
+  <div class="row">
+    <div>
+      <label>Wholesale cost (per stock unit)</label>
+      <input type="number" id="f_wholesale" min="0" placeholder="e.g. 1500">
+    </div>
+    <div>
+      <label>Retail price (per stock unit)</label>
+      <input type="number" id="f_retailStock" min="0">
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label>Retail price (per intermediate)</label>
+      <input type="number" id="f_retailIntermediate" min="0">
+    </div>
+    <div>
+      <label>Retail price (per base unit)</label>
+      <input type="number" id="f_retailBase" min="0">
+    </div>
+  </div>
+
+  <h2 style="margin-top:18px;">Reorder</h2>
+  <div class="row">
+    <div>
+      <label>Reorder level (base units)</label>
+      <input type="number" id="f_reorderLevel" min="0" placeholder="e.g. 5">
+    </div>
+    <div>
+      <label>Target stock (base units)</label>
+      <input type="number" id="f_targetStock" min="0" placeholder="e.g. 20">
+    </div>
+  </div>
+
+  <h2 style="margin-top:18px;">Opening stock</h2>
+  <div class="row">
+    <div>
+      <label id="lbl_openStock">Complete stock units</label>
+      <input type="number" id="f_openStock" min="0" value="0">
+    </div>
+    <div>
+      <label id="lbl_openIntermediate">Opened intermediate units</label>
+      <input type="number" id="f_openIntermediate" min="0" value="0">
+    </div>
+    <div>
+      <label>Loose base units</label>
+      <input type="number" id="f_openBase" min="0" value="0">
+    </div>
+  </div>
+  <div class="hint" id="openingHint"></div>
+  <div class="hint" id="openingPreview" style="font-size:13px; color:var(--text);">Total opening stock = 0 base unit(s)</div>
+
+  <button class="btn-primary" onclick="saveDrug()">Save Drug</button>
+  <button class="btn-toggle" style="margin-top:8px;" onclick="closeForm()">Cancel</button>
+  <div id="formStatus" style="font-size:13px; margin-top:8px;"></div>
+</div>
+
+<div class="fab" onclick="openForm()">+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import {
+    getFirestore, doc, getDoc, setDoc, deleteDoc, collection, addDoc, getDocs, onSnapshot,
+    enableIndexedDbPersistence, serverTimestamp, query, where
+  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {});
+
+  let currentUser = null;
+  let currentBusinessId = null;
+  let currentShopId = null;
+  let allDrugs = [];
+  let editingId = null;
+
+  // ---- Packaging engine (ported from V1, unchanged math) ----
+  const PackagingEngine = {
+    baseUnitsPerStock(intermediatePerStock, basePerIntermediate) {
+      const i = Number(intermediatePerStock) || 0;
+      const b = Number(basePerIntermediate) || 0;
+      return i * b;
+    },
+    openingStockToBase(completeStockUnits, baseUnitsPerStock, openedIntermediateUnits, basePerIntermediate, openedLooseBase) {
+      const fromComplete = Number(completeStockUnits) * Number(baseUnitsPerStock);
+      const fromOpenedIntermediate = Number(openedIntermediateUnits) * Number(basePerIntermediate);
+      return fromComplete + fromOpenedIntermediate + Number(openedLooseBase || 0);
+    },
+    baseToBreakdown(baseQty, baseUnitsPerStock, basePerIntermediate) {
+      baseUnitsPerStock = Number(baseUnitsPerStock) || 0;
+      basePerIntermediate = Number(basePerIntermediate) || 0;
+      let stockUnits = 0, remainder = baseQty;
+      if (baseUnitsPerStock > 0) {
+        stockUnits = Math.floor(baseQty / baseUnitsPerStock);
+        remainder = baseQty - stockUnits * baseUnitsPerStock;
+      }
+      let intermediateUnits = 0, looseBase = remainder;
+      if (basePerIntermediate > 0) {
+        intermediateUnits = Math.floor(remainder / basePerIntermediate);
+        looseBase = remainder - intermediateUnits * basePerIntermediate;
+      }
+      return { stockUnits, intermediateUnits, looseBase };
+    }
+  };
+
+  function currentPackagingInputs() {
+    const has = document.getElementById("f_hasIntermediate").checked;
+    const stockUnit = document.getElementById("f_stockUnit").value.trim();
+    const baseUnit = document.getElementById("f_baseUnit").value.trim();
+    if (has) {
+      const intermediateUnit = document.getElementById("f_intermediateUnit").value.trim();
+      const intermediatePerStock = Number(document.getElementById("f_intermediatePerStock").value) || 0;
+      const basePerIntermediate = Number(document.getElementById("f_basePerIntermediate").value) || 0;
+      return {
+        has, stockUnit, baseUnit, intermediateUnit, intermediatePerStock, basePerIntermediate,
+        baseUnitsPerStock: PackagingEngine.baseUnitsPerStock(intermediatePerStock, basePerIntermediate)
+      };
+    } else {
+      const basePerStockDirect = Number(document.getElementById("f_basePerStockDirect").value) || 0;
+      return {
+        has, stockUnit, baseUnit, intermediateUnit: null,
+        intermediatePerStock: 1, basePerIntermediate: basePerStockDirect,
+        baseUnitsPerStock: basePerStockDirect
+      };
+    }
+  }
+
+  function updateCalcPreview() {
+    const p = currentPackagingInputs();
+    const stockUnitDisp = p.stockUnit || "(stock unit)";
+    const baseUnitDisp = p.baseUnit || "(base unit)";
+    const intermediateUnitDisp = p.intermediateUnit || "(intermediate unit — name it below)";
+    document.getElementById("calcPreview").textContent =
+      `1 ${stockUnitDisp} = ${p.baseUnitsPerStock || "—"} ${baseUnitDisp}(s)` +
+      (p.has ? `  (${p.intermediatePerStock || "—"} ${intermediateUnitDisp} × ${p.basePerIntermediate || "—"} ${baseUnitDisp})` : "");
+    updateOpeningPreview();
+  }
+
+  function updateOpeningPreview() {
+    const p = currentPackagingInputs();
+    const openStock = Number(document.getElementById("f_openStock").value) || 0;
+    const openIntermediate = Number(document.getElementById("f_openIntermediate").value) || 0;
+    const openBase = Number(document.getElementById("f_openBase").value) || 0;
+    const total = PackagingEngine.openingStockToBase(openStock, p.baseUnitsPerStock, openIntermediate, p.basePerIntermediate, openBase);
+    const baseDisp = p.baseUnit || "base unit";
+    const parts = [];
+    if (openStock) parts.push(`${openStock} ${p.stockUnit || "stock unit"}(s)`);
+    if (p.has && openIntermediate) parts.push(`${openIntermediate} ${p.intermediateUnit || "intermediate"}(s)`);
+    if (openBase) parts.push(`${openBase} loose ${baseDisp}(s)`);
+    const enteredText = parts.length ? parts.join(" + ") + " " : "";
+    document.getElementById("openingPreview").textContent =
+      `${enteredText}= ${total.toLocaleString()} ${baseDisp}(s) total (this is what gets stored as current stock)`;
+  }
+
+  ["f_stockUnit","f_baseUnit","f_intermediateUnit","f_intermediatePerStock","f_basePerIntermediate","f_basePerStockDirect"]
+    .forEach(id => document.getElementById(id).addEventListener("input", updateCalcPreview));
+  ["f_openStock","f_openIntermediate","f_openBase"]
+    .forEach(id => document.getElementById(id).addEventListener("input", updateOpeningPreview));
+
+  document.getElementById("f_hasIntermediate").addEventListener("change", (e) => {
+    document.getElementById("intermediateFields").classList.toggle("hidden", !e.target.checked);
+    document.getElementById("directBaseField").classList.toggle("hidden", e.target.checked);
+    document.getElementById("lbl_openIntermediate").parentElement.style.display = e.target.checked ? "" : "none";
+    updateCalcPreview();
+  });
+
+  // ---- Drug class / dosage form dropdowns, backed by shared lookup lists ----
+  async function populateSelects() {
+    const classSnap = await getDocs(collection(db, "drug_classes"));
+    const formSnap = await getDocs(collection(db, "dosage_forms"));
+    const classSel = document.getElementById("f_class");
+    const formSel = document.getElementById("f_form");
+    const prevClass = classSel.value, prevForm = formSel.value;
+    classSel.innerHTML = classSnap.docs.map(d => `<option value="${d.id}">${d.id}</option>`).join("");
+    formSel.innerHTML = formSnap.docs.map(d => `<option value="${d.id}">${d.id}</option>`).join("");
+    if (prevClass) classSel.value = prevClass;
+    if (prevForm) formSel.value = prevForm;
+  }
+
+  window.addNewClass = async function () {
+    const name = document.getElementById("f_newClass").value.trim();
+    if (!name) return;
+    await setDoc(doc(db, "drug_classes", name), { name });
+    document.getElementById("f_newClass").value = "";
+    await populateSelects();
+    document.getElementById("f_class").value = name;
+  };
+  window.addNewForm = async function () {
+    const name = document.getElementById("f_newForm").value.trim();
+    if (!name) return;
+    await setDoc(doc(db, "dosage_forms", name), { name });
+    document.getElementById("f_newForm").value = "";
+    await populateSelects();
+    document.getElementById("f_form").value = name;
+  };
+
+  window.deleteDrug = async function (id, name) {
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    try {
+      await deleteDoc(doc(db, "drugs", id));
+    } catch (err) {
+      alert("Couldn't delete: " + err.message);
+    }
+  };
+
+  window.openForm = function () {
+    editingId = null;
+    document.getElementById("formTitle").textContent = "Add Drug";
+    clearForm();
+    document.getElementById("formCard").classList.remove("hidden");
+    window.scrollTo(0, document.body.scrollHeight);
+  };
+  window.closeForm = function () {
+    editingId = null;
+    document.getElementById("formCard").classList.add("hidden");
+  };
+
+  function clearForm() {
+    ["f_name","f_generic","f_supplier","f_stockUnit","f_baseUnit",
+     "f_intermediateUnit","f_intermediatePerStock","f_basePerIntermediate","f_basePerStockDirect",
+     "f_wholesale","f_retailStock","f_retailIntermediate","f_retailBase",
+     "f_reorderLevel","f_targetStock"].forEach(id => document.getElementById(id).value = "");
+    document.getElementById("f_openStock").value = 0;
+    document.getElementById("f_openIntermediate").value = 0;
+    document.getElementById("f_openBase").value = 0;
+    document.getElementById("f_hasIntermediate").checked = true;
+    document.getElementById("intermediateFields").classList.remove("hidden");
+    document.getElementById("directBaseField").classList.add("hidden");
+    document.getElementById("formStatus").textContent = "";
+    updateCalcPreview();
+  }
+
+  window.editDrug = function (id) {
+    const d = allDrugs.find(x => x.id === id);
+    if (!d) return;
+    editingId = id;
+    document.getElementById("formTitle").textContent = "Edit Drug";
+
+    document.getElementById("f_name").value = d.name || "";
+    document.getElementById("f_generic").value = d.generic || "";
+    document.getElementById("f_class").value = d.drugClass || "";
+    document.getElementById("f_form").value = d.dosageForm || "";
+    document.getElementById("f_supplier").value = d.supplier || "";
+    document.getElementById("f_stockUnit").value = d.stockUnit || "";
+    document.getElementById("f_baseUnit").value = d.baseUnit || "";
+    document.getElementById("f_hasIntermediate").checked = !!d.hasIntermediate;
+    document.getElementById("intermediateFields").classList.toggle("hidden", !d.hasIntermediate);
+    document.getElementById("directBaseField").classList.toggle("hidden", !!d.hasIntermediate);
+    document.getElementById("lbl_openIntermediate").parentElement.style.display = d.hasIntermediate ? "" : "none";
+    if (d.hasIntermediate) {
+      document.getElementById("f_intermediateUnit").value = d.intermediateUnit || "";
+      document.getElementById("f_intermediatePerStock").value = d.intermediatePerStock || "";
+      document.getElementById("f_basePerIntermediate").value = d.basePerIntermediate || "";
+    } else {
+      document.getElementById("f_basePerStockDirect").value = d.basePerIntermediate || "";
+    }
+    document.getElementById("f_wholesale").value = d.wholesale || "";
+    document.getElementById("f_retailStock").value = d.retailStock || "";
+    document.getElementById("f_retailIntermediate").value = d.retailIntermediate || "";
+    document.getElementById("f_retailBase").value = d.retailBase || "";
+    document.getElementById("f_reorderLevel").value = d.reorderLevel || "";
+    document.getElementById("f_targetStock").value = d.targetStock || "";
+
+    // Pre-fill opening stock with a breakdown of the CURRENT stock, so editing
+    // starts from where things actually stand rather than from zero.
+    const breakdown = PackagingEngine.baseToBreakdown(d.currentStockBase || 0, d.baseUnitsPerStock, d.basePerIntermediate);
+    document.getElementById("f_openStock").value = breakdown.stockUnits;
+    document.getElementById("f_openIntermediate").value = breakdown.intermediateUnits;
+    document.getElementById("f_openBase").value = breakdown.looseBase;
+
+    document.getElementById("formStatus").textContent = "";
+    updateCalcPreview();
+    document.getElementById("formCard").classList.remove("hidden");
+    window.scrollTo(0, document.body.scrollHeight);
+  };
+
+  window.saveDrug = async function () {
+    const statusEl = document.getElementById("formStatus");
+    const name = document.getElementById("f_name").value.trim();
+    if (!name) { statusEl.textContent = "Drug name is required."; statusEl.style.color = "var(--danger)"; return; }
+
+    const p = currentPackagingInputs();
+    if (!p.stockUnit || !p.baseUnit || !p.baseUnitsPerStock) {
+      statusEl.textContent = "Fill in the packaging fields (stock unit, base unit, and the conversion numbers).";
+      statusEl.style.color = "var(--danger)";
+      return;
+    }
+
+    const openStock = Number(document.getElementById("f_openStock").value) || 0;
+    const openIntermediate = Number(document.getElementById("f_openIntermediate").value) || 0;
+    const openBase = Number(document.getElementById("f_openBase").value) || 0;
+    const currentStockBase = PackagingEngine.openingStockToBase(
+      openStock, p.baseUnitsPerStock, openIntermediate, p.basePerIntermediate, openBase
+    );
+
+    const record = {
+      businessId: currentBusinessId,
+      shopId: currentShopId,
+      ownerUid: currentUser.uid,
+      name,
+      generic: document.getElementById("f_generic").value.trim(),
+      drugClass: document.getElementById("f_class").value.trim(),
+      dosageForm: document.getElementById("f_form").value.trim(),
+      supplier: document.getElementById("f_supplier").value.trim(),
+      active: true,
+      stockUnit: p.stockUnit,
+      hasIntermediate: p.has,
+      intermediateUnit: p.has ? p.intermediateUnit : null,
+      baseUnit: p.baseUnit,
+      intermediatePerStock: p.intermediatePerStock,
+      basePerIntermediate: p.basePerIntermediate,
+      baseUnitsPerStock: p.baseUnitsPerStock,
+      wholesale: Number(document.getElementById("f_wholesale").value) || 0,
+      retailStock: Number(document.getElementById("f_retailStock").value) || 0,
+      retailIntermediate: Number(document.getElementById("f_retailIntermediate").value) || 0,
+      retailBase: Number(document.getElementById("f_retailBase").value) || 0,
+      reorderLevel: Number(document.getElementById("f_reorderLevel").value) || 0,
+      targetStock: Number(document.getElementById("f_targetStock").value) || 0,
+      currentStockBase
+    };
+
+    try {
+      statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
+      if (editingId) {
+        await setDoc(doc(db, "drugs", editingId), record, { merge: true });
+        statusEl.textContent = "Updated.";
+      } else {
+        await addDoc(collection(db, "drugs"), { ...record, createdAt: serverTimestamp() });
+        statusEl.textContent = "Saved.";
+      }
+      clearForm();
+      setTimeout(closeForm, 600);
+    } catch (err) {
+      statusEl.textContent = "Failed: " + err.message;
+      statusEl.style.color = "var(--danger)";
+    }
+  };
+
+  function renderList(filterText) {
+    const container = document.getElementById("drugList");
+    const filtered = filterText
+      ? allDrugs.filter(d => d.name.toLowerCase().includes(filterText.toLowerCase()))
+      : allDrugs;
+    document.getElementById("countTag").textContent = `(${filtered.length})`;
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<div class="empty">No drugs yet — tap + to add your first one.</div>';
+      return;
+    }
+    container.innerHTML = filtered.map(d => {
+      const breakdown = PackagingEngine.baseToBreakdown(d.currentStockBase, d.baseUnitsPerStock, d.basePerIntermediate);
+      const parts = [];
+      if (breakdown.stockUnits) parts.push(`${breakdown.stockUnits} ${d.stockUnit}(s)`);
+      if (d.hasIntermediate && breakdown.intermediateUnits) parts.push(`${breakdown.intermediateUnits} ${d.intermediateUnit}(s)`);
+      if (breakdown.looseBase) parts.push(`${breakdown.looseBase} ${d.baseUnit}(s)`);
+      const stockText = parts.length ? parts.join(", ") : `0 ${d.baseUnit}(s)`;
+      const isLow = d.reorderLevel && d.currentStockBase <= d.reorderLevel;
+      return `
+        <div class="drug-item" onclick="editDrug('${d.id}')" style="cursor:pointer;">
+          <div class="drug-name">${d.name}</div>
+          <div class="drug-meta">${d.generic || ""}${d.generic && d.supplier ? " · " : ""}${d.supplier || ""}</div>
+          <div class="drug-stock ${isLow ? "low" : ""}">${stockText}${isLow ? " — LOW STOCK" : ""}</div>
+          <button class="btn-toggle" style="width:auto; padding:5px 12px; margin:6px 0 0; border-color:var(--danger); color:var(--danger); font-size:12px;"
+            onclick="event.stopPropagation(); deleteDrug('${d.id}', '${d.name.replace(/'/g, "\\'")}')">Delete</button>
+        </div>`;
+    }).join("");
+  }
+
+  document.getElementById("searchBox").addEventListener("input", (e) => renderList(e.target.value));
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      window.location.href = "login.html";
+      return;
+    }
+    currentUser = user;
+    const userSnap = await getDoc(doc(db, "users", user.uid));
+    if (!userSnap.exists()) { window.location.href = "login.html"; return; }
+    currentBusinessId = userSnap.data().businessId;
+    await populateSelects();
+    updateCalcPreview();
+
+    const shopsQ = query(collection(db, "shops"), where("ownerUid", "==", user.uid));
+    onSnapshot(shopsQ, (snap) => { if (!snap.empty) currentShopId = snap.docs[0].id; });
+
+    const drugsQ = query(collection(db, "drugs"), where("ownerUid", "==", user.uid));
+    onSnapshot(drugsQ, { includeMetadataChanges: true }, (snap) => {
+      const badge = document.getElementById("netBadge");
+      const fromCache = snap.metadata.fromCache;
+      badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
+      badge.className = "badge " + (fromCache ? "offline" : "online");
+
+      allDrugs = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      renderList(document.getElementById("searchBox").value);
+    }, (err) => {
+      document.getElementById("drugList").innerHTML =
+        `<div class="empty" style="color:var(--danger);">Error loading: ${err.message}</div>`;
+    });
+  });
+</script>
+</body>
+</html>
