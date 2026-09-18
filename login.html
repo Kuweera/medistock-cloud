@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStock Cloud — Login</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --text:#e8e8ea; --muted:#9aa0aa;
+    --accent:#3b82f6; --accent2:#22c55e; --danger:#ef4444; --border:#2a2e38;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh;
+    display:flex; flex-direction:column; align-items:center; padding:24px 16px;
+  }
+  h1{font-size:20px; margin:0 0 4px;}
+  .sub{color:var(--muted); font-size:13px; margin-bottom:24px;}
+  .card{
+    width:100%; max-width:420px; background:var(--card);
+    border:1px solid var(--border); border-radius:14px; padding:20px; margin-bottom:16px;
+  }
+  .card h2{font-size:15px; margin:0 0 14px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
+  label{display:block; font-size:13px; color:var(--muted); margin:10px 0 4px;}
+  input{
+    width:100%; padding:11px 12px; border-radius:9px; border:1px solid var(--border);
+    background:#0d0f14; color:var(--text); font-size:15px;
+  }
+  input:focus{outline:none; border-color:var(--accent);}
+  button{
+    width:100%; padding:12px; border:none; border-radius:9px; font-size:15px;
+    font-weight:600; margin-top:14px; cursor:pointer;
+  }
+  .btn-primary{background:var(--accent); color:#fff;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent); margin-top:8px;}
+  .btn-danger{background:transparent; color:var(--danger); border:1px solid var(--danger);}
+  .btn-small{width:auto; padding:8px 14px; font-size:13px; margin:6px 6px 0 0; display:inline-block;}
+  .row{display:flex; gap:8px;}
+  .row > *{flex:1;}
+  #status{font-size:13px; margin-top:10px; min-height:18px;}
+  .ok{color:var(--accent2);}
+  .err{color:var(--danger);}
+  .hidden{display:none !important;}
+  .item{
+    display:flex; justify-content:space-between; padding:8px 0;
+    border-bottom:1px solid var(--border); font-size:14px;
+  }
+  .item:last-child{border-bottom:none;}
+  .item .qty{color:var(--muted);}
+  .badge{font-size:11px; padding:2px 8px; border-radius:999px; background:#1d2230; color:var(--muted);}
+  .badge.online{color:var(--accent2);}
+  .badge.offline{color:var(--danger);}
+</style>
+</head>
+<body>
+
+<h1>MediStock Cloud</h1>
+<div class="sub">Step 1 — Auth + Firestore connectivity test</div>
+
+<!-- AUTH CARD -->
+<div class="card" id="authCard">
+  <h2 id="authTitle">Owner Sign Up</h2>
+
+  <div id="signupFields">
+    <label>Business name</label>
+    <input type="text" id="businessName" placeholder="e.g. Kuweera Drug Shop">
+    <label>First shop name</label>
+    <input type="text" id="shopName" placeholder="e.g. Main Branch">
+  </div>
+
+  <label>Email</label>
+  <input type="email" id="email" placeholder="you@example.com">
+  <label>Password</label>
+  <input type="password" id="password" placeholder="At least 6 characters">
+
+  <button class="btn-primary" id="submitBtn" onclick="doSignup()">Create business account</button>
+  <button class="btn-secondary" id="toggleBtn" onclick="toggleMode()">I already have an account — log in</button>
+
+  <div id="status"></div>
+</div>
+
+<!-- CONNECTED CARD -->
+<div class="card hidden" id="appCard">
+  <h2>Connected</h2>
+  <div style="font-size:14px; margin-bottom:6px;">Signed in as <b id="whoAmI"></b></div>
+  <div style="font-size:13px; color:var(--muted); margin-bottom:10px;">
+    Business: <span id="bizName"></span> &nbsp;
+    <span class="badge" id="netBadge">checking…</span>
+  </div>
+  <button class="btn-danger btn-small" onclick="doLogout()">Log out</button>
+</div>
+
+<!-- TEST INVENTORY CARD -->
+<div class="card hidden" id="testCard">
+  <h2>Offline-Persistence Test</h2>
+  <div class="sub" style="margin-bottom:12px;">
+    Add a test drug below, then switch your phone to airplane mode and add
+    another — it should still appear instantly. Reconnect and it will sync.
+  </div>
+  <div class="row">
+    <input type="text" id="drugName" placeholder="Drug name">
+    <input type="number" id="drugQty" placeholder="Qty" style="max-width:90px;">
+  </div>
+  <button class="btn-primary" onclick="addTestDrug()">Add to inventory</button>
+  <div id="drugList" style="margin-top:14px;"></div>
+</div>
+
+<div class="card" style="max-width:420px;">
+  <h2>Debug Log</h2>
+  <div id="debugLog" style="font-family:monospace; font-size:11px; color:var(--muted); max-height:180px; overflow-y:auto; white-space:pre-wrap; line-height:1.5;"></div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import {
+    getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+    signOut, onAuthStateChanged
+  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import {
+    getFirestore, doc, setDoc, getDoc, collection, addDoc, onSnapshot,
+    enableIndexedDbPersistence, serverTimestamp, query, where
+  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  // Offline persistence: lets the app keep working (and queue writes)
+  // with no internet, then sync automatically once back online.
+  enableIndexedDbPersistence(db).catch((err) => {
+    console.warn("Offline persistence not enabled:", err.code);
+    // 'failed-precondition' = another tab open, 'unimplemented' = old browser.
+    // App still works, just without offline cache in that case.
+  });
+
+  let mode = "signup";
+  let currentBusinessId = null;
+  let currentShopId = null;
+  let unsubDrugs = null;
+
+  window.toggleMode = function () {
+    mode = mode === "signup" ? "login" : "signup";
+    document.getElementById("signupFields").classList.toggle("hidden", mode === "login");
+    document.getElementById("authTitle").textContent = mode === "signup" ? "Owner Sign Up" : "Log In";
+    document.getElementById("submitBtn").textContent = mode === "signup" ? "Create business account" : "Log in";
+    document.getElementById("submitBtn").onclick = mode === "signup" ? doSignup : doLogin;
+    document.getElementById("toggleBtn").textContent = mode === "signup"
+      ? "I already have an account — log in"
+      : "New business — sign up";
+    setStatus("");
+  };
+
+  function setStatus(msg, isError) {
+    const el = document.getElementById("status");
+    el.textContent = msg;
+    el.className = isError ? "err" : "ok";
+  }
+
+  function log(msg, isError) {
+    const el = document.getElementById("debugLog");
+    const time = new Date().toLocaleTimeString();
+    const line = document.createElement("div");
+    line.textContent = `[${time}] ${msg}`;
+    if (isError) line.style.color = "var(--danger)";
+    el.appendChild(line);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  // Surface anything that would otherwise fail silently in the background
+  // (e.g. a rejected offline-queued write that isn't caught by a normal try/catch).
+  window.addEventListener("unhandledrejection", (e) => {
+    log("Unhandled error: " + (e.reason?.message || e.reason), true);
+  });
+
+  function withTimeout(promise, label, ms = 10000) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(
+        `"${label}" is still waiting after ${ms/1000}s — likely stuck on a permission-denied ` +
+        `write or a very slow connection, not a crash.`
+      )), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  }
+
+  async function retryOnPermission(fn, label, attempts = 4, delayMs = 900) {
+    for (let i = 1; i <= attempts; i++) {
+      try {
+        return await fn();
+      } catch (err) {
+        const isPermission = err.code === "permission-denied";
+        if (!isPermission || i === attempts) throw err;
+        log(`"${label}" hit a timing delay (attempt ${i}/${attempts}) — retrying…`);
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+  }
+
+  window.doSignup = async function () {
+    const businessName = document.getElementById("businessName").value.trim();
+    const shopName = document.getElementById("shopName").value.trim();
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+
+    if (!businessName || !shopName || !email || password.length < 6) {
+      setStatus("Fill in every field (password needs 6+ characters).", true);
+      return;
+    }
+
+    log(`Starting signup. Online: ${navigator.onLine}`);
+
+    try {
+      setStatus("Step 1/4: creating login…");
+      const cred = await withTimeout(
+        createUserWithEmailAndPassword(auth, email, password), "create login"
+      );
+      const uid = cred.user.uid;
+      log("✓ Auth account created, uid: " + uid);
+
+      setStatus("Step 2/4: creating business record…");
+      const businessRef = doc(collection(db, "businesses"));
+      await withTimeout(
+        setDoc(businessRef, { name: businessName, ownerUid: uid, createdAt: serverTimestamp() }),
+        "write business doc"
+      );
+      log("✓ Business doc written: " + businessRef.id);
+
+      setStatus("Step 3/4: linking your account to the business…");
+      await retryOnPermission(
+        () => withTimeout(
+          setDoc(doc(db, "users", uid), { businessId: businessRef.id, role: "owner", displayName: email }),
+          "write user doc"
+        ),
+        "write user doc"
+      );
+      log("✓ User doc written");
+
+      setStatus("Step 4/4: creating first shop…");
+      const shopRef = doc(collection(db, "shops"));
+      await withTimeout(
+        setDoc(shopRef, { businessId: businessRef.id, ownerUid: uid, name: shopName, createdAt: serverTimestamp() }),
+        "write shop doc"
+      );
+      log("✓ Shop doc written: " + shopRef.id);
+
+      setStatus("Account created.", false);
+      log("Signup complete.");
+      await enterApp(cred.user);
+    } catch (err) {
+      setStatus(err.message, true);
+      log("✗ FAILED: " + err.message + (err.code ? ` (${err.code})` : ""), true);
+    }
+  };
+
+  window.doLogin = async function () {
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    try {
+      setStatus("Logging in…");
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  };
+
+  window.doLogout = async function () {
+    if (unsubDrugs) unsubDrugs();
+    await signOut(auth);
+  };
+
+  async function enterApp(user) {
+    const userDocSnap = await getDoc(doc(db, "users", user.uid));
+    if (!userDocSnap.exists()) {
+      log("enterApp: no user profile yet (expected if called too early after signup)");
+      return false;
+    }
+    const userData = userDocSnap.data();
+    currentBusinessId = userData.businessId;
+
+    const bizSnap = await getDoc(doc(db, "businesses", currentBusinessId));
+    const bizName = bizSnap.exists() ? bizSnap.data().name : "(unknown)";
+
+    const shopsQ = query(collection(db, "shops"), where("businessId", "==", currentBusinessId));
+    onSnapshot(shopsQ, (snap) => {
+      if (!snap.empty) currentShopId = snap.docs[0].id;
+    });
+
+    document.getElementById("authCard").classList.add("hidden");
+    document.getElementById("appCard").classList.remove("hidden");
+    document.getElementById("testCard").classList.remove("hidden");
+    document.getElementById("whoAmI").textContent = user.email;
+    document.getElementById("bizName").textContent = bizName;
+
+    startDrugListener();
+    return true;
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      document.getElementById("authCard").classList.remove("hidden");
+      document.getElementById("appCard").classList.add("hidden");
+      document.getElementById("testCard").classList.add("hidden");
+      return;
+    }
+    // Handles page reloads / plain logins, where the profile already exists.
+    // (Right after a fresh signup, this may fire too early and find nothing yet —
+    // that's fine, doSignup() calls enterApp() again itself once everything is written.)
+    await enterApp(user);
+  });
+
+  function startDrugListener() {
+    if (unsubDrugs) unsubDrugs();
+    const drugsQ = query(collection(db, "drugs"), where("businessId", "==", currentBusinessId));
+    unsubDrugs = onSnapshot(drugsQ,
+      { includeMetadataChanges: true },
+      (snap) => {
+        const badge = document.getElementById("netBadge");
+        const fromCache = snap.metadata.fromCache;
+        badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
+        badge.className = "badge " + (fromCache ? "offline" : "online");
+
+        const list = document.getElementById("drugList");
+        if (snap.empty) {
+          list.innerHTML = '<div style="color:var(--muted); font-size:13px;">No test items yet.</div>';
+          return;
+        }
+        list.innerHTML = snap.docs
+          .sort((a, b) => (b.data().createdAt?.seconds || 0) - (a.data().createdAt?.seconds || 0))
+          .map(d => {
+            const v = d.data();
+            const pending = d.metadata.hasPendingWrites ? " · syncing…" : "";
+            return `<div class="item"><span>${v.name}</span><span class="qty">${v.currentStockBase}${pending}</span></div>`;
+          }).join("");
+      },
+      (err) => console.error("drugs listener error:", err)
+    );
+  }
+
+  window.addTestDrug = async function () {
+    const name = document.getElementById("drugName").value.trim();
+    const qty = Number(document.getElementById("drugQty").value);
+    if (!name || !qty) return;
+
+    // Matches V1's drug shape (simplified — no packaging tiers needed for this test)
+    await addDoc(collection(db, "drugs"), {
+      businessId: currentBusinessId,
+      shopId: currentShopId,
+      ownerUid: auth.currentUser.uid,
+      name,
+      currentStockBase: qty,
+      baseUnit: "unit",
+      active: true,
+      createdAt: serverTimestamp()
+    });
+
+    document.getElementById("drugName").value = "";
+    document.getElementById("drugQty").value = "";
+  };
+</script>
+</body>
+</html>
