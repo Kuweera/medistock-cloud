@@ -434,4 +434,136 @@
   };
 
   window.saveDrug = async function () {
-    const statusEl = document.g
+    const statusEl = document.getElementById("formStatus");
+    const name = document.getElementById("f_name").value.trim();
+    if (!name) { statusEl.textContent = "Drug name is required."; statusEl.style.color = "var(--danger)"; return; }
+
+    const p = currentPackagingInputs();
+    if (!p.stockUnit || !p.baseUnit || !p.baseUnitsPerStock) {
+      statusEl.textContent = "Fill in the packaging fields (stock unit, base unit, and the conversion numbers).";
+      statusEl.style.color = "var(--danger)";
+      return;
+    }
+
+    const openStock = Number(document.getElementById("f_openStock").value) || 0;
+    const openIntermediate = Number(document.getElementById("f_openIntermediate").value) || 0;
+    const openBase = Number(document.getElementById("f_openBase").value) || 0;
+    const currentStockBase = PackagingEngine.openingStockToBase(
+      openStock, p.baseUnitsPerStock, openIntermediate, p.basePerIntermediate, openBase
+    );
+
+    const record = {
+      businessId: currentBusinessId,
+      shopId: currentShopId,
+      ownerUid: currentUser.uid,
+      name,
+      generic: document.getElementById("f_generic").value.trim(),
+      drugClass: document.getElementById("f_class").value.trim(),
+      dosageForm: document.getElementById("f_form").value.trim(),
+      supplier: document.getElementById("f_supplier").value.trim(),
+      active: true,
+      stockUnit: p.stockUnit,
+      hasIntermediate: p.has,
+      intermediateUnit: p.has ? p.intermediateUnit : null,
+      baseUnit: p.baseUnit,
+      intermediatePerStock: p.intermediatePerStock,
+      basePerIntermediate: p.basePerIntermediate,
+      baseUnitsPerStock: p.baseUnitsPerStock,
+      wholesale: Number(document.getElementById("f_wholesale").value) || 0,
+      retailStock: Number(document.getElementById("f_retailStock").value) || 0,
+      retailIntermediate: Number(document.getElementById("f_retailIntermediate").value) || 0,
+      retailBase: Number(document.getElementById("f_retailBase").value) || 0,
+      reorderLevel: Number(document.getElementById("f_reorderLevel").value) || 0,
+      targetStock: Number(document.getElementById("f_targetStock").value) || 0,
+      currentStockBase
+    };
+
+    try {
+      statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
+      if (editingId) {
+        await setDoc(doc(db, "drugs", editingId), record, { merge: true });
+        statusEl.textContent = "Updated.";
+      } else {
+        await addDoc(collection(db, "drugs"), { ...record, createdAt: serverTimestamp() });
+        statusEl.textContent = "Saved.";
+      }
+      clearForm();
+      setTimeout(closeForm, 600);
+    } catch (err) {
+      statusEl.textContent = "Failed: " + err.message;
+      statusEl.style.color = "var(--danger)";
+    }
+  };
+
+  function renderList(filterText) {
+    const container = document.getElementById("drugList");
+    const filtered = filterText
+      ? allDrugs.filter(d => d.name.toLowerCase().includes(filterText.toLowerCase()))
+      : allDrugs;
+    document.getElementById("countTag").textContent = `(${filtered.length})`;
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<div class="empty">No drugs yet — tap + to add your first one.</div>';
+      return;
+    }
+    container.innerHTML = filtered.map(d => {
+      const breakdown = PackagingEngine.baseToBreakdown(d.currentStockBase, d.baseUnitsPerStock, d.basePerIntermediate);
+      const parts = [];
+      if (breakdown.stockUnits) parts.push(`${breakdown.stockUnits} ${d.stockUnit}(s)`);
+      if (d.hasIntermediate && breakdown.intermediateUnits) parts.push(`${breakdown.intermediateUnits} ${d.intermediateUnit}(s)`);
+      if (breakdown.looseBase) parts.push(`${breakdown.looseBase} ${d.baseUnit}(s)`);
+      const stockText = parts.length ? parts.join(", ") : `0 ${d.baseUnit}(s)`;
+      const isLow = d.reorderLevel && d.currentStockBase <= d.reorderLevel;
+      return `
+        <div class="drug-item" onclick="editDrug('${d.id}')" style="cursor:pointer;">
+          <div class="drug-name">${d.name}</div>
+          <div class="drug-meta">${d.generic || ""}${d.generic && d.supplier ? " · " : ""}${d.supplier || ""}</div>
+          <div class="drug-stock ${isLow ? "low" : ""}">${stockText}${isLow ? " — LOW STOCK" : ""}</div>
+          <button class="btn-toggle" style="width:auto; padding:5px 12px; margin:6px 0 0; border-color:var(--danger); color:var(--danger); font-size:12px;"
+            onclick="event.stopPropagation(); deleteDrug('${d.id}', '${d.name.replace(/'/g, "\\'")}')">Delete</button>
+        </div>`;
+    }).join("");
+  }
+
+  document.getElementById("searchBox").addEventListener("input", (e) => renderList(e.target.value));
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      window.location.href = "login.html";
+      return;
+    }
+    currentUser = user;
+    const userSnap = await getDoc(doc(db, "users", user.uid));
+    if (!userSnap.exists()) { window.location.href = "login.html"; return; }
+    currentBusinessId = userSnap.data().businessId;
+    await populateSelects();
+    updateCalcPreview();
+
+    const shopsSnap = await getDocs(query(collection(db, "shops"), where("ownerUid", "==", user.uid)));
+    const activeId = localStorage.getItem("mc_activeShopId");
+    const foundShop = shopsSnap.docs.find(d => d.id === activeId);
+    const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
+    currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
+    document.getElementById("shopIndicator").textContent = resolvedShopDoc
+      ? `Working in: ${resolvedShopDoc.data().name}`
+      : "No shop set up yet — go to Shops to add one.";
+
+    const drugsQ = query(collection(db, "drugs"), where("ownerUid", "==", user.uid), where("shopId", "==", currentShopId));
+    onSnapshot(drugsQ, { includeMetadataChanges: true }, (snap) => {
+      const badge = document.getElementById("netBadge");
+      const fromCache = snap.metadata.fromCache;
+      badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
+      badge.className = "badge " + (fromCache ? "offline" : "online");
+
+      allDrugs = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      renderList(document.getElementById("searchBox").value);
+    }, (err) => {
+      document.getElementById("drugList").innerHTML =
+        `<div class="empty" style="color:var(--danger);">Error loading: ${err.message}</div>`;
+    });
+  });
+</script>
+</body>
+</html>
