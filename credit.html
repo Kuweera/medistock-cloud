@@ -157,9 +157,19 @@
   let currentBusinessId = null;
   let currentShopId = null;
   let allCustomers = [];
+  let allTxns = [];      // every credit_transaction this owner has, across all customers
   let selectedCustomer = null;
   let txnMode = "charge";
   let unsubTxns = null;
+
+  // Matches V1 exactly: balance is NEVER stored/trusted directly — it's always
+  // recomputed by summing this customer's balanceChange history. This is what
+  // makes it impossible for the number to drift out of sync with its own ledger.
+  function balanceFor(customerId) {
+    return allTxns
+      .filter(t => t.customerId === customerId)
+      .reduce((sum, t) => sum + (t.balanceChange || 0), 0);
+  }
 
   window.addCustomer = async function () {
     const statusEl = document.getElementById("addStatus");
@@ -173,7 +183,6 @@
         phone: document.getElementById("c_phone").value.trim(),
         creditLimit: Number(document.getElementById("c_limit").value) || 0,
         note: document.getElementById("c_note").value.trim(),
-        balance: 0,
         createdAt: serverTimestamp()
       });
       statusEl.textContent = "Added.";
@@ -195,14 +204,15 @@
       return;
     }
     container.innerHTML = list.map(c => {
-      const over = c.creditLimit > 0 && c.balance > c.creditLimit;
+      const bal = balanceFor(c.id);
+      const over = c.creditLimit > 0 && bal > c.creditLimit;
       return `
         <div class="cust-item" onclick="openCustomer('${c.id}')">
           <div>
             <div class="cust-name">${c.name}</div>
             <div class="cust-meta">${c.phone || ""}</div>
           </div>
-          <div class="cust-bal ${over ? "over" : ""}">${c.balance.toLocaleString()}</div>
+          <div class="cust-bal ${over ? "over" : ""}">${bal.toLocaleString()}</div>
         </div>`;
     }).join("");
   }
@@ -215,11 +225,10 @@
     document.getElementById("detailView").classList.remove("hidden");
     document.getElementById("txnFormCard").classList.add("hidden");
     renderDetail();
-    startTxnListener();
+    renderTxnHistory();
   };
 
   window.backToList = function () {
-    if (unsubTxns) unsubTxns();
     document.getElementById("detailView").classList.add("hidden");
     document.getElementById("listView").classList.remove("hidden");
     selectedCustomer = null;
@@ -227,9 +236,10 @@
 
   function renderDetail() {
     document.getElementById("detailName").textContent = selectedCustomer.name;
-    const over = selectedCustomer.creditLimit > 0 && selectedCustomer.balance > selectedCustomer.creditLimit;
+    const bal = balanceFor(selectedCustomer.id);
+    const over = selectedCustomer.creditLimit > 0 && bal > selectedCustomer.creditLimit;
     const balEl = document.getElementById("detailBalance");
-    balEl.textContent = selectedCustomer.balance.toLocaleString();
+    balEl.textContent = bal.toLocaleString();
     balEl.style.color = over ? "var(--danger)" : "var(--text)";
     document.getElementById("detailLimitNote").textContent = selectedCustomer.creditLimit > 0
       ? `Limit: ${selectedCustomer.creditLimit.toLocaleString()}${over ? " — OVER LIMIT" : ""}`
@@ -251,25 +261,31 @@
     const description = document.getElementById("t_description").value.trim();
     if (amount <= 0) { statusEl.textContent = "Enter an amount."; statusEl.style.color = "var(--danger)"; return; }
 
+    const currentBalance = balanceFor(selectedCustomer.id);
+
+    // Matches V1: a payment can never exceed what's actually owed — this is
+    // what stops a mistaken/too-large payment from creating a nonsense
+    // negative debt.
+    if (txnMode === "payment" && amount > currentBalance) {
+      statusEl.textContent = currentBalance <= 0
+        ? "This customer has no outstanding balance."
+        : `Payment cannot exceed the outstanding balance (${currentBalance.toLocaleString()}).`;
+      statusEl.style.color = "var(--danger)";
+      return;
+    }
+
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
-      const wb = writeBatch(db);
-      const txnRef = doc(collection(db, "credit_transactions"));
-      wb.set(txnRef, {
+      const balanceChange = txnMode === "charge" ? amount : -amount;
+      await addDoc(collection(db, "credit_transactions"), {
         businessId: currentBusinessId, shopId: currentShopId, ownerUid: currentUser.uid,
         customerId: selectedCustomer.id, customerName: selectedCustomer.name,
-        type: txnMode, amount, description,
+        type: txnMode, amount, balanceChange, description,
         createdAt: serverTimestamp()
       });
-      const newBalance = txnMode === "charge"
-        ? selectedCustomer.balance + amount
-        : selectedCustomer.balance - amount;
-      wb.update(doc(db, "credit_accounts", selectedCustomer.id), { balance: newBalance });
-      await wb.commit();
-
-      selectedCustomer.balance = newBalance;
       statusEl.textContent = "Saved.";
       renderDetail();
+      renderTxnHistory();
       setTimeout(() => document.getElementById("txnFormCard").classList.add("hidden"), 500);
     } catch (err) {
       statusEl.textContent = "Failed: " + err.message;
@@ -277,26 +293,24 @@
     }
   };
 
-  function startTxnListener() {
-    if (unsubTxns) unsubTxns();
-    const q = query(collection(db, "credit_transactions"), where("ownerUid", "==", currentUser.uid), where("customerId", "==", selectedCustomer.id));
-    unsubTxns = onSnapshot(q, (snap) => {
-      const list = snap.docs.map(d => d.data()).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      const container = document.getElementById("txnList");
-      if (list.length === 0) {
-        container.innerHTML = '<div class="empty">No transactions yet.</div>';
-        return;
-      }
-      container.innerHTML = list.map(t => {
-        const dateStr = t.createdAt ? t.createdAt.toDate().toLocaleDateString() : "just now";
-        const sign = t.type === "charge" ? "+" : "−";
-        return `
-          <div class="txn-row">
-            <div>${t.description || (t.type === "charge" ? "Charge" : "Payment")}<br><span style="color:var(--muted); font-size:11px;">${dateStr}</span></div>
-            <div class="txn-amt ${t.type}">${sign}${t.amount.toLocaleString()}</div>
-          </div>`;
-      }).join("");
-    });
+  function renderTxnHistory() {
+    const list = allTxns
+      .filter(t => t.customerId === selectedCustomer.id)
+      .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    const container = document.getElementById("txnList");
+    if (list.length === 0) {
+      container.innerHTML = '<div class="empty">No transactions yet.</div>';
+      return;
+    }
+    container.innerHTML = list.map(t => {
+      const dateStr = t.createdAt ? t.createdAt.toDate().toLocaleDateString() : "just now";
+      const sign = t.type === "charge" ? "+" : "−";
+      return `
+        <div class="txn-row">
+          <div>${t.description || (t.type === "charge" ? "Charge" : "Payment")}<br><span style="color:var(--muted); font-size:11px;">${dateStr}</span></div>
+          <div class="txn-amt ${t.type}">${sign}${t.amount.toLocaleString()}</div>
+        </div>`;
+    }).join("");
   }
 
   onAuthStateChanged(auth, async (user) => {
@@ -318,6 +332,13 @@
         if (updated) { selectedCustomer = updated; renderDetail(); }
       }
       renderCustList(document.getElementById("searchBox").value);
+    });
+
+    const txnQ = query(collection(db, "credit_transactions"), where("ownerUid", "==", user.uid));
+    onSnapshot(txnQ, (snap) => {
+      allTxns = snap.docs.map(d => d.data());
+      renderCustList(document.getElementById("searchBox").value);
+      if (selectedCustomer) { renderDetail(); renderTxnHistory(); }
     });
   });
 </script>

@@ -107,6 +107,7 @@
   let drugs = [];
   let batches = [];
   let creditAccounts = [];
+  let creditTxns = [];
   let loadedCount = 0; // once all 4 listeners have fired at least once, render
 
   function isThisMonth(ts) {
@@ -133,7 +134,9 @@
     }, 0);
     const lowStockCount = drugs.filter(d => d.reorderLevel && d.currentStockBase <= d.reorderLevel).length;
     const expiredCount = batches.filter(b => daysUntil(b.expiryDate) < 0 && b.quantity > 0).length;
-    const totalCreditOwed = creditAccounts.reduce((sum, c) => sum + (c.balance || 0), 0);
+    const balancesById = {};
+    creditTxns.forEach(t => { balancesById[t.customerId] = (balancesById[t.customerId] || 0) + (t.balanceChange || 0); });
+    const totalCreditOwed = Object.values(balancesById).filter(b => b > 0).reduce((sum, b) => sum + b, 0);
     document.getElementById("statCreditOwed").textContent = fmt(totalCreditOwed);
 
     document.getElementById("statSales").textContent = fmt(totalSales);
@@ -210,6 +213,11 @@
 
     onSnapshot(query(collection(db, "credit_accounts"), where("ownerUid", "==", user.uid)), (snap) => {
       creditAccounts = snap.docs.map(d => d.data());
+      renderAll();
+    });
+
+    onSnapshot(query(collection(db, "credit_transactions"), where("ownerUid", "==", user.uid)), (snap) => {
+      creditTxns = snap.docs.map(d => d.data());
       renderAll();
     });
   });
