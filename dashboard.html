@@ -54,6 +54,7 @@
   <a class="link" href="expenses.html">Expenses</a> &nbsp;·&nbsp;
   <a class="link" href="batches.html">Batches</a> &nbsp;·&nbsp;
   <a class="link" href="shops.html">Shops</a> &nbsp;·&nbsp;
+  <a class="link" href="credit.html">Credit</a> &nbsp;·&nbsp;
   <a class="link" href="purchases.html">Purchases</a> &nbsp;·&nbsp;
   <a class="link" href="suppliers.html">Suppliers</a>
 </div>
@@ -68,6 +69,7 @@
     <div class="stat"><div class="num" id="statStockValue">—</div><div class="lbl">Stock value (at wholesale)</div></div>
     <div class="stat warn"><div class="num" id="statLowStock">—</div><div class="lbl">Low stock items</div></div>
     <div class="stat danger"><div class="num" id="statExpired">—</div><div class="lbl">Expired batches</div></div>
+    <div class="stat warn"><div class="num" id="statCreditOwed">—</div><div class="lbl">Credit owed to you</div></div>
   </div>
 </div>
 
@@ -104,6 +106,7 @@
   let expenses = [];
   let drugs = [];
   let batches = [];
+  let creditAccounts = [];
   let loadedCount = 0; // once all 4 listeners have fired at least once, render
 
   function isThisMonth(ts) {
@@ -130,6 +133,8 @@
     }, 0);
     const lowStockCount = drugs.filter(d => d.reorderLevel && d.currentStockBase <= d.reorderLevel).length;
     const expiredCount = batches.filter(b => daysUntil(b.expiryDate) < 0 && b.quantity > 0).length;
+    const totalCreditOwed = creditAccounts.reduce((sum, c) => sum + (c.balance || 0), 0);
+    document.getElementById("statCreditOwed").textContent = fmt(totalCreditOwed);
 
     document.getElementById("statSales").textContent = fmt(totalSales);
     document.getElementById("statExpenses").textContent = fmt(totalExpenses);
@@ -200,6 +205,11 @@
 
     onSnapshot(query(collection(db, "batches"), where("ownerUid", "==", user.uid)), (snap) => {
       batches = snap.docs.map(d => d.data());
+      renderAll();
+    });
+
+    onSnapshot(query(collection(db, "credit_accounts"), where("ownerUid", "==", user.uid)), (snap) => {
+      creditAccounts = snap.docs.map(d => d.data());
       renderAll();
     });
   });
