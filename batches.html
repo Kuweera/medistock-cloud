@@ -55,15 +55,11 @@
   <h1>Batches</h1>
   <span class="badge" id="netBadge">checking…</span>
 </div>
-<div class="alert-line" id="shopIndicator" style="margin-bottom:8px; color:var(--muted);"></div>
 
 <div style="margin-bottom:12px;">
   <a class="link" href="inventory.html">← Inventory</a> &nbsp;·&nbsp;
   <a class="link" href="sales.html">Sell</a> &nbsp;·&nbsp;
-  <a class="link" href="expenses.html">Expenses</a> &nbsp;·&nbsp;
-  <a class="link" href="shops.html">Shops →</a> &nbsp;·&nbsp;
-  <a class="link" href="purchases.html">Purchases →</a> &nbsp;·&nbsp;
-  <a class="link" href="dashboard.html">Dashboard →</a>
+  <a class="link" href="expenses.html">Expenses</a>
 </div>
 
 <div class="card">
@@ -96,8 +92,8 @@
   <button class="btn-primary" onclick="saveBatch()">Save Batch</button>
   <div id="saveStatus" style="font-size:13px; margin-top:8px;"></div>
   <div class="alert-line" style="color:var(--muted); margin-top:6px;">
-    Adding a batch here increases the drug's total stock in Inventory automatically.
-    Selling now takes from the earliest-expiring batch first, and won't sell from an expired one.
+    Note: this records the batch for expiry tracking. It doesn't yet change the drug's
+    total stock number in Inventory — keep entering opening/adjustment stock there as before.
   </div>
 </div>
 
@@ -115,7 +111,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, getDocs, deleteDoc, writeBatch, collection, addDoc, onSnapshot,
+    getFirestore, doc, getDoc, deleteDoc, collection, addDoc, onSnapshot,
     enableIndexedDbPersistence, serverTimestamp, query, where
   } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
@@ -176,9 +172,7 @@
 
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
-      const batchDocRef = doc(collection(db, "batches"));
-      const wb = writeBatch(db);
-      wb.set(batchDocRef, {
+      await addDoc(collection(db, "batches"), {
         businessId: currentBusinessId,
         shopId: currentShopId,
         ownerUid: currentUser.uid,
@@ -186,9 +180,7 @@
         batchNumber, expiryDate, quantity, cost,
         createdAt: serverTimestamp()
       });
-      wb.update(doc(db, "drugs", drugId), { currentStockBase: (drug.currentStockBase || 0) + quantity });
-      await wb.commit();
-      statusEl.textContent = "Saved — added to total stock too.";
+      statusEl.textContent = "Saved.";
       document.getElementById("b_batchNumber").value = "";
       document.getElementById("b_expiryDate").value = "";
       document.getElementById("b_quantity").value = "";
@@ -200,18 +192,9 @@
   };
 
   window.deleteBatch = async function (id) {
-    if (!confirm("Delete this batch record? This will also subtract its remaining quantity from the drug's total stock.")) return;
-    const b = allBatches.find(x => x.id === id);
-    if (!b) return;
-    try {
-      const drug = allDrugs.find(d => d.id === b.drugId);
-      const wb = writeBatch(db);
-      wb.delete(doc(db, "batches", id));
-      if (drug) wb.update(doc(db, "drugs", b.drugId), { currentStockBase: Math.max(0, (drug.currentStockBase || 0) - b.quantity) });
-      await wb.commit();
-    } catch (err) {
-      alert("Couldn't delete: " + err.message);
-    }
+    if (!confirm("Delete this batch record?")) return;
+    try { await deleteDoc(doc(db, "batches", id)); }
+    catch (err) { alert("Couldn't delete: " + err.message); }
   };
 
   window.setFilter = function (f) {
@@ -248,22 +231,16 @@
     if (!userSnap.exists()) { window.location.href = "login.html"; return; }
     currentBusinessId = userSnap.data().businessId;
 
-    const shopsSnap = await getDocs(query(collection(db, "shops"), where("ownerUid", "==", user.uid)));
-    const activeId = localStorage.getItem("mc_activeShopId");
-    const foundShop = shopsSnap.docs.find(d => d.id === activeId);
-    const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
-    currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
-    document.getElementById("shopIndicator").textContent = resolvedShopDoc
-      ? `Working in: ${resolvedShopDoc.data().name}`
-      : "No shop set up yet — go to Shops to add one.";
+    const shopsQ = query(collection(db, "shops"), where("ownerUid", "==", user.uid));
+    onSnapshot(shopsQ, (snap) => { if (!snap.empty) currentShopId = snap.docs[0].id; });
 
-    const drugsQ = query(collection(db, "drugs"), where("ownerUid", "==", user.uid), where("shopId", "==", currentShopId));
+    const drugsQ = query(collection(db, "drugs"), where("ownerUid", "==", user.uid));
     onSnapshot(drugsQ, (snap) => {
       allDrugs = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
       populateDrugSelect();
     });
 
-    const batchesQ = query(collection(db, "batches"), where("ownerUid", "==", user.uid), where("shopId", "==", currentShopId));
+    const batchesQ = query(collection(db, "batches"), where("ownerUid", "==", user.uid));
     onSnapshot(batchesQ, { includeMetadataChanges: true }, (snap) => {
       const badge = document.getElementById("netBadge");
       const fromCache = snap.metadata.fromCache;
@@ -275,4 +252,4 @@
   });
 </script>
 </body>
-</html>
+        </html>
