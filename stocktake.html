@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStock Cloud — Stock Taking</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --text:#e8e8ea; --muted:#9aa0aa;
+    --accent:#3b82f6; --accent2:#22c55e; --danger:#ef4444; --border:#2a2e38;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:#1d2230; color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:14px; margin:0 0 12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
+  .meta{font-size:12px; color:var(--muted); margin:0 0 12px;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:#0d0f14; color:var(--text); font-size:14px;
+  }
+  input:focus{outline:none; border-color:var(--accent);}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:12px;}
+  .hidden{display:none !important;}
+  .result-item{padding:10px; border-bottom:1px solid var(--border); cursor:pointer;}
+  .result-item:last-child{border-bottom:none;}
+  .result-item:active{background:#1d2230;}
+  .result-name{font-weight:600; font-size:14px;}
+  .result-sub{font-size:12px; color:var(--muted);}
+  .stock-line{font-size:14px; margin-bottom:10px;}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+  .link{color:var(--accent); font-size:13px; text-decoration:none;}
+  .adj-item{padding:10px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .adj-item:last-child{border-bottom:none;}
+  .adj-diff.pos{color:var(--accent2);} .adj-diff.neg{color:var(--danger);}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Stock Taking</h1>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="meta" id="shopIndicator"></div>
+
+<div style="margin-bottom:12px;">
+  <a class="link" href="inventory.html">Inventory</a> &nbsp;·&nbsp;
+  <a class="link" href="batches.html">Batches</a> &nbsp;·&nbsp;
+  <a class="link" href="dashboard.html">Dashboard</a>
+</div>
+
+<div class="card">
+  <h2>Stock Taking</h2>
+  <p class="meta">Compare the system quantity with the physical count. Differences are recorded permanently with a reason.</p>
+  <label>Search medicine</label>
+  <input id="stocktakeSearch" placeholder="Type medicine name...">
+  <div id="stocktakeResults"></div>
+</div>
+
+<div class="card hidden" id="stocktakeFormCard">
+  <h2 id="stocktakeDrugTitle">—</h2>
+  <div class="stock-line" id="stocktakeSystem">System stock: —</div>
+  <label>Physical count (base units)</label>
+  <input id="stocktakePhysical" type="number" min="0">
+  <label>Reason</label>
+  <input id="stocktakeReason" value="Physical stock count">
+  <button class="btn-primary" id="saveStocktakeBtn">Save Stock Adjustment</button>
+  <div id="saveStatus" style="font-size:13px; margin-top:8px;"></div>
+</div>
+
+<div class="card">
+  <h2>Recent Stock Adjustments</h2>
+  <div id="stocktakeHistory"><div class="empty">Loading…</div></div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import {
+    getFirestore, doc, getDoc, getDocs, collection, addDoc, writeBatch, onSnapshot,
+    enableIndexedDbPersistence, serverTimestamp, query, where
+  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {});
+
+  let currentUser = null;
+  let currentBusinessId = null;
+  let currentShopId = null;
+  let allDrugs = [];
+  let allAdjustments = [];
+  let selectedDrug = null;
+
+  const PackagingEngine = {
+    baseToBreakdown(baseQty, baseUnitsPerStock, basePerIntermediate) {
+      baseUnitsPerStock = Number(baseUnitsPerStock) || 0;
+      basePerIntermediate = Number(basePerIntermediate) || 0;
+      let stockUnits = 0, remainder = baseQty;
+      if (baseUnitsPerStock > 0) {
+        stockUnits = Math.floor(baseQty / baseUnitsPerStock);
+        remainder = baseQty - stockUnits * baseUnitsPerStock;
+      }
+      let intermediateUnits = 0, looseBase = remainder;
+      if (basePerIntermediate > 0) {
+        intermediateUnits = Math.floor(remainder / basePerIntermediate);
+        looseBase = remainder - intermediateUnits * basePerIntermediate;
+      }
+      return { stockUnits, intermediateUnits, looseBase };
+    }
+  };
+
+  function renderResults() {
+    const q = (document.getElementById("stocktakeSearch").value || "").toLowerCase();
+    const box = document.getElementById("stocktakeResults");
+    let ds = allDrugs.filter(d => d.active !== false);
+    if (q) ds = ds.filter(d => d.name.toLowerCase().includes(q) || (d.generic || "").toLowerCase().includes(q));
+    box.innerHTML = ds.slice(0, 15).map(d => `
+      <div class="result-item" onclick="selectStocktakeDrug('${d.id}')">
+        <div class="result-name">${d.name}</div>
+        <div class="result-sub">System: ${d.currentStockBase.toLocaleString()} ${d.baseUnit}(s)</div>
+      </div>`).join("") || '<div class="empty">No medicines found.</div>';
+  }
+  document.getElementById("stocktakeSearch").addEventListener("input", renderResults);
+
+  window.selectStocktakeDrug = function (id) {
+    selectedDrug = allDrugs.find(d => d.id === id);
+    if (!selectedDrug) return;
+    document.getElementById("stocktakeFormCard").classList.remove("hidden");
+    document.getElementById("stocktakeFormCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById("stocktakeDrugTitle").textContent = selectedDrug.name;
+    const b = PackagingEngine.baseToBreakdown(selectedDrug.currentStockBase, selectedDrug.baseUnitsPerStock, selectedDrug.basePerIntermediate);
+    const parts = [];
+    if (b.stockUnits) parts.push(`${b.stockUnits} ${selectedDrug.stockUnit}(s)`);
+    if (selectedDrug.hasIntermediate && b.intermediateUnits) parts.push(`${b.intermediateUnits} ${selectedDrug.intermediateUnit}(s)`);
+    if (b.looseBase) parts.push(`${b.looseBase} ${selectedDrug.baseUnit}(s)`);
+    document.getElementById("stocktakeSystem").textContent =
+      `System stock: ${selectedDrug.currentStockBase.toLocaleString()} ${selectedDrug.baseUnit}(s) = ${parts.join(", ") || "0"}`;
+    document.getElementById("stocktakePhysical").value = selectedDrug.currentStockBase;
+    document.getElementById("stocktakeReason").value = "Physical stock count";
+    document.getElementById("saveStatus").textContent = "";
+  };
+
+  document.getElementById("saveStocktakeBtn").addEventListener("click", async () => {
+    const statusEl = document.getElementById("saveStatus");
+    if (!selectedDrug) return;
+    const physical = Math.max(0, Math.floor(Number(document.getElementById("stocktakePhysical").value) || 0));
+    const diff = physical - selectedDrug.currentStockBase;
+    if (diff === 0) { statusEl.textContent = "No difference — nothing to adjust."; statusEl.style.color = "var(--muted)"; return; }
+
+    const reason = document.getElementById("stocktakeReason").value.trim() || "Physical stock count";
+    if (!confirm(`${selectedDrug.name}\nSystem: ${selectedDrug.currentStockBase} ${selectedDrug.baseUnit}(s)\nPhysical: ${physical} ${selectedDrug.baseUnit}(s)\nDifference: ${diff > 0 ? "+" : ""}${diff}\n\nRecord this adjustment?`)) return;
+
+    try {
+      statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
+      const wb = writeBatch(db);
+      wb.update(doc(db, "drugs", selectedDrug.id), { currentStockBase: physical });
+      wb.set(doc(collection(db, "stock_transactions")), {
+        businessId: currentBusinessId, shopId: currentShopId, ownerUid: currentUser.uid,
+        drugId: selectedDrug.id, type: "EDIT_RESYNC", baseUnitsChange: diff,
+        note: `Stock taking adjustment: ${reason}`, createdAt: serverTimestamp()
+      });
+      wb.set(doc(collection(db, "stock_adjustments")), {
+        businessId: currentBusinessId, shopId: currentShopId, ownerUid: currentUser.uid,
+        drugId: selectedDrug.id, drugName: selectedDrug.name, baseUnit: selectedDrug.baseUnit,
+        previousBase: selectedDrug.currentStockBase, physicalBase: physical, differenceBase: diff,
+        reason, createdAt: serverTimestamp()
+      });
+      await wb.commit();
+
+      selectedDrug.currentStockBase = physical;
+      statusEl.textContent = "Stock adjustment recorded.";
+      statusEl.style.color = "var(--accent2)";
+      renderResults();
+    } catch (err) {
+      statusEl.textContent = "Failed: " + err.message;
+      statusEl.style.color = "var(--danger)";
+    }
+  });
+
+  function renderHistory() {
+    const box = document.getElementById("stocktakeHistory");
+    const rows = [...allAdjustments]
+      .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+      .slice(0, 20);
+    box.innerHTML = rows.map(x => {
+      const dateStr = x.createdAt ? x.createdAt.toDate().toLocaleString() : "just now";
+      return `
+        <div class="adj-item">
+          <b>${x.drugName}</b> · <span class="adj-diff ${x.differenceBase > 0 ? "pos" : "neg"}">${x.differenceBase > 0 ? "+" : ""}${x.differenceBase} ${x.baseUnit || "base"}(s)</span>
+          <br><span style="color:var(--muted);">${dateStr} · ${x.reason || ""}</span>
+        </div>`;
+    }).join("") || '<div class="empty">No stock adjustments yet.</div>';
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+    currentUser = user;
+    const userSnap = await getDoc(doc(db, "users", user.uid));
+    if (!userSnap.exists()) { window.location.href = "login.html"; return; }
+    currentBusinessId = userSnap.data().businessId;
+
+    const shopsSnap = await getDocs(query(collection(db, "shops"), where("ownerUid", "==", user.uid)));
+    const activeId = localStorage.getItem("mc_activeShopId");
+    const foundShop = shopsSnap.docs.find(d => d.id === activeId);
+    const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
+    currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
+    document.getElementById("shopIndicator").textContent = resolvedShopDoc
+      ? `Working in: ${resolvedShopDoc.data().name}`
+      : "No shop set up yet — go to Shops to add one.";
+
+    const drugsQ = query(collection(db, "drugs"), where("ownerUid", "==", user.uid), where("shopId", "==", currentShopId));
+    onSnapshot(drugsQ, (snap) => {
+      allDrugs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderResults();
+    });
+
+    const adjQ = query(collection(db, "stock_adjustments"), where("ownerUid", "==", user.uid), where("shopId", "==", currentShopId));
+    onSnapshot(adjQ, { includeMetadataChanges: true }, (snap) => {
+      const badge = document.getElementById("netBadge");
+      const fromCache = snap.metadata.fromCache;
+      badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
+      badge.className = "badge " + (fromCache ? "offline" : "online");
+      allAdjustments = snap.docs.map(d => d.data());
+      renderHistory();
+    });
+  });
+</script>
+</body>
+</html>
