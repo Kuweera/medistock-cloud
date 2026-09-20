@@ -61,6 +61,9 @@
   <h1>Inventory</h1>
   <span class="badge" id="netBadge">checking…</span>
 </div>
+<div class="hint" id="shopIndicator" style="margin-bottom:8px;"></div>
+
+<div style="margin-bottom:12px;"><a href="sales.html" style="color:var(--accent); font-size:13px; text-decoration:none;">Go to Sell →</a> &nbsp;·&nbsp; <a href="expenses.html" style="color:var(--accent); font-size:13px; text-decoration:none;">Expenses →</a> &nbsp;·&nbsp; <a href="batches.html" style="color:var(--accent); font-size:13px; text-decoration:none;">Batches →</a> &nbsp;·&nbsp; <a href="purchases.html" style="color:var(--accent); font-size:13px; text-decoration:none;">Purchases →</a> &nbsp;·&nbsp; <a href="shops.html" style="color:var(--accent); font-size:13px; text-decoration:none;">Shops →</a> &nbsp;·&nbsp; <a href="credit.html" style="color:var(--accent); font-size:13px; text-decoration:none;">Credit →</a> &nbsp;·&nbsp; <a href="stocktake.html" style="color:var(--accent); font-size:13px; text-decoration:none;">Stock Taking →</a> &nbsp;·&nbsp; <a href="dashboard.html" style="color:var(--accent); font-size:13px; text-decoration:none;">Dashboard →</a></div>
 
 <div class="card">
   <input class="search" type="text" id="searchBox" placeholder="Search drugs…">
@@ -73,7 +76,7 @@
 
 <!-- ADD DRUG FORM (hidden by default) -->
 <div class="card hidden" id="formCard">
-  <h2>Add Drug</h2>
+  <h2 id="formTitle">Add Drug</h2>
 
   <label>Drug name *</label>
   <input type="text" id="f_name" placeholder="e.g. Paracetamol 500mg">
@@ -84,11 +87,21 @@
   <div class="row">
     <div>
       <label>Drug class</label>
-      <input type="text" id="f_class" placeholder="e.g. Analgesics">
+      <select id="f_class"></select>
     </div>
     <div>
       <label>Dosage form</label>
-      <input type="text" id="f_form" placeholder="e.g. Tablet">
+      <select id="f_form"></select>
+    </div>
+  </div>
+  <div class="row" style="margin-top:6px;">
+    <div>
+      <input type="text" id="f_newClass" placeholder="New class name…">
+      <button class="btn-toggle" style="margin-top:6px; margin-bottom:0; padding:8px;" onclick="addNewClass()">+ Add class</button>
+    </div>
+    <div>
+      <input type="text" id="f_newForm" placeholder="New dosage form…">
+      <button class="btn-toggle" style="margin-top:6px; margin-bottom:0; padding:8px;" onclick="addNewForm()">+ Add form</button>
     </div>
   </div>
 
@@ -130,6 +143,7 @@
     <label>Base units per stock unit (direct)</label>
     <input type="number" id="f_basePerStockDirect" min="1" placeholder="e.g. 100">
   </div>
+  <div class="hint" id="calcPreview" style="font-size:13px; color:var(--text); margin-top:10px;">1 stock unit = — base units</div>
 
   <h2 style="margin-top:18px;">Pricing</h2>
   <div class="row">
@@ -181,6 +195,8 @@
     </div>
   </div>
   <div class="hint" id="openingHint"></div>
+  <div class="hint" style="color:var(--warn, #eab308);">Use this only for a drug's very first stock. Once you're recording batches for it on the Batches page, add all further stock there instead — adding it in both places would count it twice.</div>
+  <div class="hint" id="openingPreview" style="font-size:13px; color:var(--text);">Total opening stock = 0 base unit(s)</div>
 
   <button class="btn-primary" onclick="saveDrug()">Save Drug</button>
   <button class="btn-toggle" style="margin-top:8px;" onclick="closeForm()">Cancel</button>
@@ -193,7 +209,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, collection, addDoc, onSnapshot,
+    getFirestore, doc, getDoc, setDoc, deleteDoc, collection, addDoc, getDocs, onSnapshot,
     enableIndexedDbPersistence, serverTimestamp, query, where
   } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
@@ -215,6 +231,7 @@
   let currentBusinessId = null;
   let currentShopId = null;
   let allDrugs = [];
+  let editingId = null;
 
   // ---- Packaging engine (ported from V1, unchanged math) ----
   const PackagingEngine = {
@@ -267,144 +284,143 @@
     }
   }
 
+  function updateCalcPreview() {
+    const p = currentPackagingInputs();
+    const stockUnitDisp = p.stockUnit || "(stock unit)";
+    const baseUnitDisp = p.baseUnit || "(base unit)";
+    const intermediateUnitDisp = p.intermediateUnit || "(intermediate unit — name it below)";
+    document.getElementById("calcPreview").textContent =
+      `1 ${stockUnitDisp} = ${p.baseUnitsPerStock || "—"} ${baseUnitDisp}(s)` +
+      (p.has ? `  (${p.intermediatePerStock || "—"} ${intermediateUnitDisp} × ${p.basePerIntermediate || "—"} ${baseUnitDisp})` : "");
+    updateOpeningPreview();
+  }
+
+  function updateOpeningPreview() {
+    const p = currentPackagingInputs();
+    const openStock = Number(document.getElementById("f_openStock").value) || 0;
+    const openIntermediate = Number(document.getElementById("f_openIntermediate").value) || 0;
+    const openBase = Number(document.getElementById("f_openBase").value) || 0;
+    const total = PackagingEngine.openingStockToBase(openStock, p.baseUnitsPerStock, openIntermediate, p.basePerIntermediate, openBase);
+    const baseDisp = p.baseUnit || "base unit";
+    const parts = [];
+    if (openStock) parts.push(`${openStock} ${p.stockUnit || "stock unit"}(s)`);
+    if (p.has && openIntermediate) parts.push(`${openIntermediate} ${p.intermediateUnit || "intermediate"}(s)`);
+    if (openBase) parts.push(`${openBase} loose ${baseDisp}(s)`);
+    const enteredText = parts.length ? parts.join(" + ") + " " : "";
+    document.getElementById("openingPreview").textContent =
+      `${enteredText}= ${total.toLocaleString()} ${baseDisp}(s) total (this is what gets stored as current stock)`;
+  }
+
+  ["f_stockUnit","f_baseUnit","f_intermediateUnit","f_intermediatePerStock","f_basePerIntermediate","f_basePerStockDirect"]
+    .forEach(id => document.getElementById(id).addEventListener("input", updateCalcPreview));
+  ["f_openStock","f_openIntermediate","f_openBase"]
+    .forEach(id => document.getElementById(id).addEventListener("input", updateOpeningPreview));
+
   document.getElementById("f_hasIntermediate").addEventListener("change", (e) => {
     document.getElementById("intermediateFields").classList.toggle("hidden", !e.target.checked);
     document.getElementById("directBaseField").classList.toggle("hidden", e.target.checked);
     document.getElementById("lbl_openIntermediate").parentElement.style.display = e.target.checked ? "" : "none";
+    updateCalcPreview();
   });
 
+  // ---- Drug class / dosage form dropdowns, backed by shared lookup lists ----
+  async function populateSelects() {
+    const classSnap = await getDocs(collection(db, "drug_classes"));
+    const formSnap = await getDocs(collection(db, "dosage_forms"));
+    const classSel = document.getElementById("f_class");
+    const formSel = document.getElementById("f_form");
+    const prevClass = classSel.value, prevForm = formSel.value;
+    classSel.innerHTML = classSnap.docs.map(d => `<option value="${d.id}">${d.id}</option>`).join("");
+    formSel.innerHTML = formSnap.docs.map(d => `<option value="${d.id}">${d.id}</option>`).join("");
+    if (prevClass) classSel.value = prevClass;
+    if (prevForm) formSel.value = prevForm;
+  }
+
+  window.addNewClass = async function () {
+    const name = document.getElementById("f_newClass").value.trim();
+    if (!name) return;
+    await setDoc(doc(db, "drug_classes", name), { name });
+    document.getElementById("f_newClass").value = "";
+    await populateSelects();
+    document.getElementById("f_class").value = name;
+  };
+  window.addNewForm = async function () {
+    const name = document.getElementById("f_newForm").value.trim();
+    if (!name) return;
+    await setDoc(doc(db, "dosage_forms", name), { name });
+    document.getElementById("f_newForm").value = "";
+    await populateSelects();
+    document.getElementById("f_form").value = name;
+  };
+
+  window.deleteDrug = async function (id, name) {
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    try {
+      await deleteDoc(doc(db, "drugs", id));
+    } catch (err) {
+      alert("Couldn't delete: " + err.message);
+    }
+  };
+
   window.openForm = function () {
+    editingId = null;
+    document.getElementById("formTitle").textContent = "Add Drug";
+    clearForm();
     document.getElementById("formCard").classList.remove("hidden");
     window.scrollTo(0, document.body.scrollHeight);
   };
   window.closeForm = function () {
+    editingId = null;
     document.getElementById("formCard").classList.add("hidden");
   };
 
-  window.saveDrug = async function () {
-    const statusEl = document.getElementById("formStatus");
-    const name = document.getElementById("f_name").value.trim();
-    if (!name) { statusEl.textContent = "Drug name is required."; statusEl.style.color = "var(--danger)"; return; }
-
-    const p = currentPackagingInputs();
-    if (!p.stockUnit || !p.baseUnit || !p.baseUnitsPerStock) {
-      statusEl.textContent = "Fill in the packaging fields (stock unit, base unit, and the conversion numbers).";
-      statusEl.style.color = "var(--danger)";
-      return;
-    }
-
-    const openStock = Number(document.getElementById("f_openStock").value) || 0;
-    const openIntermediate = Number(document.getElementById("f_openIntermediate").value) || 0;
-    const openBase = Number(document.getElementById("f_openBase").value) || 0;
-    const currentStockBase = PackagingEngine.openingStockToBase(
-      openStock, p.baseUnitsPerStock, openIntermediate, p.basePerIntermediate, openBase
-    );
-
-    const record = {
-      businessId: currentBusinessId,
-      shopId: currentShopId,
-      ownerUid: currentUser.uid,
-      name,
-      generic: document.getElementById("f_generic").value.trim(),
-      drugClass: document.getElementById("f_class").value.trim(),
-      dosageForm: document.getElementById("f_form").value.trim(),
-      supplier: document.getElementById("f_supplier").value.trim(),
-      active: true,
-      stockUnit: p.stockUnit,
-      hasIntermediate: p.has,
-      intermediateUnit: p.has ? p.intermediateUnit : null,
-      baseUnit: p.baseUnit,
-      intermediatePerStock: p.intermediatePerStock,
-      basePerIntermediate: p.basePerIntermediate,
-      baseUnitsPerStock: p.baseUnitsPerStock,
-      wholesale: Number(document.getElementById("f_wholesale").value) || 0,
-      retailStock: Number(document.getElementById("f_retailStock").value) || 0,
-      retailIntermediate: Number(document.getElementById("f_retailIntermediate").value) || 0,
-      retailBase: Number(document.getElementById("f_retailBase").value) || 0,
-      reorderLevel: Number(document.getElementById("f_reorderLevel").value) || 0,
-      targetStock: Number(document.getElementById("f_targetStock").value) || 0,
-      currentStockBase,
-      createdAt: serverTimestamp()
-    };
-
-    try {
-      statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
-      await addDoc(collection(db, "drugs"), record);
-      statusEl.textContent = "Saved.";
-      ["f_name","f_generic","f_class","f_form","f_supplier","f_stockUnit","f_baseUnit",
-       "f_intermediateUnit","f_intermediatePerStock","f_basePerIntermediate","f_basePerStockDirect",
-       "f_wholesale","f_retailStock","f_retailIntermediate","f_retailBase",
-       "f_reorderLevel","f_targetStock"].forEach(id => document.getElementById(id).value = "");
-      document.getElementById("f_openStock").value = 0;
-      document.getElementById("f_openIntermediate").value = 0;
-      document.getElementById("f_openBase").value = 0;
-      setTimeout(closeForm, 600);
-    } catch (err) {
-      statusEl.textContent = "Failed: " + err.message;
-      statusEl.style.color = "var(--danger)";
-    }
-  };
-
-  function renderList(filterText) {
-    const container = document.getElementById("drugList");
-    const filtered = filterText
-      ? allDrugs.filter(d => d.name.toLowerCase().includes(filterText.toLowerCase()))
-      : allDrugs;
-    document.getElementById("countTag").textContent = `(${filtered.length})`;
-
-    if (filtered.length === 0) {
-      container.innerHTML = '<div class="empty">No drugs yet — tap + to add your first one.</div>';
-      return;
-    }
-    container.innerHTML = filtered.map(d => {
-      const breakdown = PackagingEngine.baseToBreakdown(d.currentStockBase, d.baseUnitsPerStock, d.basePerIntermediate);
-      const parts = [];
-      if (breakdown.stockUnits) parts.push(`${breakdown.stockUnits} ${d.stockUnit}(s)`);
-      if (d.hasIntermediate && breakdown.intermediateUnits) parts.push(`${breakdown.intermediateUnits} ${d.intermediateUnit}(s)`);
-      if (breakdown.looseBase) parts.push(`${breakdown.looseBase} ${d.baseUnit}(s)`);
-      const stockText = parts.length ? parts.join(", ") : `0 ${d.baseUnit}(s)`;
-      const isLow = d.reorderLevel && d.currentStockBase <= d.reorderLevel;
-      return `
-        <div class="drug-item">
-          <div class="drug-name">${d.name}</div>
-          <div class="drug-meta">${d.generic || ""}${d.generic && d.supplier ? " · " : ""}${d.supplier || ""}</div>
-          <div class="drug-stock ${isLow ? "low" : ""}">${stockText}${isLow ? " — LOW STOCK" : ""}</div>
-        </div>`;
-    }).join("");
+  function clearForm() {
+    ["f_name","f_generic","f_supplier","f_stockUnit","f_baseUnit",
+     "f_intermediateUnit","f_intermediatePerStock","f_basePerIntermediate","f_basePerStockDirect",
+     "f_wholesale","f_retailStock","f_retailIntermediate","f_retailBase",
+     "f_reorderLevel","f_targetStock"].forEach(id => document.getElementById(id).value = "");
+    document.getElementById("f_openStock").value = 0;
+    document.getElementById("f_openIntermediate").value = 0;
+    document.getElementById("f_openBase").value = 0;
+    document.getElementById("f_hasIntermediate").checked = true;
+    document.getElementById("intermediateFields").classList.remove("hidden");
+    document.getElementById("directBaseField").classList.add("hidden");
+    document.getElementById("formStatus").textContent = "";
+    updateCalcPreview();
   }
 
-  document.getElementById("searchBox").addEventListener("input", (e) => renderList(e.target.value));
+  window.editDrug = function (id) {
+    const d = allDrugs.find(x => x.id === id);
+    if (!d) return;
+    editingId = id;
+    document.getElementById("formTitle").textContent = "Edit Drug";
 
-  onAuthStateChanged(auth, async (user) => {
-    if (!user) {
-      window.location.href = "login.html";
-      return;
+    document.getElementById("f_name").value = d.name || "";
+    document.getElementById("f_generic").value = d.generic || "";
+    document.getElementById("f_class").value = d.drugClass || "";
+    document.getElementById("f_form").value = d.dosageForm || "";
+    document.getElementById("f_supplier").value = d.supplier || "";
+    document.getElementById("f_stockUnit").value = d.stockUnit || "";
+    document.getElementById("f_baseUnit").value = d.baseUnit || "";
+    document.getElementById("f_hasIntermediate").checked = !!d.hasIntermediate;
+    document.getElementById("intermediateFields").classList.toggle("hidden", !d.hasIntermediate);
+    document.getElementById("directBaseField").classList.toggle("hidden", !!d.hasIntermediate);
+    document.getElementById("lbl_openIntermediate").parentElement.style.display = d.hasIntermediate ? "" : "none";
+    if (d.hasIntermediate) {
+      document.getElementById("f_intermediateUnit").value = d.intermediateUnit || "";
+      document.getElementById("f_intermediatePerStock").value = d.intermediatePerStock || "";
+      document.getElementById("f_basePerIntermediate").value = d.basePerIntermediate || "";
+    } else {
+      document.getElementById("f_basePerStockDirect").value = d.basePerIntermediate || "";
     }
-    currentUser = user;
-    const userSnap = await getDoc(doc(db, "users", user.uid));
-    if (!userSnap.exists()) { window.location.href = "login.html"; return; }
-    currentBusinessId = userSnap.data().businessId;
+    document.getElementById("f_wholesale").value = d.wholesale || "";
+    document.getElementById("f_retailStock").value = d.retailStock || "";
+    document.getElementById("f_retailIntermediate").value = d.retailIntermediate || "";
+    document.getElementById("f_retailBase").value = d.retailBase || "";
+    document.getElementById("f_reorderLevel").value = d.reorderLevel || "";
+    document.getElementById("f_targetStock").value = d.targetStock || "";
 
-    const shopsQ = query(collection(db, "shops"), where("businessId", "==", currentBusinessId));
-    onSnapshot(shopsQ, (snap) => { if (!snap.empty) currentShopId = snap.docs[0].id; });
-
-    const drugsQ = query(collection(db, "drugs"), where("businessId", "==", currentBusinessId));
-    onSnapshot(drugsQ, { includeMetadataChanges: true }, (snap) => {
-      const badge = document.getElementById("netBadge");
-      const fromCache = snap.metadata.fromCache;
-      badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
-      badge.className = "badge " + (fromCache ? "offline" : "online");
-
-      allDrugs = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      renderList(document.getElementById("searchBox").value);
-    }, (err) => {
-      document.getElementById("drugList").innerHTML =
-        `<div class="empty" style="color:var(--danger);">Error loading: ${err.message}</div>`;
-    });
-  });
-</script>
-</body>
-    </html>
-  
+    // Pre-fill opening stock with a breakdown of the CURRENT stock, so editing
+    // starts from where things actually stand rather than from zero.
+    const breakdown = PackagingEngine.baseToBreakdown(d.currentStockBase || 0, d.baseUnitsPerStock, d.basePerIntermediate);
+    document.getElementById("
