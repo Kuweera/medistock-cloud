@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStock Cloud — Purchases</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --text:#e8e8ea; --muted:#9aa0aa;
+    --accent:#3b82f6; --accent2:#22c55e; --warn:#eab308; --danger:#ef4444; --border:#2a2e38;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:#1d2230; color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:14px; margin:0 0 12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:#0d0f14; color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:12px;}
+  .del-btn{background:transparent; color:var(--danger); border:1px solid var(--danger); padding:3px 8px; font-size:11px; margin-top:4px;}
+  .purchase-item{padding:10px 0; border-bottom:1px solid var(--border);}
+  .purchase-item:last-child{border-bottom:none;}
+  .p-drug{font-size:14px; font-weight:600;}
+  .p-meta{font-size:12px; color:var(--muted);}
+  .p-total{font-size:14px; font-weight:700; float:right;}
+  .pay-tag{font-size:11px; padding:2px 8px; border-radius:999px; margin-left:6px;}
+  .pay-tag.paid{background:rgba(34,197,94,.12); color:var(--accent2);}
+  .pay-tag.unpaid{background:rgba(239,68,68,.15); color:var(--danger);}
+  .pay-tag.partial{background:rgba(234,179,8,.15); color:var(--warn);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+  .link{color:var(--accent); font-size:13px; text-decoration:none;}
+  .total-preview{font-size:15px; font-weight:700; text-align:right; margin-top:8px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Purchases</h1>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; color:var(--muted); font-size:11px;"></div>
+
+<div style="margin-bottom:12px;">
+  <a class="link" href="inventory.html">Inventory</a> &nbsp;·&nbsp;
+  <a class="link" href="batches.html">Batches</a> &nbsp;·&nbsp;
+  <a class="link" href="suppliers.html">Suppliers →</a> &nbsp;·&nbsp;
+  <a class="link" href="dashboard.html">Dashboard →</a>
+</div>
+
+<div class="card">
+  <h2>Record Purchase</h2>
+  <label>Supplier</label>
+  <select id="p_supplier"></select>
+
+  <div class="row">
+    <div>
+      <label>Invoice number</label>
+      <input type="text" id="p_invoice" placeholder="e.g. INV-2026-118">
+    </div>
+    <div>
+      <label>Payment status</label>
+      <select id="p_payment">
+        <option value="paid">Paid</option>
+        <option value="unpaid">Unpaid</option>
+        <option value="partial">Partial</option>
+      </select>
+    </div>
+  </div>
+
+  <label>Drug</label>
+  <select id="p_drug"></select>
+
+  <div class="row">
+    <div>
+      <label>Batch number</label>
+      <input type="text" id="p_batchNumber" placeholder="e.g. B2026-014">
+    </div>
+    <div>
+      <label>Expiry date</label>
+      <input type="date" id="p_expiryDate">
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <label>Quantity (base units)</label>
+      <input type="number" id="p_quantity" min="0" placeholder="e.g. 500">
+    </div>
+    <div>
+      <label>Unit cost (per base unit)</label>
+      <input type="number" id="p_unitCost" min="0" placeholder="e.g. 90">
+    </div>
+  </div>
+  <div class="total-preview" id="totalPreview">Total cost: 0</div>
+
+  <button class="btn-primary" onclick="savePurchase()">Save Purchase</button>
+  <div id="saveStatus" style="font-size:13px; margin-top:8px;"></div>
+</div>
+
+<div class="card">
+  <h2>Purchase History</h2>
+  <div id="purchaseList"><div class="empty">Loading…</div></div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import {
+    getFirestore, doc, getDoc, getDocs, deleteDoc, writeBatch, collection, onSnapshot,
+    enableIndexedDbPersistence, serverTimestamp, query, where
+  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {});
+
+  let currentUser = null;
+  let currentBusinessId = null;
+  let currentShopId = null;
+  let allDrugs = [];
+  let allSuppliers = [];
+  let allPurchases = [];
+
+  function populateSelects() {
+    const supSel = document.getElementById("p_supplier");
+    const drugSel = document.getElementById("p_drug");
+    const prevSup = supSel.value, prevDrug = drugSel.value;
+    supSel.innerHTML = allSuppliers.length
+      ? allSuppliers.map(s => `<option value="${s.id}">${s.name}</option>`).join("")
+      : '<option value="">No suppliers yet — add one on Suppliers page</option>';
+    drugSel.innerHTML = allDrugs.length
+      ? allDrugs.map(d => `<option value="${d.id}">${d.name}</option>`).join("")
+      : '<option value="">No drugs yet — add one on Inventory page</option>';
+    if (prevSup) supSel.value = prevSup;
+    if (prevDrug) drugSel.value = prevDrug;
+  }
+
+  function updateTotalPreview() {
+    const qty = Number(document.getElementById("p_quantity").value) || 0;
+    const cost = Number(document.getElementById("p_unitCost").value) || 0;
+    document.getElementById("totalPreview").textContent = "Total cost: " + (qty * cost).toLocaleString();
+  }
+  document.getElementById("p_quantity").addEventListener("input", updateTotalPreview);
+  document.getElementById("p_unitCost").addEventListener("input", updateTotalPreview);
+
+  window.savePurchase = async function () {
+    const statusEl = document.getElementById("saveStatus");
+    const supplierId = document.getElementById("p_supplier").value;
+    const supplier = allSuppliers.find(s => s.id === supplierId);
+    const drugId = document.getElementById("p_drug").value;
+    const drug = allDrugs.find(d => d.id === drugId);
+    const invoiceNumber = document.getElementById("p_invoice").value.trim();
+    const paymentStatus = document.getElementById("p_payment").value;
+    const batchNumber = document.getElementById("p_batchNumber").value.trim();
+    const expiryDate = document.getElementById("p_expiryDate").value;
+    const quantity = Number(document.getElementById("p_quantity").value) || 0;
+    const unitCost = Number(document.getElementById("p_unitCost").value) || 0;
+
+    if (!supplier || !drug || !expiryDate || quantity <= 0) {
+      statusEl.textContent = "Pick a supplier, a drug, an expiry date, and a quantity.";
+      statusEl.style.color = "var(--danger)";
+      return;
+    }
+    const totalCost = quantity * unitCost;
+
+    try {
+      statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
+      const wb = writeBatch(db);
+
+      const purchaseRef = doc(collection(db, "purchases"));
+      wb.set(purchaseRef, {
+        businessId: currentBusinessId, shopId: currentShopId, ownerUid: currentUser.uid,
+        supplierId, supplierName: supplier.name,
+        invoiceNumber, paymentStatus,
+        drugId, drugName: drug.name,
+        quantity, unitCost, totalCost,
+        createdAt: serverTimestamp()
+      });
+
+      const batchRef = doc(collection(db, "batches"));
+      wb.set(batchRef, {
+        businessId: currentBusinessId, shopId: currentShopId, ownerUid: currentUser.uid,
+        drugId, drugName: drug.name,
+        batchNumber: batchNumber || invoiceNumber, expiryDate, quantity, cost: totalCost,
+        createdAt: serverTimestamp()
+      });
+
+      wb.update(doc(db, "drugs", drugId), { currentStockBase: (drug.currentStockBase || 0) + quantity });
+
+      await wb.commit();
+      statusEl.textContent = "Saved — stock and batch updated.";
+      document.getElementById("p_invoice").value = "";
+      document.getElementById("p_batchNumber").value = "";
+      document.getElementById("p_expiryDate").value = "";
+      document.getElementById("p_quantity").value = "";
+      document.getElementById("p_unitCost").value = "";
+      updateTotalPreview();
+    } catch (err) {
+      statusEl.textContent = "Failed: " + err.message;
+      statusEl.style.color = "var(--danger)";
+    }
+  };
+
+  function renderList() {
+    const container = document.getElementById("purchaseList");
+    if (allPurchases.length === 0) {
+      container.innerHTML = '<div class="empty">No purchases recorded yet.</div>';
+      return;
+    }
+    const sorted = [...allPurchases].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    container.innerHTML = sorted.map(p => {
+      const dateStr = p.createdAt ? p.createdAt.toDate().toLocaleDateString() : "just now";
+      return `
+        <div class="purchase-item">
+          <div class="p-total">${p.totalCost.toLocaleString()}</div>
+          <div class="p-drug">${p.drugName} <span class="pay-tag ${p.paymentStatus}">${p.paymentStatus}</span></div>
+          <div class="p-meta">${p.supplierName} · Inv ${p.invoiceNumber || "—"} · Qty ${p.quantity} · ${dateStr}</div>
+        </div>`;
+    }).join("");
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+    currentUser = user;
+    const userSnap = await getDoc(doc(db, "users", user.uid));
+    if (!userSnap.exists()) { window.location.href = "login.html"; return; }
+    currentBusinessId = userSnap.data().businessId;
+
+    const shopsSnap = await getDocs(query(collection(db, "shops"), where("ownerUid", "==", user.uid)));
+    const activeId = localStorage.getItem("mc_activeShopId");
+    const foundShop = shopsSnap.docs.find(d => d.id === activeId);
+    const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
+    currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
+    document.getElementById("shopIndicator").textContent = resolvedShopDoc
+      ? `Working in: ${resolvedShopDoc.data().name}`
+      : "No shop set up yet — go to Shops to add one.";
+
+    const drugsQ = query(collection(db, "drugs"), where("ownerUid", "==", user.uid), where("shopId", "==", currentShopId));
+    onSnapshot(drugsQ, (snap) => {
+      allDrugs = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
+      populateSelects();
+    });
+
+    const suppliersQ = query(collection(db, "suppliers"), where("ownerUid", "==", user.uid));
+    onSnapshot(suppliersQ, (snap) => {
+      allSuppliers = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
+      populateSelects();
+    });
+
+    const purchasesQ = query(collection(db, "purchases"), where("ownerUid", "==", user.uid), where("shopId", "==", currentShopId));
+    onSnapshot(purchasesQ, { includeMetadataChanges: true }, (snap) => {
+      const badge = document.getElementById("netBadge");
+      const fromCache = snap.metadata.fromCache;
+      badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
+      badge.className = "badge " + (fromCache ? "offline" : "online");
+      allPurchases = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderList();
+    });
+  });
+</script>
+</body>
+</html>

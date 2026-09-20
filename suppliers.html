@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStock Cloud — Suppliers</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --text:#e8e8ea; --muted:#9aa0aa;
+    --accent:#3b82f6; --accent2:#22c55e; --danger:#ef4444; --border:#2a2e38;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:#1d2230; color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:14px; margin:0 0 12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, textarea{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:#0d0f14; color:var(--text); font-size:14px; font-family:inherit;
+  }
+  input:focus, textarea:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:12px;}
+  .supplier-item{padding:12px 0; border-bottom:1px solid var(--border);}
+  .supplier-item:last-child{border-bottom:none;}
+  .sup-name{font-size:15px; font-weight:600;}
+  .sup-meta{font-size:12px; color:var(--muted); margin-top:2px;}
+  .del-btn{background:transparent; color:var(--danger); border:1px solid var(--danger); padding:3px 8px; font-size:11px; margin-top:6px;}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+  .link{color:var(--accent); font-size:13px; text-decoration:none;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Suppliers</h1>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+
+<div style="margin-bottom:12px;">
+  <a class="link" href="inventory.html">Inventory</a> &nbsp;·&nbsp;
+  <a class="link" href="purchases.html">Purchases →</a> &nbsp;·&nbsp;
+  <a class="link" href="dashboard.html">Dashboard →</a>
+</div>
+
+<div class="card">
+  <h2>Add Supplier</h2>
+  <label>Name *</label>
+  <input type="text" id="s_name" placeholder="e.g. ABC Pharmaceuticals">
+  <div class="row">
+    <div>
+      <label>Phone</label>
+      <input type="text" id="s_phone" placeholder="e.g. 0700 000000">
+    </div>
+    <div>
+      <label>Contact person</label>
+      <input type="text" id="s_contact" placeholder="e.g. Mr. Okello">
+    </div>
+  </div>
+  <label>Email</label>
+  <input type="text" id="s_email" placeholder="optional">
+  <label>Address</label>
+  <input type="text" id="s_address" placeholder="optional">
+  <label>Notes</label>
+  <textarea id="s_notes" rows="2" placeholder="optional"></textarea>
+
+  <button class="btn-primary" onclick="saveSupplier()">Save Supplier</button>
+  <div id="saveStatus" style="font-size:13px; margin-top:8px;"></div>
+</div>
+
+<div class="card">
+  <h2>Your Suppliers</h2>
+  <div id="supplierList"><div class="empty">Loading…</div></div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import {
+    getFirestore, doc, getDoc, deleteDoc, collection, addDoc, onSnapshot,
+    enableIndexedDbPersistence, serverTimestamp, query, where
+  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {});
+
+  let currentUser = null;
+  let currentBusinessId = null;
+  let allSuppliers = [];
+
+  window.saveSupplier = async function () {
+    const statusEl = document.getElementById("saveStatus");
+    const name = document.getElementById("s_name").value.trim();
+    if (!name) { statusEl.textContent = "Enter a supplier name."; statusEl.style.color = "var(--danger)"; return; }
+
+    try {
+      statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
+      await addDoc(collection(db, "suppliers"), {
+        businessId: currentBusinessId,
+        ownerUid: currentUser.uid,
+        name,
+        phone: document.getElementById("s_phone").value.trim(),
+        contactPerson: document.getElementById("s_contact").value.trim(),
+        email: document.getElementById("s_email").value.trim(),
+        address: document.getElementById("s_address").value.trim(),
+        notes: document.getElementById("s_notes").value.trim(),
+        createdAt: serverTimestamp()
+      });
+      statusEl.textContent = "Saved.";
+      ["s_name","s_phone","s_contact","s_email","s_address","s_notes"].forEach(id => document.getElementById(id).value = "");
+    } catch (err) {
+      statusEl.textContent = "Failed: " + err.message;
+      statusEl.style.color = "var(--danger)";
+    }
+  };
+
+  window.deleteSupplier = async function (id) {
+    if (!confirm("Delete this supplier? Past purchases will keep the supplier name on record.")) return;
+    try { await deleteDoc(doc(db, "suppliers", id)); }
+    catch (err) { alert("Couldn't delete: " + err.message); }
+  };
+
+  function renderList() {
+    const container = document.getElementById("supplierList");
+    if (allSuppliers.length === 0) {
+      container.innerHTML = '<div class="empty">No suppliers yet.</div>';
+      return;
+    }
+    container.innerHTML = allSuppliers.map(s => `
+      <div class="supplier-item">
+        <div class="sup-name">${s.name}</div>
+        <div class="sup-meta">${[s.contactPerson, s.phone, s.email].filter(Boolean).join(" · ")}</div>
+        ${s.address ? `<div class="sup-meta">${s.address}</div>` : ""}
+        ${s.notes ? `<div class="sup-meta">${s.notes}</div>` : ""}
+        <button class="del-btn" onclick="deleteSupplier('${s.id}')">Delete</button>
+      </div>`).join("");
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+    currentUser = user;
+    const userSnap = await getDoc(doc(db, "users", user.uid));
+    if (!userSnap.exists()) { window.location.href = "login.html"; return; }
+    currentBusinessId = userSnap.data().businessId;
+
+    const suppliersQ = query(collection(db, "suppliers"), where("ownerUid", "==", user.uid));
+    onSnapshot(suppliersQ, { includeMetadataChanges: true }, (snap) => {
+      const badge = document.getElementById("netBadge");
+      const fromCache = snap.metadata.fromCache;
+      badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
+      badge.className = "badge " + (fromCache ? "offline" : "online");
+      allSuppliers = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
+      renderList();
+    });
+  });
+</script>
+</body>
+</html>
