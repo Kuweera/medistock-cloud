@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStock Cloud — Shops</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --text:#e8e8ea; --muted:#9aa0aa;
+    --accent:#3b82f6; --accent2:#22c55e; --danger:#ef4444; --border:#2a2e38;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:#1d2230; color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:14px; margin:0 0 12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:#0d0f14; color:var(--text); font-size:14px;
+  }
+  input:focus{outline:none; border-color:var(--accent);}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .shop-item{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:12px; border:1px solid var(--border); border-radius:10px; margin-bottom:8px;
+  }
+  .shop-item.active{border-color:var(--accent2); background:rgba(34,197,94,.08);}
+  .shop-name{font-size:15px; font-weight:600;}
+  .shop-tag{font-size:11px; color:var(--accent2); margin-left:8px;}
+  .switch-btn{background:transparent; color:var(--accent); border:1px solid var(--accent); padding:6px 12px; font-size:12px;}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+  .link{color:var(--accent); font-size:13px; text-decoration:none;}
+  .hint{font-size:11px; color:var(--muted); margin-top:8px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Shops</h1>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+
+<div style="margin-bottom:12px;">
+  <a class="link" href="inventory.html">← Inventory</a> &nbsp;·&nbsp;
+  <a class="link" href="sales.html">Sell</a> &nbsp;·&nbsp;
+  <a class="link" href="expenses.html">Expenses</a> &nbsp;·&nbsp;
+  <a class="link" href="batches.html">Batches</a>
+</div>
+
+<div class="card">
+  <h2>Your Shops</h2>
+  <div id="shopList"><div class="empty">Loading…</div></div>
+  <div class="hint">"Active" is which shop THIS device works in right now — every sale, drug, expense, and batch you add here goes under that shop. Tap "Switch to this" to change it.</div>
+</div>
+
+<div class="card">
+  <h2>Add a New Shop</h2>
+  <label>Shop name</label>
+  <input type="text" id="newShopName" placeholder="e.g. Kireka Branch">
+  <button class="btn-primary" onclick="addShop()">Add Shop</button>
+  <div id="addStatus" style="font-size:13px; margin-top:8px;"></div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import {
+    getFirestore, doc, getDoc, collection, addDoc, onSnapshot,
+    enableIndexedDbPersistence, serverTimestamp, query, where
+  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {});
+
+  let currentUser = null;
+  let currentBusinessId = null;
+  let allShops = [];
+
+  function activeShopId() {
+    return localStorage.getItem("mc_activeShopId");
+  }
+
+  window.switchShop = function (id) {
+    localStorage.setItem("mc_activeShopId", id);
+    renderList();
+  };
+
+  window.addShop = async function () {
+    const statusEl = document.getElementById("addStatus");
+    const name = document.getElementById("newShopName").value.trim();
+    if (!name) { statusEl.textContent = "Enter a shop name."; statusEl.style.color = "var(--danger)"; return; }
+    try {
+      statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
+      const ref = await addDoc(collection(db, "shops"), {
+        businessId: currentBusinessId,
+        ownerUid: currentUser.uid,
+        name,
+        createdAt: serverTimestamp()
+      });
+      statusEl.textContent = "Added.";
+      document.getElementById("newShopName").value = "";
+      // If this is the very first shop being added this session, make it active automatically.
+      if (!activeShopId()) localStorage.setItem("mc_activeShopId", ref.id);
+    } catch (err) {
+      statusEl.textContent = "Failed: " + err.message;
+      statusEl.style.color = "var(--danger)";
+    }
+  };
+
+  function renderList() {
+    const container = document.getElementById("shopList");
+    if (allShops.length === 0) {
+      container.innerHTML = '<div class="empty">No shops yet.</div>';
+      return;
+    }
+    const active = activeShopId();
+    container.innerHTML = allShops.map(s => `
+      <div class="shop-item ${s.id === active ? "active" : ""}">
+        <div class="shop-name">${s.name}${s.id === active ? '<span class="shop-tag">ACTIVE HERE</span>' : ""}</div>
+        ${s.id === active ? "" : `<button class="switch-btn" onclick="switchShop('${s.id}')">Switch to this</button>`}
+      </div>`).join("");
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+    currentUser = user;
+    const userSnap = await getDoc(doc(db, "users", user.uid));
+    if (!userSnap.exists()) { window.location.href = "login.html"; return; }
+    currentBusinessId = userSnap.data().businessId;
+
+    const shopsQ = query(collection(db, "shops"), where("ownerUid", "==", user.uid));
+    onSnapshot(shopsQ, { includeMetadataChanges: true }, (snap) => {
+      const badge = document.getElementById("netBadge");
+      const fromCache = snap.metadata.fromCache;
+      badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
+      badge.className = "badge " + (fromCache ? "offline" : "online");
+      allShops = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
+      // Auto-pick an active shop the first time this device ever loads, so old
+      // single-shop setups keep working with no action needed.
+      if (!activeShopId() && allShops.length > 0) localStorage.setItem("mc_activeShopId", allShops[0].id);
+      renderList();
+    });
+  });
+</script>
+</body>
+</html>
