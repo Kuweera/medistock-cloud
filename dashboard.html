@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStock Cloud — Dashboard</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --text:#e8e8ea; --muted:#9aa0aa;
+    --accent:#3b82f6; --accent2:#22c55e; --warn:#eab308; --danger:#ef4444; --border:#2a2e38;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:#1d2230; color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:14px; margin:0 0 12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
+  .link{color:var(--accent); font-size:13px; text-decoration:none;}
+  .stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .stat{background:#0d0f14; border:1px solid var(--border); border-radius:10px; padding:12px;}
+  .stat .num{font-size:20px; font-weight:700;}
+  .stat .lbl{font-size:11px; color:var(--muted); margin-top:2px;}
+  .stat.warn .num{color:var(--warn);}
+  .stat.danger .num{color:var(--danger);}
+  .stat.good .num{color:var(--accent2);}
+  .shop-card{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;}
+  .shop-card:last-child{margin-bottom:0;}
+  .shop-name{font-size:15px; font-weight:700; margin-bottom:8px;}
+  .shop-row{display:flex; justify-content:space-between; font-size:13px; padding:3px 0;}
+  .shop-row .v{font-weight:600;}
+  .v.good{color:var(--accent2);} .v.bad{color:var(--danger);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+  .period-note{font-size:11px; color:var(--muted); margin-bottom:10px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Dashboard</h1>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+
+<div style="margin-bottom:12px;">
+  <a class="link" href="inventory.html">Inventory</a> &nbsp;·&nbsp;
+  <a class="link" href="sales.html">Sell</a> &nbsp;·&nbsp;
+  <a class="link" href="expenses.html">Expenses</a> &nbsp;·&nbsp;
+  <a class="link" href="batches.html">Batches</a> &nbsp;·&nbsp;
+  <a class="link" href="shops.html">Shops</a>
+</div>
+
+<div class="card">
+  <h2>Business Overview</h2>
+  <div class="period-note">Sales/Expenses figures are for this calendar month, across all your shops. Stock and expiry figures are current right now.</div>
+  <div class="stat-grid">
+    <div class="stat good"><div class="num" id="statSales">—</div><div class="lbl">Sales this month</div></div>
+    <div class="stat"><div class="num" id="statExpenses">—</div><div class="lbl">Expenses this month</div></div>
+    <div class="stat good"><div class="num" id="statNet">—</div><div class="lbl">Net (Sales − Expenses)</div></div>
+    <div class="stat"><div class="num" id="statStockValue">—</div><div class="lbl">Stock value (at wholesale)</div></div>
+    <div class="stat warn"><div class="num" id="statLowStock">—</div><div class="lbl">Low stock items</div></div>
+    <div class="stat danger"><div class="num" id="statExpired">—</div><div class="lbl">Expired batches</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Shop Performance <span style="text-transform:none; font-weight:400;">(this month)</span></h2>
+  <div id="shopBreakdown"><div class="empty">Loading…</div></div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import {
+    getFirestore, doc, getDoc, collection, onSnapshot,
+    enableIndexedDbPersistence, query, where
+  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {});
+
+  let currentUser = null;
+  let shopsById = {};   // id -> name
+  let sales = [];
+  let expenses = [];
+  let drugs = [];
+  let batches = [];
+  let loadedCount = 0; // once all 4 listeners have fired at least once, render
+
+  function isThisMonth(ts) {
+    if (!ts) return false;
+    const d = ts.toDate();
+    const now = new Date();
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  }
+  function daysUntil(dateStr) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    return Math.round((new Date(dateStr) - today) / 86400000);
+  }
+  function fmt(n) { return Math.round(n).toLocaleString(); }
+
+  function renderAll() {
+    // ---- Business overview ----
+    const salesThisMonth = sales.filter(s => isThisMonth(s.createdAt));
+    const expensesThisMonth = expenses.filter(e => isThisMonth(e.createdAt));
+    const totalSales = salesThisMonth.reduce((sum, s) => sum + (s.total || 0), 0);
+    const totalExpenses = expensesThisMonth.reduce((sum, e) => sum + (e.amount || 0), 0);
+    const stockValue = drugs.reduce((sum, d) => {
+      const stockUnitsWorth = d.baseUnitsPerStock ? (d.currentStockBase / d.baseUnitsPerStock) * (d.wholesale || 0) : 0;
+      return sum + stockUnitsWorth;
+    }, 0);
+    const lowStockCount = drugs.filter(d => d.reorderLevel && d.currentStockBase <= d.reorderLevel).length;
+    const expiredCount = batches.filter(b => daysUntil(b.expiryDate) < 0 && b.quantity > 0).length;
+
+    document.getElementById("statSales").textContent = fmt(totalSales);
+    document.getElementById("statExpenses").textContent = fmt(totalExpenses);
+    document.getElementById("statNet").textContent = fmt(totalSales - totalExpenses);
+    document.getElementById("statStockValue").textContent = fmt(stockValue);
+    document.getElementById("statLowStock").textContent = lowStockCount;
+    document.getElementById("statExpired").textContent = expiredCount;
+
+    // ---- Per-shop breakdown ----
+    const shopIds = Object.keys(shopsById);
+    const container = document.getElementById("shopBreakdown");
+    if (shopIds.length === 0) {
+      container.innerHTML = '<div class="empty">No shops yet — add one on the Shops page.</div>';
+      return;
+    }
+    container.innerHTML = shopIds.map(id => {
+      const name = shopsById[id];
+      const shopSales = salesThisMonth.filter(s => s.shopId === id).reduce((sum, s) => sum + (s.total || 0), 0);
+      const shopExpenses = expensesThisMonth.filter(e => e.shopId === id).reduce((sum, e) => sum + (e.amount || 0), 0);
+      const net = shopSales - shopExpenses;
+      const shopLowStock = drugs.filter(d => d.shopId === id && d.reorderLevel && d.currentStockBase <= d.reorderLevel).length;
+      const shopExpiring = batches.filter(b => b.shopId === id && daysUntil(b.expiryDate) >= 0 && daysUntil(b.expiryDate) <= 30 && b.quantity > 0).length;
+      return `
+        <div class="shop-card">
+          <div class="shop-name">${name}</div>
+          <div class="shop-row"><span>Sales</span><span class="v good">${fmt(shopSales)}</span></div>
+          <div class="shop-row"><span>Expenses</span><span class="v">${fmt(shopExpenses)}</span></div>
+          <div class="shop-row"><span>Net</span><span class="v ${net >= 0 ? "good" : "bad"}">${fmt(net)}</span></div>
+          <div class="shop-row"><span>Low stock items</span><span class="v">${shopLowStock}</span></div>
+          <div class="shop-row"><span>Expiring ≤30d</span><span class="v">${shopExpiring}</span></div>
+        </div>`;
+    }).join("");
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+    currentUser = user;
+    const userSnap = await getDoc(doc(db, "users", user.uid));
+    if (!userSnap.exists()) { window.location.href = "login.html"; return; }
+
+    const badge = document.getElementById("netBadge");
+    function markLoaded(fromCache) {
+      badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
+      badge.className = "badge " + (fromCache ? "offline" : "online");
+    }
+
+    onSnapshot(query(collection(db, "shops"), where("ownerUid", "==", user.uid)), (snap) => {
+      shopsById = {};
+      snap.docs.forEach(d => { shopsById[d.id] = d.data().name; });
+      renderAll();
+    });
+
+    onSnapshot(query(collection(db, "sales"), where("ownerUid", "==", user.uid)), { includeMetadataChanges: true }, (snap) => {
+      sales = snap.docs.map(d => d.data());
+      markLoaded(snap.metadata.fromCache);
+      renderAll();
+    });
+
+    onSnapshot(query(collection(db, "expenses"), where("ownerUid", "==", user.uid)), (snap) => {
+      expenses = snap.docs.map(d => d.data());
+      renderAll();
+    });
+
+    onSnapshot(query(collection(db, "drugs"), where("ownerUid", "==", user.uid)), (snap) => {
+      drugs = snap.docs.map(d => d.data());
+      renderAll();
+    });
+
+    onSnapshot(query(collection(db, "batches"), where("ownerUid", "==", user.uid)), (snap) => {
+      batches = snap.docs.map(d => d.data());
+      renderAll();
+    });
+  });
+</script>
+</body>
+</html>
