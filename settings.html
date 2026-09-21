@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MediStock Cloud — Suppliers</title>
+<title>MediStock Cloud — Settings</title>
 <style>
   :root{
     --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
@@ -19,7 +19,6 @@
     background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
   }
   h1{font-size:19px; margin:0;}
-  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
   .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
   .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
   .card{
@@ -27,22 +26,19 @@
     padding:16px; margin-bottom:14px;
   }
   .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  .card .hint-top{font-size:12.5px; color:var(--muted); margin:-4px 0 12px;}
   label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
-  input, textarea{
+  input, select{
     width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
-    background:var(--card); color:var(--text); font-size:14px; font-family:inherit;
+    background:var(--card); color:var(--text); font-size:14px;
   }
-  input:focus, textarea:focus{outline:none; border-color:var(--accent);}
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
   .row{display:flex; gap:8px;} .row > *{flex:1;}
   button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
-  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:12px;}
-  .supplier-item{padding:12px 0; border-bottom:1px solid var(--border);}
-  .supplier-item:last-child{border-bottom:none;}
-  .sup-name{font-size:15px; font-weight:600;}
-  .sup-meta{font-size:12px; color:var(--muted); margin-top:2px;}
-  .del-btn{background:transparent; color:var(--danger); border:1px solid var(--danger); padding:3px 8px; font-size:11px; margin-top:6px;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:14px;}
   .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
-  .link{color:var(--accent); font-size:13px; text-decoration:none;}
+  .hint{font-size:11px; color:var(--muted); margin-top:6px;}
+  .hidden{display:none !important;}
 
   /* ===== Shared MediStock Cloud navigation (matches MediStock Pro) ===== */
   .app-header{
@@ -110,7 +106,7 @@
 
 <header class="app-header">
   <h1>MediStock Cloud</h1>
-  <p>Multi-Shop Edition · Suppliers</p>
+  <p>Multi-Shop Edition · Settings</p>
 </header>
 <div class="nav-bar">
   <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
@@ -129,39 +125,54 @@
   <a href="whattobuy.html">What to Buy</a>
   <a href="expenses.html">Expenses</a>
   <a href="credit.html">Credit / Loans</a>
-  <a href="suppliers.html" class="active">Suppliers</a>
+  <a href="suppliers.html">Suppliers</a>
   <a href="shops.html">Shops</a>
-  <a href="settings.html">Settings</a>
+  <a href="settings.html" class="active">Settings</a>
   <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
 </nav>
+
 <div class="card">
-  <h2>Add Supplier</h2>
-  <label>Name *</label>
-  <input type="text" id="s_name" placeholder="e.g. ABC Pharmaceuticals">
+  <h2>Business Details</h2>
+  <div class="hint-top">Shared across every shop in this business.</div>
+  <label>Business name</label>
+  <input type="text" id="set_businessName" placeholder="e.g. Kuweera Drug Shops">
   <div class="row">
     <div>
       <label>Phone</label>
-      <input type="text" id="s_phone" placeholder="e.g. 0700 000000">
+      <input type="text" id="set_phone" placeholder="e.g. 07XXXXXXXX">
     </div>
     <div>
-      <label>Contact person</label>
-      <input type="text" id="s_contact" placeholder="e.g. Mr. Okello">
+      <label>Currency label</label>
+      <input type="text" id="set_currency" placeholder="UGX">
     </div>
   </div>
-  <label>Email</label>
-  <input type="text" id="s_email" placeholder="optional">
-  <label>Address</label>
-  <input type="text" id="s_address" placeholder="optional">
-  <label>Notes</label>
-  <textarea id="s_notes" rows="2" placeholder="optional"></textarea>
-
-  <button class="btn-primary" onclick="saveSupplier()">Save Supplier</button>
-  <div id="saveStatus" style="font-size:13px; margin-top:8px;"></div>
+  <label>Address / head office</label>
+  <input type="text" id="set_address" placeholder="e.g. Main Street, Buwenge">
+  <label>Default reorder level (used when adding a new drug)</label>
+  <input type="number" id="set_reorderDefault" min="0" placeholder="e.g. 10">
+  <button class="btn-primary" id="saveBusinessBtn">Save Business Details</button>
+  <div id="businessStatus" style="font-size:13px; margin-top:8px;"></div>
 </div>
 
 <div class="card">
-  <h2>Your Suppliers</h2>
-  <div id="supplierList"><div class="empty">Loading…</div></div>
+  <h2>Starting Cash Balance</h2>
+  <div class="hint-top">
+    How much actual business cash did you have on the day you started using MediStock Cloud?
+    This is the starting point for Real Cash Available on the Cash Position page — you only need to set this once.
+    This is per-shop, since each shop's till is separate.
+  </div>
+  <label>Shop</label>
+  <select id="set_shopSelect"></select>
+  <label>Starting cash for this shop</label>
+  <input type="number" id="set_startingCash" min="0" placeholder="e.g. 200000">
+  <button class="btn-primary" id="saveStartingCashBtn">Save Starting Cash</button>
+  <div id="cashStatus" style="font-size:13px; margin-top:8px;"></div>
+</div>
+
+<div class="card">
+  <h2>Account</h2>
+  <div class="hint-top">Signed in as <b id="whoAmI">—</b></div>
+  <button class="btn-primary" style="background:var(--danger);" id="logoutBtn">Log Out</button>
 </div>
 
 <script>
@@ -178,7 +189,7 @@
 
     var themeBtn = document.getElementById('themeToggle');
     var order = ['auto','light','dark'];
-    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    var labels = {auto:'🌓 Theme: Auto', light:'☀️ Theme: Light', dark:'🌙 Theme: Dark'};
     function applyPref(pref){
       var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
       document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
@@ -193,12 +204,13 @@
     });
   })();
 </script>
+
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
-  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, deleteDoc, collection, addDoc, onSnapshot,
-    enableIndexedDbPersistence, serverTimestamp, query, where
+    getFirestore, doc, getDoc, getDocs, setDoc, collection, onSnapshot,
+    enableIndexedDbPersistence, query, where
   } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -217,72 +229,86 @@
 
   let currentUser = null;
   let currentBusinessId = null;
-  let allSuppliers = [];
+  let allShops = [];
 
-  window.saveSupplier = async function () {
-    const statusEl = document.getElementById("saveStatus");
-    const name = document.getElementById("s_name").value.trim();
-    if (!name) { statusEl.textContent = "Enter a supplier name."; statusEl.style.color = "var(--danger)"; return; }
+  window.doLogout = async function () { await signOut(auth); };
+  document.getElementById("logoutBtn").addEventListener("click", () => window.doLogout());
 
+  document.getElementById("saveBusinessBtn").addEventListener("click", async () => {
+    const statusEl = document.getElementById("businessStatus");
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
-      await addDoc(collection(db, "suppliers"), {
-        businessId: currentBusinessId,
-        ownerUid: currentUser.uid,
-        name,
-        phone: document.getElementById("s_phone").value.trim(),
-        contactPerson: document.getElementById("s_contact").value.trim(),
-        email: document.getElementById("s_email").value.trim(),
-        address: document.getElementById("s_address").value.trim(),
-        notes: document.getElementById("s_notes").value.trim(),
-        createdAt: serverTimestamp()
-      });
+      await setDoc(doc(db, "businesses", currentBusinessId), {
+        name: document.getElementById("set_businessName").value.trim(),
+        phone: document.getElementById("set_phone").value.trim(),
+        currency: document.getElementById("set_currency").value.trim() || "UGX",
+        address: document.getElementById("set_address").value.trim(),
+        reorderDefault: Number(document.getElementById("set_reorderDefault").value) || 0
+      }, { merge: true });
       statusEl.textContent = "Saved.";
-      ["s_name","s_phone","s_contact","s_email","s_address","s_notes"].forEach(id => document.getElementById(id).value = "");
+      statusEl.style.color = "var(--accent2)";
     } catch (err) {
       statusEl.textContent = "Failed: " + err.message;
       statusEl.style.color = "var(--danger)";
     }
-  };
+  });
 
-  window.deleteSupplier = async function (id) {
-    if (!confirm("Delete this supplier? Past purchases will keep the supplier name on record.")) return;
-    try { await deleteDoc(doc(db, "suppliers", id)); }
-    catch (err) { alert("Couldn't delete: " + err.message); }
-  };
-
-  function renderList() {
-    const container = document.getElementById("supplierList");
-    if (allSuppliers.length === 0) {
-      container.innerHTML = '<div class="empty">No suppliers yet.</div>';
-      return;
-    }
-    container.innerHTML = allSuppliers.map(s => `
-      <div class="supplier-item">
-        <div class="sup-name">${s.name}</div>
-        <div class="sup-meta">${[s.contactPerson, s.phone, s.email].filter(Boolean).join(" · ")}</div>
-        ${s.address ? `<div class="sup-meta">${s.address}</div>` : ""}
-        ${s.notes ? `<div class="sup-meta">${s.notes}</div>` : ""}
-        <button class="del-btn" onclick="deleteSupplier('${s.id}')">Delete</button>
-      </div>`).join("");
+  async function loadStartingCashForSelectedShop() {
+    const shopId = document.getElementById("set_shopSelect").value;
+    if (!shopId) { document.getElementById("set_startingCash").value = 0; return; }
+    const shop = allShops.find(s => s.id === shopId);
+    document.getElementById("set_startingCash").value = (shop && shop.startingCash) || 0;
   }
+  document.getElementById("set_shopSelect").addEventListener("change", loadStartingCashForSelectedShop);
+
+  document.getElementById("saveStartingCashBtn").addEventListener("click", async () => {
+    const statusEl = document.getElementById("cashStatus");
+    const shopId = document.getElementById("set_shopSelect").value;
+    if (!shopId) { statusEl.textContent = "Add a shop first (Shops page)."; statusEl.style.color = "var(--danger)"; return; }
+    const val = Number(document.getElementById("set_startingCash").value) || 0;
+    try {
+      statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
+      await setDoc(doc(db, "shops", shopId), { startingCash: val }, { merge: true });
+      statusEl.textContent = "Starting cash saved.";
+      statusEl.style.color = "var(--accent2)";
+    } catch (err) {
+      statusEl.textContent = "Failed: " + err.message;
+      statusEl.style.color = "var(--danger)";
+    }
+  });
 
   onAuthStateChanged(auth, async (user) => {
     if (!user) { window.location.href = "login.html"; return; }
     currentUser = user;
+    document.getElementById("whoAmI").textContent = user.email;
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.location.href = "login.html"; return; }
     currentBusinessId = userSnap.data().businessId;
 
-    const suppliersQ = query(collection(db, "suppliers"), where("ownerUid", "==", user.uid));
-    onSnapshot(suppliersQ, { includeMetadataChanges: true }, (snap) => {
-      const badge = document.getElementById("netBadge");
-      const fromCache = snap.metadata.fromCache;
-      badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
-      badge.className = "badge " + (fromCache ? "offline" : "online");
-      allSuppliers = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
-      renderList();
-    });
+    const bizSnap = await getDoc(doc(db, "businesses", currentBusinessId));
+    const badge = document.getElementById("netBadge");
+    badge.textContent = "online (synced)";
+    badge.className = "badge online";
+    if (bizSnap.exists()) {
+      const b = bizSnap.data();
+      document.getElementById("set_businessName").value = b.name || "";
+      document.getElementById("set_phone").value = b.phone || "";
+      document.getElementById("set_currency").value = b.currency || "UGX";
+      document.getElementById("set_address").value = b.address || "";
+      document.getElementById("set_reorderDefault").value = b.reorderDefault || "";
+    }
+
+    const shopsSnap = await getDocs(query(collection(db, "shops"), where("ownerUid", "==", user.uid)));
+    allShops = shopsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const sel = document.getElementById("set_shopSelect");
+    sel.innerHTML = allShops.length
+      ? allShops.map(s => `<option value="${s.id}">${s.name}</option>`).join("")
+      : '<option value="">No shops yet — add one on the Shops page</option>';
+    if (allShops.length) {
+      const activeId = localStorage.getItem("mc_activeShopId");
+      if (allShops.some(s => s.id === activeId)) sel.value = activeId;
+      loadStartingCashForSelectedShop();
+    }
   });
 </script>
 </body>
