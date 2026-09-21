@@ -6,8 +6,12 @@
 <title>MediStock Cloud — Expenses</title>
 <style>
   :root{
-    --bg:#0f1115; --card:#171a21; --text:#e8e8ea; --muted:#9aa0aa;
-    --accent:#3b82f6; --accent2:#22c55e; --danger:#ef4444; --border:#2a2e38;
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
   }
   *{box-sizing:border-box;}
   body{
@@ -16,17 +20,17 @@
   }
   h1{font-size:19px; margin:0;}
   .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
-  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:#1d2230; color:var(--muted);}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
   .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
   .card{
     background:var(--card); border:1px solid var(--border); border-radius:14px;
     padding:16px; margin-bottom:14px;
   }
-  .card h2{font-size:14px; margin:0 0 12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
   label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
   input, select, textarea{
     width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
-    background:#0d0f14; color:var(--text); font-size:14px; font-family:inherit;
+    background:var(--card); color:var(--text); font-size:14px; font-family:inherit;
   }
   input:focus, select:focus, textarea:focus{outline:none; border-color:var(--accent);}
   .row{display:flex; gap:8px;} .row > *{flex:1;}
@@ -45,17 +49,97 @@
   .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
   .link{color:var(--accent); font-size:13px; text-decoration:none;}
   .total-line{font-size:15px; font-weight:700; margin-bottom:10px;}
+
+  /* ===== Shared MediStock Cloud navigation (matches MediStock Pro) ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
 </style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
 </head>
 <body>
 
-<div class="topbar">
-  <h1>Expenses</h1>
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Multi-Shop Edition · Expenses</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="location.href='dashboard.html'">🏠 Home</div>
   <span class="badge" id="netBadge">checking…</span>
 </div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html" class="active">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="shops.html">Shops</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
 <div class="hint" id="shopIndicator" style="margin-bottom:8px;"></div>
-
-<div style="margin-bottom:12px;"><a class="link" href="inventory.html">← Inventory</a> &nbsp;·&nbsp; <a class="link" href="sales.html">Sell</a> &nbsp;·&nbsp; <a class="link" href="batches.html">Batches →</a> &nbsp;·&nbsp; <a class="link" href="shops.html">Shops →</a> &nbsp;·&nbsp; <a class="link" href="dashboard.html">Dashboard →</a></div>
 
 <div class="card">
   <h2>Record Expense</h2>
@@ -88,6 +172,35 @@
   <div id="expenseList"><div class="empty">Loading…</div></div>
 </div>
 
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";

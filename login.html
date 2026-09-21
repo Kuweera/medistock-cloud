@@ -6,8 +6,12 @@
 <title>MediStock Cloud — Login</title>
 <style>
   :root{
-    --bg:#0f1115; --card:#171a21; --text:#e8e8ea; --muted:#9aa0aa;
-    --accent:#3b82f6; --accent2:#22c55e; --danger:#ef4444; --border:#2a2e38;
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
   }
   *{box-sizing:border-box;}
   body{
@@ -15,17 +19,17 @@
     background:var(--bg); color:var(--text); min-height:100vh;
     display:flex; flex-direction:column; align-items:center; padding:24px 16px;
   }
-  h1{font-size:20px; margin:0 0 4px;}
+  h1{font-size:20px; margin:0 0 4px; color:var(--accent);}
   .sub{color:var(--muted); font-size:13px; margin-bottom:24px;}
   .card{
     width:100%; max-width:420px; background:var(--card);
     border:1px solid var(--border); border-radius:14px; padding:20px; margin-bottom:16px;
   }
-  .card h2{font-size:15px; margin:0 0 14px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
   label{display:block; font-size:13px; color:var(--muted); margin:10px 0 4px;}
   input{
     width:100%; padding:11px 12px; border-radius:9px; border:1px solid var(--border);
-    background:#0d0f14; color:var(--text); font-size:15px;
+    background:var(--card); color:var(--text); font-size:15px;
   }
   input:focus{outline:none; border-color:var(--accent);}
   button{
@@ -48,15 +52,24 @@
   }
   .item:last-child{border-bottom:none;}
   .item .qty{color:var(--muted);}
-  .badge{font-size:11px; padding:2px 8px; border-radius:999px; background:#1d2230; color:var(--muted);}
+  .badge{font-size:11px; padding:2px 8px; border-radius:999px; background:var(--border); color:var(--muted);}
   .badge.online{color:var(--accent2);}
   .badge.offline{color:var(--danger);}
 </style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
 </head>
 <body>
 
-<h1>MediStock Cloud</h1>
-<div class="sub">Step 1 — Auth + Firestore connectivity test</div>
+<h1>💊 MediStock Cloud</h1>
+<div class="sub">Multi-Shop Edition</div>
 
 <!-- AUTH CARD -->
 <div class="card" id="authCard">
