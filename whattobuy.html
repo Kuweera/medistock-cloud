@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStock Cloud — What to Buy</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --text:#e8e8ea; --muted:#9aa0aa;
+    --accent:#3b82f6; --accent2:#22c55e; --danger:#ef4444; --border:#2a2e38;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:#1d2230; color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 8px;}
+  .meta{font-size:12px; color:var(--muted); margin:0 0 6px;}
+  .stock-line{font-size:13px; margin:8px 0;}
+  .badge-status{font-size:11px; padding:3px 9px; border-radius:999px; font-weight:700;}
+  .badge-status.out{background:rgba(239,68,68,.18); color:var(--danger);}
+  .badge-status.low{background:rgba(234,179,8,.18); color:#eab308;}
+  .row-top{display:flex; justify-content:space-between; align-items:flex-start;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:10px; margin-top:8px;}
+  .btn-toggle{background:transparent; color:var(--accent); border:1px solid var(--accent); padding:6px 12px; font-size:12px;}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+  .link{color:var(--accent); font-size:13px; text-decoration:none;}
+  .unconf-row{display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border);}
+  .unconf-row:last-child{border-bottom:none;}
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>What to Buy</h1>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+
+<div style="margin-bottom:12px;">
+  <a class="link" href="inventory.html">Inventory</a> &nbsp;·&nbsp;
+  <a class="link" href="purchases.html">Purchases</a> &nbsp;·&nbsp;
+  <a class="link" href="dashboard.html">Dashboard</a>
+</div>
+
+<div class="card">
+  <h2>What to Buy</h2>
+  <p class="meta">Generated automatically from each medicine's reorder level — nothing here is added by hand. Suggested quantities target each drug's Target Stock Level, so they grow the further stock has fallen. A drug drops off this list the moment it's restocked above its threshold.</p>
+</div>
+
+<div id="restockContainer"><div class="empty">Loading…</div></div>
+
+<div class="card hidden" id="unconfiguredCard">
+  <h2>Not yet configured</h2>
+  <div class="meta" id="unconfiguredIntro"></div>
+  <div id="unconfiguredList"></div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import {
+    getFirestore, doc, getDoc, getDocs, collection, onSnapshot,
+    enableIndexedDbPersistence, query, where
+  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {});
+
+  const PackagingEngine = {
+    baseToBreakdown(baseQty, baseUnitsPerStock, basePerIntermediate) {
+      baseUnitsPerStock = Number(baseUnitsPerStock) || 0;
+      basePerIntermediate = Number(basePerIntermediate) || 0;
+      let stockUnits = 0, remainder = baseQty;
+      if (baseUnitsPerStock > 0) {
+        stockUnits = Math.floor(baseQty / baseUnitsPerStock);
+        remainder = baseQty - stockUnits * baseUnitsPerStock;
+      }
+      let intermediateUnits = 0, looseBase = remainder;
+      if (basePerIntermediate > 0) {
+        intermediateUnits = Math.floor(remainder / basePerIntermediate);
+        looseBase = remainder - intermediateUnits * basePerIntermediate;
+      }
+      return { stockUnits, intermediateUnits, looseBase };
+    }
+  };
+
+  // Exact port of V1's computeSuggestedReorderQty
+  function computeSuggestedReorderQty(d) {
+    const baseUnitsPerStock = Number(d.baseUnitsPerStock || 1);
+    const currentStockUnits = Number(d.currentStockBase || 0) / baseUnitsPerStock;
+    const target = Number(d.targetStock || 0);
+    return Math.max(1, Math.ceil(target - currentStockUnits));
+  }
+
+  window.jumpToPurchase = function (drugId, suggestedStockUnitQty, baseUnitsPerStock) {
+    const qtyBase = Math.round(suggestedStockUnitQty * baseUnitsPerStock);
+    window.location.href = `purchases.html?drugId=${encodeURIComponent(drugId)}&qty=${qtyBase}`;
+  };
+  window.goSetReorderLevel = function (drugId) {
+    window.location.href = `inventory.html?edit=${encodeURIComponent(drugId)}`;
+  };
+
+  function render(drugs) {
+    drugs = drugs.filter(d => d.active !== false);
+    const configured = drugs.filter(d => Number(d.reorderLevel) > 0);
+    const unconfigured = drugs.filter(d => !(Number(d.reorderLevel) > 0));
+
+    const needsRestock = configured.map(d => {
+      const thresholdBase = Number(d.reorderLevel) * Number(d.baseUnitsPerStock || 1);
+      const deficitBase = thresholdBase - Number(d.currentStockBase || 0);
+      const suggestedQty = computeSuggestedReorderQty(d);
+      return { d, thresholdBase, deficitBase, suggestedQty };
+    }).filter(x => x.deficitBase >= 0)
+      .sort((a, b) => (b.deficitBase / b.thresholdBase) - (a.deficitBase / a.thresholdBase));
+
+    const container = document.getElementById("restockContainer");
+    if (needsRestock.length === 0) {
+      container.innerHTML = '<div class="card"><div class="empty">Nothing needs restocking right now — every configured medicine is above its reorder level.</div></div>';
+    } else {
+      container.innerHTML = needsRestock.map(({ d, thresholdBase, suggestedQty }) => {
+        const bd = PackagingEngine.baseToBreakdown(Number(d.currentStockBase) || 0, Number(d.baseUnitsPerStock) || 1, Number(d.basePerIntermediate) || 1);
+        const currentLine = d.hasIntermediate
+          ? `${bd.stockUnits} ${d.stockUnit}(s) + ${bd.intermediateUnits} ${d.intermediateUnit}(s) + ${bd.looseBase} ${d.baseUnit}(s)`
+          : `${bd.stockUnits} ${d.stockUnit}(s) + ${bd.looseBase} ${d.baseUnit}(s)`;
+        const outOfStock = Number(d.currentStockBase) <= 0;
+        return `
+          <div class="card">
+            <div class="row-top">
+              <div><h2 style="margin:0;">${d.name}</h2><div class="meta">${d.drugClass || ""}</div></div>
+              <span class="badge-status ${outOfStock ? "out" : "low"}">${outOfStock ? "OUT OF STOCK" : "LOW"}</span>
+            </div>
+            <div class="stock-line">
+              Current: ${Number(d.currentStockBase || 0).toLocaleString()} ${d.baseUnit}(s)<br>
+              = ${currentLine}<br>
+              Reorder level: ${Number(d.reorderLevel)} ${d.stockUnit}(s) (${thresholdBase.toLocaleString()} ${d.baseUnit}(s))
+            </div>
+            <div class="meta"><b>Suggested purchase: ${suggestedQty} ${d.stockUnit}(s)</b>${d.supplier ? " · Supplier: " + d.supplier : " · No supplier on file"}</div>
+            <button class="btn-primary" onclick="jumpToPurchase('${d.id}', ${suggestedQty}, ${Number(d.baseUnitsPerStock) || 1})">Purchase now</button>
+          </div>`;
+      }).join("");
+    }
+
+    const unconfCard = document.getElementById("unconfiguredCard");
+    if (unconfigured.length > 0) {
+      unconfCard.classList.remove("hidden");
+      document.getElementById("unconfiguredIntro").textContent =
+        `${unconfigured.length} medicine(s) have no reorder level set yet, so they'll never appear here automatically.`;
+      document.getElementById("unconfiguredList").innerHTML = unconfigured.map(d => `
+        <div class="unconf-row">
+          <span>${d.name}${d.drugClass ? ` <span class="meta">(${d.drugClass})</span>` : ""}</span>
+          <button class="btn-toggle" onclick="goSetReorderLevel('${d.id}')">Set reorder level</button>
+        </div>`).join("");
+    } else {
+      unconfCard.classList.add("hidden");
+    }
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+    const userSnap = await getDoc(doc(db, "users", user.uid));
+    if (!userSnap.exists()) { window.location.href = "login.html"; return; }
+
+    const shopsSnap = await getDocs(query(collection(db, "shops"), where("ownerUid", "==", user.uid)));
+    const activeId = localStorage.getItem("mc_activeShopId");
+    const foundShop = shopsSnap.docs.find(d => d.id === activeId);
+    const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
+    const currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
+
+    const drugsQ = query(collection(db, "drugs"), where("ownerUid", "==", user.uid), where("shopId", "==", currentShopId));
+    onSnapshot(drugsQ, { includeMetadataChanges: true }, (snap) => {
+      const badge = document.getElementById("netBadge");
+      const fromCache = snap.metadata.fromCache;
+      badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
+      badge.className = "badge " + (fromCache ? "offline" : "online");
+      render(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+  });
+</script>
+</body>
+</html>

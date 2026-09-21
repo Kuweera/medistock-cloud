@@ -59,6 +59,7 @@
   <a class="link" href="inventory.html">Inventory</a> &nbsp;·&nbsp;
   <a class="link" href="batches.html">Batches</a> &nbsp;·&nbsp;
   <a class="link" href="suppliers.html">Suppliers →</a> &nbsp;·&nbsp;
+  <a class="link" href="whattobuy.html">What to Buy →</a> &nbsp;·&nbsp;
   <a class="link" href="dashboard.html">Dashboard →</a>
 </div>
 
@@ -145,6 +146,19 @@
   let allDrugs = [];
   let allSuppliers = [];
   let allPurchases = [];
+
+  let handoffApplied = false;
+  function applyHandoffFromWhatToBuy() {
+    if (handoffApplied) return;
+    const params = new URLSearchParams(window.location.search);
+    const drugId = params.get("drugId");
+    const qty = params.get("qty");
+    if (!drugId || !allDrugs.find(d => d.id === drugId)) return;
+    document.getElementById("p_drug").value = drugId;
+    if (qty) document.getElementById("p_quantity").value = qty;
+    updateTotalPreview();
+    handoffApplied = true;
+  }
 
   function populateSelects() {
     const supSel = document.getElementById("p_supplier");
@@ -264,6 +278,7 @@
     onSnapshot(drugsQ, (snap) => {
       allDrugs = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
       populateSelects();
+      applyHandoffFromWhatToBuy();
     });
 
     const suppliersQ = query(collection(db, "suppliers"), where("ownerUid", "==", user.uid));

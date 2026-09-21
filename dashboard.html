@@ -57,7 +57,8 @@
   <a class="link" href="credit.html">Credit</a> &nbsp;·&nbsp;
   <a class="link" href="purchases.html">Purchases</a> &nbsp;·&nbsp;
   <a class="link" href="suppliers.html">Suppliers</a> &nbsp;·&nbsp;
-  <a class="link" href="stocktake.html">Stock Taking</a>
+  <a class="link" href="stocktake.html">Stock Taking</a> &nbsp;·&nbsp;
+  <a class="link" href="whattobuy.html">What to Buy</a>
 </div>
 
 <div class="card">
@@ -133,7 +134,7 @@
       const stockUnitsWorth = d.baseUnitsPerStock ? (d.currentStockBase / d.baseUnitsPerStock) * (d.wholesale || 0) : 0;
       return sum + stockUnitsWorth;
     }, 0);
-    const lowStockCount = drugs.filter(d => d.reorderLevel && d.currentStockBase <= d.reorderLevel).length;
+    const lowStockCount = drugs.filter(d => d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock)).length;
     const expiredCount = batches.filter(b => daysUntil(b.expiryDate) < 0 && b.quantity > 0).length;
     const balancesById = {};
     creditTxns.forEach(t => { balancesById[t.customerId] = (balancesById[t.customerId] || 0) + (t.balanceChange || 0); });
@@ -159,7 +160,7 @@
       const shopSales = salesThisMonth.filter(s => s.shopId === id).reduce((sum, s) => sum + (s.total || 0), 0);
       const shopExpenses = expensesThisMonth.filter(e => e.shopId === id).reduce((sum, e) => sum + (e.amount || 0), 0);
       const net = shopSales - shopExpenses;
-      const shopLowStock = drugs.filter(d => d.shopId === id && d.reorderLevel && d.currentStockBase <= d.reorderLevel).length;
+      const shopLowStock = drugs.filter(d => d.shopId === id && d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock)).length;
       const shopExpiring = batches.filter(b => b.shopId === id && daysUntil(b.expiryDate) >= 0 && daysUntil(b.expiryDate) <= 30 && b.quantity > 0).length;
       return `
         <div class="shop-card">
