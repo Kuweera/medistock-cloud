@@ -35,17 +35,24 @@
   input:focus{outline:none; border-color:var(--accent);}
   button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
   .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent); padding:9px 12px;}
   .shop-item{
-    display:flex; justify-content:space-between; align-items:center;
     padding:12px; border:1px solid var(--border); border-radius:10px; margin-bottom:8px;
   }
   .shop-item.active{border-color:var(--accent2); background:rgba(34,197,94,.08);}
+  .shop-top{display:flex; justify-content:space-between; align-items:flex-start; gap:8px;}
   .shop-name{font-size:15px; font-weight:600;}
+  .shop-meta{font-size:12.5px; color:var(--muted); margin-top:2px;}
   .shop-tag{font-size:11px; color:var(--accent2); margin-left:8px;}
+  .btn-row{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
   .switch-btn{background:transparent; color:var(--accent); border:1px solid var(--accent); padding:6px 12px; font-size:12px;}
+  .edit-btn{background:transparent; color:var(--muted); border:1px solid var(--border); padding:6px 12px; font-size:12px;}
   .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
   .link{color:var(--accent); font-size:13px; text-decoration:none;}
   .hint{font-size:11px; color:var(--muted); margin-top:8px;}
+  .edit-block{display:none; margin-top:10px; padding-top:10px; border-top:1px solid var(--border);}
+  .edit-block.open{display:block;}
+  #status, #ownerGate{font-size:13px; margin-top:8px;}
 
   /* ===== Shared MediStock Cloud navigation (matches MediStock Pro) ===== */
   .app-header{
@@ -136,18 +143,33 @@
   <a href="shops.html" class="active">Shops</a>
   <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
 </nav>
-<div class="card">
-  <h2>Your Shops</h2>
-  <div id="shopList"><div class="empty">Loading…</div></div>
-  <div class="hint">"Active" is which shop THIS device works in right now — every sale, drug, expense, and batch you add here goes under that shop. Tap "Switch to this" to change it.</div>
+
+<div class="card" id="ownerGateCard" style="display:none;">
+  <div id="ownerGate">Shops management is owner-only. Redirecting…</div>
 </div>
 
-<div class="card">
-  <h2>Add a New Shop</h2>
-  <label>Shop name</label>
-  <input type="text" id="newShopName" placeholder="e.g. Kireka Branch">
-  <button class="btn-primary" onclick="addShop()">Add Shop</button>
-  <div id="addStatus" style="font-size:13px; margin-top:8px;"></div>
+<div id="ownerContent" style="display:none;">
+  <div class="card">
+    <h2>Your Shops</h2>
+    <div id="shopList"><div class="empty">Loading…</div></div>
+    <div class="hint">
+      "Viewing" is which shop <b>you, the owner</b> are currently working in on this device —
+      it never affects operators, whose shop is fixed to their own account and can't be switched.
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Add a New Shop</h2>
+    <label>Shop name</label>
+    <input type="text" id="newShopName" placeholder="e.g. Kireka Branch">
+    <label>Location</label>
+    <input type="text" id="newShopLocation" placeholder="e.g. Kireka Trading Centre">
+    <label>Shop Code</label>
+    <input type="text" id="newShopCode" placeholder="e.g. KIREKA" style="text-transform:uppercase;">
+    <div class="hint">Operators use this code to log in — keep it short and unique. Letters/numbers only.</div>
+    <button class="btn-primary" onclick="addShop()">Add Shop</button>
+    <div id="status"></div>
+  </div>
 </div>
 
 <script>
@@ -183,8 +205,8 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, collection, addDoc, onSnapshot,
-    enableIndexedDbPersistence, serverTimestamp, query, where
+    getFirestore, doc, getDoc, updateDoc, collection, addDoc, onSnapshot,
+    enableIndexedDbPersistence, serverTimestamp, query, where, getDocs
   } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -205,7 +227,14 @@
   let currentBusinessId = null;
   let allShops = [];
 
-  function activeShopId() {
+  function sanitizeCode(code) {
+    return code.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  }
+
+  // "Viewing" shop is the OWNER's own per-device navigation context only —
+  // it has no bearing on security and is never read for operators, whose
+  // shop comes from their account (users/{uid}.shopId), fixed at creation.
+  function viewingShopId() {
     return localStorage.getItem("mc_activeShopId");
   }
 
@@ -214,22 +243,78 @@
     renderList();
   };
 
-  window.addShop = async function () {
-    const statusEl = document.getElementById("addStatus");
-    const name = document.getElementById("newShopName").value.trim();
-    if (!name) { statusEl.textContent = "Enter a shop name."; statusEl.style.color = "var(--danger)"; return; }
+  window.toggleEdit = function (id) {
+    const block = document.getElementById("edit-" + id);
+    if (block) block.classList.toggle("open");
+  };
+
+  window.saveShopEdit = async function (id) {
+    const name = document.getElementById("edit-name-" + id).value.trim();
+    const location = document.getElementById("edit-location-" + id).value.trim();
+    const shopCode = sanitizeCode(document.getElementById("edit-code-" + id).value);
+    const statusEl = document.getElementById("edit-status-" + id);
+    if (!name || !shopCode) {
+      statusEl.textContent = "Name and Shop Code are required.";
+      statusEl.style.color = "var(--danger)";
+      return;
+    }
+    const clash = allShops.find(s => s.id !== id && sanitizeCode(s.shopCode || "") === shopCode);
+    if (clash) {
+      statusEl.textContent = `Shop Code "${shopCode}" is already used by ${clash.name}.`;
+      statusEl.style.color = "var(--danger)";
+      return;
+    }
     try {
-      statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
+      statusEl.textContent = "Saving…";
+      statusEl.style.color = "var(--muted)";
+      await updateDoc(doc(db, "shops", id), { name, location, shopCode });
+      statusEl.textContent = "Saved. Note: any operators already assigned to this shop keep working — only NEW logins need the updated Shop Code.";
+      statusEl.style.color = "var(--accent2)";
+    } catch (err) {
+      statusEl.textContent = "Failed: " + err.message;
+      statusEl.style.color = "var(--danger)";
+    }
+  };
+
+  window.addShop = async function () {
+    const statusEl = document.getElementById("status");
+    const name = document.getElementById("newShopName").value.trim();
+    const location = document.getElementById("newShopLocation").value.trim();
+    const shopCode = sanitizeCode(document.getElementById("newShopCode").value);
+
+    if (!name || !shopCode) {
+      statusEl.textContent = "Shop name and Shop Code are both required.";
+      statusEl.style.color = "var(--danger)";
+      return;
+    }
+
+    try {
+      statusEl.textContent = "Checking Shop Code…";
+      statusEl.style.color = "var(--muted)";
+      const existing = await getDocs(query(
+        collection(db, "shops"),
+        where("businessId", "==", currentBusinessId),
+        where("shopCode", "==", shopCode)
+      ));
+      if (!existing.empty) {
+        statusEl.textContent = `Shop Code "${shopCode}" is already in use — pick another.`;
+        statusEl.style.color = "var(--danger)";
+        return;
+      }
+
+      statusEl.textContent = "Saving…";
       const ref = await addDoc(collection(db, "shops"), {
         businessId: currentBusinessId,
         ownerUid: currentUser.uid,
-        name,
+        name, location, shopCode,
         createdAt: serverTimestamp()
       });
       statusEl.textContent = "Added.";
+      statusEl.style.color = "var(--accent2)";
       document.getElementById("newShopName").value = "";
-      // If this is the very first shop being added this session, make it active automatically.
-      if (!activeShopId()) localStorage.setItem("mc_activeShopId", ref.id);
+      document.getElementById("newShopLocation").value = "";
+      document.getElementById("newShopCode").value = "";
+      if (!viewingShopId()) localStorage.setItem("mc_activeShopId", ref.id);
     } catch (err) {
       statusEl.textContent = "Failed: " + err.message;
       statusEl.style.color = "var(--danger)";
@@ -239,14 +324,32 @@
   function renderList() {
     const container = document.getElementById("shopList");
     if (allShops.length === 0) {
-      container.innerHTML = '<div class="empty">No shops yet.</div>';
+      container.innerHTML = '<div class="empty">No shops yet — add your first one below.</div>';
       return;
     }
-    const active = activeShopId();
+    const active = viewingShopId();
     container.innerHTML = allShops.map(s => `
       <div class="shop-item ${s.id === active ? "active" : ""}">
-        <div class="shop-name">${s.name}${s.id === active ? '<span class="shop-tag">ACTIVE HERE</span>' : ""}</div>
-        ${s.id === active ? "" : `<button class="switch-btn" onclick="switchShop('${s.id}')">Switch to this</button>`}
+        <div class="shop-top">
+          <div>
+            <div class="shop-name">${s.name}${s.id === active ? '<span class="shop-tag">VIEWING</span>' : ""}</div>
+            <div class="shop-meta">${s.location || "No location set"} · Code: ${s.shopCode || "(not set)"}</div>
+          </div>
+        </div>
+        <div class="btn-row">
+          ${s.id === active ? "" : `<button class="switch-btn" onclick="switchShop('${s.id}')">Switch to this</button>`}
+          <button class="edit-btn" onclick="toggleEdit('${s.id}')">Edit</button>
+        </div>
+        <div class="edit-block" id="edit-${s.id}">
+          <label>Shop name</label>
+          <input type="text" id="edit-name-${s.id}" value="${s.name || ""}">
+          <label>Location</label>
+          <input type="text" id="edit-location-${s.id}" value="${s.location || ""}">
+          <label>Shop Code</label>
+          <input type="text" id="edit-code-${s.id}" value="${s.shopCode || ""}" style="text-transform:uppercase;">
+          <button class="btn-primary" onclick="saveShopEdit('${s.id}')">Save Changes</button>
+          <div id="edit-status-${s.id}" style="font-size:12.5px; margin-top:6px;"></div>
+        </div>
       </div>`).join("");
   }
 
@@ -255,18 +358,24 @@
     currentUser = user;
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.location.href = "login.html"; return; }
-    currentBusinessId = userSnap.data().businessId;
+    const profile = userSnap.data();
+    currentBusinessId = profile.businessId;
 
-    const shopsQ = query(collection(db, "shops"), where("ownerUid", "==", user.uid));
+    if (profile.role !== "owner") {
+      document.getElementById("ownerGateCard").style.display = "block";
+      setTimeout(() => { window.location.href = "dashboard.html"; }, 1500);
+      return;
+    }
+    document.getElementById("ownerContent").style.display = "block";
+
+    const shopsQ = query(collection(db, "shops"), where("businessId", "==", currentBusinessId));
     onSnapshot(shopsQ, { includeMetadataChanges: true }, (snap) => {
       const badge = document.getElementById("netBadge");
       const fromCache = snap.metadata.fromCache;
       badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
       badge.className = "badge " + (fromCache ? "offline" : "online");
       allShops = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
-      // Auto-pick an active shop the first time this device ever loads, so old
-      // single-shop setups keep working with no action needed.
-      if (!activeShopId() && allShops.length > 0) localStorage.setItem("mc_activeShopId", allShops[0].id);
+      if (!viewingShopId() && allShops.length > 0) localStorage.setItem("mc_activeShopId", allShops[0].id);
       renderList();
     });
   });
