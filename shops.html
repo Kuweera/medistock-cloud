@@ -251,24 +251,17 @@
   window.saveShopEdit = async function (id) {
     const name = document.getElementById("edit-name-" + id).value.trim();
     const location = document.getElementById("edit-location-" + id).value.trim();
-    const shopCode = sanitizeCode(document.getElementById("edit-code-" + id).value);
     const statusEl = document.getElementById("edit-status-" + id);
-    if (!name || !shopCode) {
-      statusEl.textContent = "Name and Shop Code are required.";
-      statusEl.style.color = "var(--danger)";
-      return;
-    }
-    const clash = allShops.find(s => s.id !== id && sanitizeCode(s.shopCode || "") === shopCode);
-    if (clash) {
-      statusEl.textContent = `Shop Code "${shopCode}" is already used by ${clash.name}.`;
+    if (!name) {
+      statusEl.textContent = "Shop name is required.";
       statusEl.style.color = "var(--danger)";
       return;
     }
     try {
       statusEl.textContent = "Saving…";
       statusEl.style.color = "var(--muted)";
-      await updateDoc(doc(db, "shops", id), { name, location, shopCode });
-      statusEl.textContent = "Saved. Note: any operators already assigned to this shop keep working — only NEW logins need the updated Shop Code.";
+      await updateDoc(doc(db, "shops", id), { name, location });
+      statusEl.textContent = "Saved.";
       statusEl.style.color = "var(--accent2)";
     } catch (err) {
       statusEl.textContent = "Failed: " + err.message;
@@ -346,7 +339,8 @@
           <label>Location</label>
           <input type="text" id="edit-location-${s.id}" value="${s.location || ""}">
           <label>Shop Code</label>
-          <input type="text" id="edit-code-${s.id}" value="${s.shopCode || ""}" style="text-transform:uppercase;">
+          <input type="text" value="${s.shopCode || ""}" disabled style="opacity:.6;">
+          <div class="hint">Locked — operators already assigned to this shop log in with this exact code baked into their account. Changing it here would silently break their login with no warning, so it can't be edited after creation.</div>
           <button class="btn-primary" onclick="saveShopEdit('${s.id}')">Save Changes</button>
           <div id="edit-status-${s.id}" style="font-size:12.5px; margin-top:6px;"></div>
         </div>
