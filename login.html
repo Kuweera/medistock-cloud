@@ -447,6 +447,7 @@
       const candidate = String(Math.floor(1000 + Math.random() * 9000));
       const existing = await getDocs(query(
         collection(db, "users"),
+        where("businessId", "==", currentBusinessId),
         where("shopId", "==", currentShopId),
         where("operatorId", "==", candidate)
       ));
