@@ -509,7 +509,15 @@
   // ---- Shared post-login flow ----
 
   async function enterApp(user) {
-    const userDocSnap = await getDoc(doc(db, "users", user.uid));
+    let userDocSnap;
+    try {
+      userDocSnap = await getDoc(doc(db, "users", user.uid));
+    } catch (err) {
+      log(`✗ enterApp: reading your own profile (users/${user.uid}) failed — ${err.message} (${err.code})`, true);
+      setOpLoginStatus("Signed in, but couldn't load your profile — see debug log.", true);
+      setStatus("Signed in, but couldn't load your profile — see debug log.", true);
+      return false;
+    }
     if (!userDocSnap.exists()) {
       log("enterApp: no user profile yet (expected if called too early after signup)");
       return false;
@@ -517,9 +525,15 @@
     const u = userDocSnap.data();
     currentRole = u.role;
     currentBusinessId = u.businessId;
+    log(`enterApp: profile loaded — role=${u.role}, businessId=${u.businessId}, shopId=${u.shopId || "(n/a)"}, active=${u.active}`);
 
-    const bizSnap = await getDoc(doc(db, "businesses", currentBusinessId));
-    const bizName = bizSnap.exists() ? bizSnap.data().name : "(unknown)";
+    let bizName = "(unknown)";
+    try {
+      const bizSnap = await getDoc(doc(db, "businesses", currentBusinessId));
+      bizName = bizSnap.exists() ? bizSnap.data().name : "(unknown)";
+    } catch (err) {
+      log(`✗ enterApp: reading businesses/${currentBusinessId} failed — ${err.message} (${err.code})`, true);
+    }
 
     document.getElementById("ownerCard").classList.add("hidden");
     document.getElementById("operatorCard").classList.add("hidden");
@@ -535,23 +549,31 @@
       // MVP: owner's first/only shop. Owner Overview Dashboard (all shops)
       // is a later build-order step — this just proves the rules work.
       const shopsQ = query(collection(db, "shops"), where("businessId", "==", currentBusinessId));
-      unsubShops = onSnapshot(shopsQ, (snap) => {
-        if (!snap.empty) {
-          currentShopId = snap.docs[0].id;
-          currentShopCode = snap.docs[0].data().shopCode;
-          document.getElementById("shopNameLabel").textContent =
-            `${snap.docs[0].data().name} (${currentShopCode})`;
-          startDrugListener();
-        }
-      });
+      unsubShops = onSnapshot(shopsQ,
+        (snap) => {
+          if (!snap.empty) {
+            currentShopId = snap.docs[0].id;
+            currentShopCode = snap.docs[0].data().shopCode;
+            document.getElementById("shopNameLabel").textContent =
+              `${snap.docs[0].data().name} (${currentShopCode})`;
+            startDrugListener();
+          }
+        },
+        (err) => log(`✗ enterApp: shops listener (owner) failed — ${err.message} (${err.code})`, true)
+      );
     } else {
       currentShopId = u.shopId;
       document.getElementById("whoAmI").textContent = `${u.name} (Operator ${u.operatorId})`;
       document.getElementById("addOperatorCard").classList.add("hidden");
-      const shopSnap = await getDoc(doc(db, "shops", currentShopId));
-      currentShopCode = shopSnap.exists() ? shopSnap.data().shopCode : "";
-      document.getElementById("shopNameLabel").textContent = shopSnap.exists()
-        ? `${shopSnap.data().name} (${currentShopCode})` : "(unknown)";
+      try {
+        const shopSnap = await getDoc(doc(db, "shops", currentShopId));
+        currentShopCode = shopSnap.exists() ? shopSnap.data().shopCode : "";
+        document.getElementById("shopNameLabel").textContent = shopSnap.exists()
+          ? `${shopSnap.data().name} (${currentShopCode})` : "(unknown)";
+      } catch (err) {
+        log(`✗ enterApp: reading shops/${currentShopId} (operator) failed — ${err.message} (${err.code})`, true);
+        document.getElementById("shopNameLabel").textContent = "(permission error)";
+      }
       startDrugListener();
     }
     return true;
@@ -567,7 +589,11 @@
       document.getElementById("testCard").classList.add("hidden");
       return;
     }
-    await enterApp(user);
+    try {
+      await enterApp(user);
+    } catch (err) {
+      log(`✗ enterApp: unexpected failure — ${err.message} (${err.code || "no code"})`, true);
+    }
   });
 
   function startDrugListener() {
