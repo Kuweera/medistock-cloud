@@ -6,12 +6,8 @@
 <title>MediStock Cloud — Login</title>
 <style>
   :root{
-    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
-    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
-  }
-  html[data-theme="dark"]{
-    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
-    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+    --bg:#0f1115; --card:#171a21; --text:#e8e8ea; --muted:#9aa0aa;
+    --accent:#3b82f6; --accent2:#22c55e; --danger:#ef4444; --border:#2a2e38;
   }
   *{box-sizing:border-box;}
   body{
@@ -19,17 +15,17 @@
     background:var(--bg); color:var(--text); min-height:100vh;
     display:flex; flex-direction:column; align-items:center; padding:24px 16px;
   }
-  h1{font-size:20px; margin:0 0 4px; color:var(--accent);}
+  h1{font-size:20px; margin:0 0 4px;}
   .sub{color:var(--muted); font-size:13px; margin-bottom:24px;}
   .card{
     width:100%; max-width:420px; background:var(--card);
     border:1px solid var(--border); border-radius:14px; padding:20px; margin-bottom:16px;
   }
-  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  .card h2{font-size:15px; margin:0 0 14px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
   label{display:block; font-size:13px; color:var(--muted); margin:10px 0 4px;}
   input{
     width:100%; padding:11px 12px; border-radius:9px; border:1px solid var(--border);
-    background:var(--card); color:var(--text); font-size:15px;
+    background:#0d0f14; color:var(--text); font-size:15px;
   }
   input:focus{outline:none; border-color:var(--accent);}
   button{
@@ -40,9 +36,18 @@
   .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent); margin-top:8px;}
   .btn-danger{background:transparent; color:var(--danger); border:1px solid var(--danger);}
   .btn-small{width:auto; padding:8px 14px; font-size:13px; margin:6px 6px 0 0; display:inline-block;}
+  .btn-link{background:none; border:none; color:var(--accent); font-size:13px; width:auto; padding:0; margin:10px 0 0; text-decoration:underline; font-weight:400;}
   .row{display:flex; gap:8px;}
   .row > *{flex:1;}
+  .pwrow{position:relative;}
+  .pwrow input{padding-right:56px;}
+  .pwrow .showbtn{
+    position:absolute; right:6px; top:50%; transform:translateY(-50%);
+    width:auto; padding:4px 8px; margin:0; font-size:11px; font-weight:500;
+    background:#0d0f14; border:1px solid var(--border); color:var(--muted); border-radius:6px;
+  }
   #status{font-size:13px; margin-top:10px; min-height:18px;}
+  #opStatus{font-size:13px; margin-top:10px; min-height:18px; word-break:break-word;}
   .ok{color:var(--accent2);}
   .err{color:var(--danger);}
   .hidden{display:none !important;}
@@ -52,64 +57,115 @@
   }
   .item:last-child{border-bottom:none;}
   .item .qty{color:var(--muted);}
-  .badge{font-size:11px; padding:2px 8px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge{font-size:11px; padding:2px 8px; border-radius:999px; background:#1d2230; color:var(--muted);}
   .badge.online{color:var(--accent2);}
   .badge.offline{color:var(--danger);}
+  .tabs{display:flex; width:100%; max-width:420px; gap:8px; margin-bottom:12px;}
+  .tab{
+    flex:1; text-align:center; padding:10px; border-radius:9px; font-size:14px; font-weight:600;
+    background:var(--card); border:1px solid var(--border); color:var(--muted); cursor:pointer;
+  }
+  .tab.active{background:var(--accent); color:#fff; border-color:var(--accent);}
 </style>
-<script>
-(function(){
-  try{
-    var pref = localStorage.getItem('mcThemePreference') || 'auto';
-    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-  }catch(e){}
-})();
-</script>
 </head>
 <body>
 
-<h1>💊 MediStock Cloud</h1>
-<div class="sub">Multi-Shop Edition</div>
+<h1>MediStock Cloud</h1>
+<div class="sub">Step 1 — Accounts, shops, and role-based security</div>
 
-<!-- AUTH CARD -->
-<div class="card" id="authCard">
+<!-- LOGIN-TYPE TABS -->
+<div class="tabs" id="authTabs">
+  <div class="tab active" id="tabOwner" onclick="setAuthTab('owner')">Owner</div>
+  <div class="tab" id="tabOperator" onclick="setAuthTab('operator')">Operator</div>
+</div>
+
+<!-- OWNER AUTH CARD -->
+<div class="card" id="ownerCard">
   <h2 id="authTitle">Owner Sign Up</h2>
 
   <div id="signupFields">
     <label>Business name</label>
     <input type="text" id="businessName" placeholder="e.g. Kuweera Drug Shop">
+    <label>Business phone (optional)</label>
+    <input type="tel" id="businessPhone" placeholder="e.g. 07xx xxx xxx">
     <label>First shop name</label>
     <input type="text" id="shopName" placeholder="e.g. Main Branch">
+    <label>First shop code</label>
+    <input type="text" id="shopCode" placeholder="e.g. MAIN" style="text-transform:uppercase;">
   </div>
 
   <label>Email</label>
   <input type="email" id="email" placeholder="you@example.com">
+
   <label>Password</label>
-  <input type="password" id="password" placeholder="At least 6 characters">
+  <div class="pwrow">
+    <input type="password" id="password" placeholder="At least 6 characters">
+    <button type="button" class="showbtn" onclick="toggleShow('password')">Show</button>
+  </div>
+
+  <div id="confirmField">
+    <label>Confirm password</label>
+    <div class="pwrow">
+      <input type="password" id="confirmPassword" placeholder="Re-enter password">
+      <button type="button" class="showbtn" onclick="toggleShow('confirmPassword')">Show</button>
+    </div>
+  </div>
 
   <button class="btn-primary" id="submitBtn" onclick="doSignup()">Create business account</button>
   <button class="btn-secondary" id="toggleBtn" onclick="toggleMode()">I already have an account — log in</button>
+  <button class="btn-link hidden" id="forgotBtn" onclick="doForgotPassword()">Forgot password?</button>
 
   <div id="status"></div>
+</div>
+
+<!-- OPERATOR AUTH CARD -->
+<div class="card hidden" id="operatorCard">
+  <h2>Operator Log In</h2>
+  <label>Shop Code</label>
+  <input type="text" id="opShopCode" placeholder="e.g. MAIN" style="text-transform:uppercase;">
+  <label>Operator ID</label>
+  <input type="text" id="opLoginId" placeholder="e.g. 4821">
+  <label>PIN</label>
+  <input type="password" id="opLoginPin" placeholder="6-digit PIN" maxlength="6">
+  <button class="btn-primary" onclick="doOperatorLogin()">Log in</button>
+  <div id="opLoginStatus" style="font-size:13px; margin-top:10px;"></div>
 </div>
 
 <!-- CONNECTED CARD -->
 <div class="card hidden" id="appCard">
   <h2>Connected</h2>
-  <div style="font-size:14px; margin-bottom:6px;">Signed in as <b id="whoAmI"></b></div>
+  <div style="font-size:14px; margin-bottom:6px;">
+    Signed in as <b id="whoAmI"></b> <span class="badge" id="roleBadge"></span>
+  </div>
   <div style="font-size:13px; color:var(--muted); margin-bottom:10px;">
-    Business: <span id="bizName"></span> &nbsp;
+    Business: <span id="bizName"></span> &nbsp;·&nbsp; Shop: <span id="shopNameLabel"></span> &nbsp;
     <span class="badge" id="netBadge">checking…</span>
   </div>
   <button class="btn-danger btn-small" onclick="doLogout()">Log out</button>
 </div>
 
+<!-- ADD OPERATOR CARD (owner only) -->
+<div class="card hidden" id="addOperatorCard">
+  <h2>Add Operator (test)</h2>
+  <div class="sub" style="margin-bottom:12px;">
+    Bare-bones for now — full Users management comes later in the build order.
+    Creates a real operator account assigned to your first shop.
+  </div>
+  <label>Operator name</label>
+  <input type="text" id="opName" placeholder="e.g. Grace">
+  <label>6-digit PIN</label>
+  <input type="password" id="opPin" placeholder="e.g. 483920" maxlength="6">
+  <button class="btn-primary" onclick="doAddOperator()">Create operator</button>
+  <div id="opStatus"></div>
+</div>
+
 <!-- TEST INVENTORY CARD -->
 <div class="card hidden" id="testCard">
-  <h2>Offline-Persistence Test</h2>
+  <h2>Shop-Scoped Write Test</h2>
   <div class="sub" style="margin-bottom:12px;">
-    Add a test drug below, then switch your phone to airplane mode and add
-    another — it should still appear instantly. Reconnect and it will sync.
+    Proves the security rules actually enforce the shop boundary — add an
+    item as the owner, then log in as an operator on a different shop and
+    confirm they can't see it.
   </div>
   <div class="row">
     <input type="text" id="drugName" placeholder="Drug name">
@@ -125,14 +181,14 @@
 </div>
 
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import {
     getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-    signOut, onAuthStateChanged
+    signOut, onAuthStateChanged, sendPasswordResetEmail
   } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
   import {
     getFirestore, doc, setDoc, getDoc, collection, addDoc, onSnapshot,
-    enableIndexedDbPersistence, serverTimestamp, query, where
+    enableIndexedDbPersistence, serverTimestamp, query, where, getDocs
   } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -148,33 +204,33 @@
   const auth = getAuth(app);
   const db = getFirestore(app);
 
-  // Offline persistence: lets the app keep working (and queue writes)
-  // with no internet, then sync automatically once back online.
   enableIndexedDbPersistence(db).catch((err) => {
     console.warn("Offline persistence not enabled:", err.code);
-    // 'failed-precondition' = another tab open, 'unimplemented' = old browser.
-    // App still works, just without offline cache in that case.
   });
 
-  let mode = "signup";
+  let authTab = "owner";       // 'owner' | 'operator'
+  let mode = "signup";          // owner tab: 'signup' | 'login'
+  let currentRole = null;       // 'owner' | 'operator', once signed in
   let currentBusinessId = null;
   let currentShopId = null;
+  let currentShopCode = null;
   let unsubDrugs = null;
+  let unsubShops = null;
 
-  window.toggleMode = function () {
-    mode = mode === "signup" ? "login" : "signup";
-    document.getElementById("signupFields").classList.toggle("hidden", mode === "login");
-    document.getElementById("authTitle").textContent = mode === "signup" ? "Owner Sign Up" : "Log In";
-    document.getElementById("submitBtn").textContent = mode === "signup" ? "Create business account" : "Log in";
-    document.getElementById("submitBtn").onclick = mode === "signup" ? doSignup : doLogin;
-    document.getElementById("toggleBtn").textContent = mode === "signup"
-      ? "I already have an account — log in"
-      : "New business — sign up";
-    setStatus("");
-  };
+  function val(id) { return document.getElementById(id).value.trim(); }
 
   function setStatus(msg, isError) {
     const el = document.getElementById("status");
+    el.textContent = msg;
+    el.className = isError ? "err" : "ok";
+  }
+  function setOpLoginStatus(msg, isError) {
+    const el = document.getElementById("opLoginStatus");
+    el.textContent = msg;
+    el.className = isError ? "err" : "ok";
+  }
+  function setOpStatus(msg, isError) {
+    const el = document.getElementById("opStatus");
     el.textContent = msg;
     el.className = isError ? "err" : "ok";
   }
@@ -189,8 +245,6 @@
     el.scrollTop = el.scrollHeight;
   }
 
-  // Surface anything that would otherwise fail silently in the background
-  // (e.g. a rejected offline-queued write that isn't caught by a normal try/catch).
   window.addEventListener("unhandledrejection", (e) => {
     log("Unhandled error: " + (e.reason?.message || e.reason), true);
   });
@@ -219,18 +273,64 @@
     }
   }
 
-  window.doSignup = async function () {
-    const businessName = document.getElementById("businessName").value.trim();
-    const shopName = document.getElementById("shopName").value.trim();
-    const email = document.getElementById("email").value.trim();
-    const password = document.getElementById("password").value;
+  function sanitizeCode(code) {
+    return code.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  }
+  function buildInternalEmail(shopCode, operatorId) {
+    return `op${operatorId}@${sanitizeCode(shopCode).toLowerCase()}.medistock.internal`;
+  }
+  function toggleShow(id) {
+    const el = document.getElementById(id);
+    el.type = el.type === "password" ? "text" : "password";
+  }
+  window.toggleShow = toggleShow;
 
-    if (!businessName || !shopName || !email || password.length < 6) {
-      setStatus("Fill in every field (password needs 6+ characters).", true);
+  // ---- Tab + mode switching ----
+
+  window.setAuthTab = function (tab) {
+    authTab = tab;
+    document.getElementById("tabOwner").classList.toggle("active", tab === "owner");
+    document.getElementById("tabOperator").classList.toggle("active", tab === "operator");
+    document.getElementById("ownerCard").classList.toggle("hidden", tab !== "owner");
+    document.getElementById("operatorCard").classList.toggle("hidden", tab !== "operator");
+  };
+
+  window.toggleMode = function () {
+    mode = mode === "signup" ? "login" : "signup";
+    const isLogin = mode === "login";
+    document.getElementById("signupFields").classList.toggle("hidden", isLogin);
+    document.getElementById("confirmField").classList.toggle("hidden", isLogin);
+    document.getElementById("authTitle").textContent = isLogin ? "Owner Log In" : "Owner Sign Up";
+    document.getElementById("submitBtn").textContent = isLogin ? "Log in" : "Create business account";
+    document.getElementById("submitBtn").onclick = isLogin ? doLogin : doSignup;
+    document.getElementById("toggleBtn").textContent = isLogin
+      ? "New business — sign up"
+      : "I already have an account — log in";
+    document.getElementById("forgotBtn").classList.toggle("hidden", !isLogin);
+    setStatus("");
+  };
+
+  // ---- Owner signup / login ----
+
+  window.doSignup = async function () {
+    const businessName = val("businessName");
+    const businessPhone = val("businessPhone");
+    const shopName = val("shopName");
+    const shopCode = sanitizeCode(val("shopCode"));
+    const email = val("email");
+    const password = document.getElementById("password").value;
+    const confirmPassword = document.getElementById("confirmPassword").value;
+
+    if (!businessName || !shopName || !shopCode || !email || password.length < 6) {
+      setStatus("Fill in every required field (password needs 6+ characters).", true);
+      return;
+    }
+    if (password !== confirmPassword) {
+      setStatus("Passwords do not match.", true);
       return;
     }
 
-    log(`Starting signup. Online: ${navigator.onLine}`);
+    log(`Starting owner signup. Online: ${navigator.onLine}`);
 
     try {
       setStatus("Step 1/4: creating login…");
@@ -243,7 +343,10 @@
       setStatus("Step 2/4: creating business record…");
       const businessRef = doc(collection(db, "businesses"));
       await withTimeout(
-        setDoc(businessRef, { name: businessName, ownerUid: uid, createdAt: serverTimestamp() }),
+        setDoc(businessRef, {
+          name: businessName, phone: businessPhone || null,
+          ownerUid: uid, createdAt: serverTimestamp()
+        }),
         "write business doc"
       );
       log("✓ Business doc written: " + businessRef.id);
@@ -251,7 +354,10 @@
       setStatus("Step 3/4: linking your account to the business…");
       await retryOnPermission(
         () => withTimeout(
-          setDoc(doc(db, "users", uid), { businessId: businessRef.id, role: "owner", displayName: email }),
+          setDoc(doc(db, "users", uid), {
+            businessId: businessRef.id, role: "owner",
+            name: email, active: true, createdAt: serverTimestamp()
+          }),
           "write user doc"
         ),
         "write user doc"
@@ -261,7 +367,10 @@
       setStatus("Step 4/4: creating first shop…");
       const shopRef = doc(collection(db, "shops"));
       await withTimeout(
-        setDoc(shopRef, { businessId: businessRef.id, ownerUid: uid, name: shopName, createdAt: serverTimestamp() }),
+        setDoc(shopRef, {
+          businessId: businessRef.id, ownerUid: uid,
+          name: shopName, shopCode, createdAt: serverTimestamp()
+        }),
         "write shop doc"
       );
       log("✓ Shop doc written: " + shopRef.id);
@@ -276,7 +385,7 @@
   };
 
   window.doLogin = async function () {
-    const email = document.getElementById("email").value.trim();
+    const email = val("email");
     const password = document.getElementById("password").value;
     try {
       setStatus("Logging in…");
@@ -286,10 +395,117 @@
     }
   };
 
+  window.doForgotPassword = async function () {
+    const email = val("email");
+    if (!email) { setStatus("Enter your email above first.", true); return; }
+    try {
+      await withTimeout(sendPasswordResetEmail(auth, email), "send reset email");
+      setStatus("Password reset email sent — check your inbox.", false);
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  };
+
+  // ---- Operator login ----
+
+  window.doOperatorLogin = async function () {
+    const shopCode = val("opShopCode");
+    const operatorId = val("opLoginId");
+    const pin = document.getElementById("opLoginPin").value;
+    if (!shopCode || !operatorId || !/^[0-9]{6}$/.test(pin)) {
+      setOpLoginStatus("Enter Shop Code, Operator ID, and a 6-digit PIN.", true);
+      return;
+    }
+    const internalEmail = buildInternalEmail(shopCode, operatorId);
+    try {
+      setOpLoginStatus("Logging in…");
+      await signInWithEmailAndPassword(auth, internalEmail, pin);
+    } catch (err) {
+      log("Operator login failed: " + err.message + (err.code ? ` (${err.code})` : ""), true);
+      setOpLoginStatus("Login failed — check Shop Code, Operator ID and PIN.", true);
+    }
+  };
+
+  // ---- Owner creating an operator (secondary auth app so the owner's ----
+  // ---- own session is never touched by the new sign-in) ----
+
+  window.doAddOperator = async function () {
+    if (currentRole !== "owner" || !currentBusinessId || !currentShopId || !currentShopCode) {
+      setOpStatus("Sign in as an owner first.", true);
+      return;
+    }
+    const name = val("opName");
+    const pin = document.getElementById("opPin").value;
+    if (!name || !/^[0-9]{6}$/.test(pin)) {
+      setOpStatus("Enter a name and a 6-digit PIN.", true);
+      return;
+    }
+
+    setOpStatus("Generating a unique Operator ID…");
+    let operatorId = null;
+    for (let i = 0; i < 5 && !operatorId; i++) {
+      const candidate = String(Math.floor(1000 + Math.random() * 9000));
+      const existing = await getDocs(query(
+        collection(db, "users"),
+        where("shopId", "==", currentShopId),
+        where("operatorId", "==", candidate)
+      ));
+      if (existing.empty) operatorId = candidate;
+    }
+    if (!operatorId) {
+      setOpStatus("Could not generate a unique Operator ID — try again.", true);
+      return;
+    }
+
+    const internalEmail = buildInternalEmail(currentShopCode, operatorId);
+    let secondaryApp;
+    try {
+      setOpStatus("Creating operator account…");
+      secondaryApp = initializeApp(firebaseConfig, "operator-creator-" + Date.now());
+      const secondaryAuth = getAuth(secondaryApp);
+      const secondaryDb = getFirestore(secondaryApp);
+
+      const cred = await withTimeout(
+        createUserWithEmailAndPassword(secondaryAuth, internalEmail, pin),
+        "create operator login"
+      );
+      const opUid = cred.user.uid;
+
+      // The new operator writes their OWN profile under the secondary
+      // session — matches the users/{uid} create rule (auth.uid == uid).
+      await withTimeout(
+        setDoc(doc(secondaryDb, "users", opUid), {
+          businessId: currentBusinessId, shopId: currentShopId,
+          role: "operator", operatorId, name, active: true,
+          createdAt: serverTimestamp()
+        }),
+        "write operator profile"
+      );
+
+      await signOut(secondaryAuth);
+      await deleteApp(secondaryApp);
+
+      setOpStatus(
+        `Created — give the operator: Shop Code ${currentShopCode} · Operator ID ${operatorId} · PIN ${pin}`,
+        false
+      );
+      log(`✓ Operator created: ${name} (${operatorId})`);
+      document.getElementById("opName").value = "";
+      document.getElementById("opPin").value = "";
+    } catch (err) {
+      setOpStatus(err.message, true);
+      log("✗ Add operator FAILED: " + err.message + (err.code ? ` (${err.code})` : ""), true);
+      if (secondaryApp) { try { await deleteApp(secondaryApp); } catch (e) {} }
+    }
+  };
+
   window.doLogout = async function () {
     if (unsubDrugs) unsubDrugs();
+    if (unsubShops) unsubShops();
     await signOut(auth);
   };
+
+  // ---- Shared post-login flow ----
 
   async function enterApp(user) {
     const userDocSnap = await getDoc(doc(db, "users", user.uid));
@@ -297,43 +513,69 @@
       log("enterApp: no user profile yet (expected if called too early after signup)");
       return false;
     }
-    const userData = userDocSnap.data();
-    currentBusinessId = userData.businessId;
+    const u = userDocSnap.data();
+    currentRole = u.role;
+    currentBusinessId = u.businessId;
 
     const bizSnap = await getDoc(doc(db, "businesses", currentBusinessId));
     const bizName = bizSnap.exists() ? bizSnap.data().name : "(unknown)";
 
-    const shopsQ = query(collection(db, "shops"), where("ownerUid", "==", user.uid));
-    onSnapshot(shopsQ, (snap) => {
-      if (!snap.empty) currentShopId = snap.docs[0].id;
-    });
-
-    document.getElementById("authCard").classList.add("hidden");
+    document.getElementById("ownerCard").classList.add("hidden");
+    document.getElementById("operatorCard").classList.add("hidden");
+    document.getElementById("authTabs").classList.add("hidden");
     document.getElementById("appCard").classList.remove("hidden");
     document.getElementById("testCard").classList.remove("hidden");
-    document.getElementById("whoAmI").textContent = user.email;
     document.getElementById("bizName").textContent = bizName;
+    document.getElementById("roleBadge").textContent = currentRole;
 
-    startDrugListener();
+    if (currentRole === "owner") {
+      document.getElementById("whoAmI").textContent = user.email;
+      document.getElementById("addOperatorCard").classList.remove("hidden");
+      // MVP: owner's first/only shop. Owner Overview Dashboard (all shops)
+      // is a later build-order step — this just proves the rules work.
+      const shopsQ = query(collection(db, "shops"), where("businessId", "==", currentBusinessId));
+      unsubShops = onSnapshot(shopsQ, (snap) => {
+        if (!snap.empty) {
+          currentShopId = snap.docs[0].id;
+          currentShopCode = snap.docs[0].data().shopCode;
+          document.getElementById("shopNameLabel").textContent =
+            `${snap.docs[0].data().name} (${currentShopCode})`;
+          startDrugListener();
+        }
+      });
+    } else {
+      currentShopId = u.shopId;
+      document.getElementById("whoAmI").textContent = `${u.name} (Operator ${u.operatorId})`;
+      document.getElementById("addOperatorCard").classList.add("hidden");
+      const shopSnap = await getDoc(doc(db, "shops", currentShopId));
+      currentShopCode = shopSnap.exists() ? shopSnap.data().shopCode : "";
+      document.getElementById("shopNameLabel").textContent = shopSnap.exists()
+        ? `${shopSnap.data().name} (${currentShopCode})` : "(unknown)";
+      startDrugListener();
+    }
     return true;
   }
 
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
-      document.getElementById("authCard").classList.remove("hidden");
+      currentRole = null; currentBusinessId = null; currentShopId = null; currentShopCode = null;
+      document.getElementById("authTabs").classList.remove("hidden");
+      document.getElementById(authTab === "owner" ? "ownerCard" : "operatorCard").classList.remove("hidden");
       document.getElementById("appCard").classList.add("hidden");
+      document.getElementById("addOperatorCard").classList.add("hidden");
       document.getElementById("testCard").classList.add("hidden");
       return;
     }
-    // Handles page reloads / plain logins, where the profile already exists.
-    // (Right after a fresh signup, this may fire too early and find nothing yet —
-    // that's fine, doSignup() calls enterApp() again itself once everything is written.)
     await enterApp(user);
   });
 
   function startDrugListener() {
     if (unsubDrugs) unsubDrugs();
-    const drugsQ = query(collection(db, "drugs"), where("ownerUid", "==", auth.currentUser.uid));
+    const drugsQ = query(
+      collection(db, "drugs"),
+      where("businessId", "==", currentBusinessId),
+      where("shopId", "==", currentShopId)
+    );
     unsubDrugs = onSnapshot(drugsQ,
       { includeMetadataChanges: true },
       (snap) => {
@@ -355,20 +597,21 @@
             return `<div class="item"><span>${v.name}</span><span class="qty">${v.currentStockBase}${pending}</span></div>`;
           }).join("");
       },
-      (err) => console.error("drugs listener error:", err)
+      (err) => {
+        console.error("drugs listener error:", err);
+        log("drugs listener error: " + err.message, true);
+      }
     );
   }
 
   window.addTestDrug = async function () {
-    const name = document.getElementById("drugName").value.trim();
+    const name = val("drugName");
     const qty = Number(document.getElementById("drugQty").value);
-    if (!name || !qty) return;
+    if (!name || !qty || !currentShopId) return;
 
-    // Matches V1's drug shape (simplified — no packaging tiers needed for this test)
     await addDoc(collection(db, "drugs"), {
       businessId: currentBusinessId,
       shopId: currentShopId,
-      ownerUid: auth.currentUser.uid,
       name,
       currentStockBase: qty,
       baseUnit: "unit",
