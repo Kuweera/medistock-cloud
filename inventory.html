@@ -207,6 +207,11 @@
   <div id="drugList"><div class="empty">Loading…</div></div>
 </div>
 
+<div class="card hidden" id="deactivatedCard">
+  <h2>Deactivated <span id="deactivatedCountTag"></span></h2>
+  <div id="deactivatedList"></div>
+</div>
+
 <!-- ADD DRUG FORM (hidden by default) -->
 <div class="card hidden" id="formCard">
   <h2 id="formTitle">Add Drug</h2>
@@ -543,6 +548,7 @@
   window.toggleShowInactive = function () {
     showInactive = !showInactive;
     document.getElementById("showInactiveBtn").classList.toggle("on", showInactive);
+    document.getElementById("deactivatedCard").classList.toggle("hidden", !showInactive);
     renderList(document.getElementById("searchBox").value);
   };
   window.toggleBulkImport = function () {
@@ -667,11 +673,13 @@
     document.getElementById("searchCard").classList.add("hidden");
     document.getElementById("bulkImportCard").classList.add("hidden");
     document.getElementById("listCard").classList.add("hidden");
+    document.getElementById("deactivatedCard").classList.add("hidden");
     document.getElementById("fab").classList.add("hidden");
   }
   function showListView() {
     document.getElementById("searchCard").classList.remove("hidden");
     document.getElementById("listCard").classList.remove("hidden");
+    document.getElementById("deactivatedCard").classList.toggle("hidden", !showInactive);
     document.getElementById("fab").classList.remove("hidden");
   }
 
@@ -817,68 +825,81 @@
     }
   };
 
-  function renderList(filterText) {
-    const container = document.getElementById("drugList");
-    const f = (filterText || "").toLowerCase();
-    let filtered = allDrugs.filter(d => showInactive ? true : d.active !== false);
-    if (f) {
-      filtered = filtered.filter(d =>
-        d.name.toLowerCase().includes(f) ||
-        (d.generic || "").toLowerCase().includes(f) ||
-        (d.drugClass || "").toLowerCase().includes(f)
-      );
-    }
-    if (lowStockOnly) {
-      filtered = filtered.filter(d => d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock));
-    }
-    document.getElementById("countTag").textContent = `(${filtered.length})`;
-
-    if (filtered.length === 0) {
-      container.innerHTML = '<div class="empty">No drugs match — tap + to add one, or clear a filter above.</div>';
-      return;
-    }
-    container.innerHTML = filtered.map(d => {
-      const breakdown = PackagingEngine.baseToBreakdown(d.currentStockBase, d.baseUnitsPerStock, d.basePerIntermediate);
-      const breakdownLine = d.hasIntermediate && breakdown.intermediateUnits
-        ? `${breakdown.stockUnits} ${d.stockUnit}(s) + ${breakdown.intermediateUnits} ${d.intermediateUnit}(s) + ${breakdown.looseBase} ${d.baseUnit}(s)`
-        : `${breakdown.stockUnits} ${d.stockUnit}(s) + ${breakdown.looseBase} ${d.baseUnit}(s)`;
-      const isLow = d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock);
-      const isActive = d.active !== false;
-      const statusClass = !isActive ? "deactivated" : (isLow ? "low" : "ok");
-      const statusText = !isActive ? "DEACTIVATED" : (isLow ? "LOW STOCK" : "OK");
-      return `
-        <div class="drug-card">
-          <div class="row-top" onclick="editDrug('${d.id}')" style="cursor:pointer;">
-            <div>
-              <h3>${d.name}</h3>
-              <div class="meta-line" style="margin-top:2px;">${d.generic || "—"}</div>
-            </div>
-            <span class="status-badge ${statusClass}">${statusText}</span>
-          </div>
+  function drugCardHtml(d) {
+    const breakdown = PackagingEngine.baseToBreakdown(d.currentStockBase, d.baseUnitsPerStock, d.basePerIntermediate);
+    const breakdownLine = d.hasIntermediate && breakdown.intermediateUnits
+      ? `${breakdown.stockUnits} ${d.stockUnit}(s) + ${breakdown.intermediateUnits} ${d.intermediateUnit}(s) + ${breakdown.looseBase} ${d.baseUnit}(s)`
+      : `${breakdown.stockUnits} ${d.stockUnit}(s) + ${breakdown.looseBase} ${d.baseUnit}(s)`;
+    const isLow = d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock);
+    const isActive = d.active !== false;
+    const statusClass = !isActive ? "deactivated" : (isLow ? "low" : "ok");
+    const statusText = !isActive ? "DEACTIVATED" : (isLow ? "LOW STOCK" : "OK");
+    return `
+      <div class="drug-card">
+        <div class="row-top" onclick="editDrug('${d.id}')" style="cursor:pointer;">
           <div>
-            <span class="class-badge">${d.drugClass || "Other"}</span>
-            ${d.dosageForm ? `<span class="class-badge">${d.dosageForm}</span>` : ""}
+            <h3>${d.name}</h3>
+            <div class="meta-line" style="margin-top:2px;">${d.generic || "—"}</div>
           </div>
-          <div class="stock-line">
-            Stock: ${d.currentStockBase.toLocaleString()} ${d.baseUnit}(s)<br>
-            = ${breakdownLine}
-          </div>
-          <div class="meta-line">
-            1 ${d.stockUnit} = ${d.baseUnitsPerStock} ${d.baseUnit}(s)${d.hasIntermediate ? ` (${d.intermediatePerStock} ${d.intermediateUnit} × ${d.basePerIntermediate} ${d.baseUnit})` : ""}<br>
-            Wholesale: ${Number(d.wholesale || 0).toLocaleString()} / ${d.stockUnit} &nbsp;·&nbsp; Retail: ${Number(d.retailStock || 0).toLocaleString()} / ${d.stockUnit}<br>
-            Reorder level: ${d.reorderLevel || 0} ${d.stockUnit}(s) &nbsp;·&nbsp; Target: ${d.targetStock || "—"} ${d.stockUnit}(s)<br>
-            Supplier: ${d.supplier || "—"}
-          </div>
-          <div class="btn-row">
-            <button class="btn-small btn-muted-outline" onclick="editDrug('${d.id}')">${isActive ? "Edit" : "View / Reactivate"}</button>
-            <button class="btn-small btn-muted-outline" onclick="toggleBatchHistory('${d.id}')">Batch history</button>
-            ${isActive
-              ? `<button class="btn-small btn-danger-outline" onclick="toggleActive('${d.id}', true)">Deactivate</button>`
-              : `<button class="btn-small btn-accent-outline" onclick="toggleActive('${d.id}', false)">Reactivate</button>`}
-          </div>
-          <div class="batch-history hidden" id="batch-history-${d.id}"></div>
-        </div>`;
-    }).join("");
+          <span class="status-badge ${statusClass}">${statusText}</span>
+        </div>
+        <div>
+          <span class="class-badge">${d.drugClass || "Other"}</span>
+          ${d.dosageForm ? `<span class="class-badge">${d.dosageForm}</span>` : ""}
+        </div>
+        <div class="stock-line">
+          Stock: ${d.currentStockBase.toLocaleString()} ${d.baseUnit}(s)<br>
+          = ${breakdownLine}
+        </div>
+        <div class="meta-line">
+          1 ${d.stockUnit} = ${d.baseUnitsPerStock} ${d.baseUnit}(s)${d.hasIntermediate ? ` (${d.intermediatePerStock} ${d.intermediateUnit} × ${d.basePerIntermediate} ${d.baseUnit})` : ""}<br>
+          Wholesale: ${Number(d.wholesale || 0).toLocaleString()} / ${d.stockUnit} &nbsp;·&nbsp; Retail: ${Number(d.retailStock || 0).toLocaleString()} / ${d.stockUnit}<br>
+          Reorder level: ${d.reorderLevel || 0} ${d.stockUnit}(s) &nbsp;·&nbsp; Target: ${d.targetStock || "—"} ${d.stockUnit}(s)<br>
+          Supplier: ${d.supplier || "—"}
+        </div>
+        <div class="btn-row">
+          <button class="btn-small btn-muted-outline" onclick="editDrug('${d.id}')">${isActive ? "Edit" : "View / Reactivate"}</button>
+          <button class="btn-small btn-muted-outline" onclick="toggleBatchHistory('${d.id}')">Batch history</button>
+          ${isActive
+            ? `<button class="btn-small btn-danger-outline" onclick="toggleActive('${d.id}', true)">Deactivate</button>`
+            : `<button class="btn-small btn-accent-outline" onclick="toggleActive('${d.id}', false)">Reactivate</button>`}
+        </div>
+        <div class="batch-history hidden" id="batch-history-${d.id}"></div>
+      </div>`;
+  }
+
+  function matchesSearch(d, f) {
+    if (!f) return true;
+    return d.name.toLowerCase().includes(f) ||
+      (d.generic || "").toLowerCase().includes(f) ||
+      (d.drugClass || "").toLowerCase().includes(f);
+  }
+
+  function renderList(filterText) {
+    const f = (filterText || "").toLowerCase();
+
+    // ---- Active list (subject to search + low-stock filter) ----
+    let active = allDrugs.filter(d => d.active !== false && matchesSearch(d, f));
+    if (lowStockOnly) {
+      active = active.filter(d => d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock));
+    }
+    document.getElementById("countTag").textContent = `(${active.length})`;
+    const listContainer = document.getElementById("drugList");
+    listContainer.innerHTML = active.length
+      ? active.map(drugCardHtml).join("")
+      : '<div class="empty">No drugs match — tap + to add one, or clear a filter above.</div>';
+
+    // ---- Deactivated list — always its own separate section, never mixed
+    // into the active list above (only shown at all when the toggle is on) ----
+    if (showInactive) {
+      const deactivated = allDrugs.filter(d => d.active === false && matchesSearch(d, f));
+      document.getElementById("deactivatedCountTag").textContent = `(${deactivated.length})`;
+      const deactivatedContainer = document.getElementById("deactivatedList");
+      deactivatedContainer.innerHTML = deactivated.length
+        ? deactivated.map(drugCardHtml).join("")
+        : '<div class="empty">No deactivated drugs.</div>';
+    }
+
     // Re-render any batch histories that were open before this refresh
     openBatchHistory.forEach(id => {
       const el = document.getElementById("batch-history-" + id);
