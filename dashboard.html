@@ -21,7 +21,7 @@
   h1{font-size:19px; margin:0;}
   .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
   .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
-  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);} .badge.error{color:var(--danger);}
   .card{
     background:var(--card); border:1px solid var(--border); border-radius:14px;
     padding:16px; margin-bottom:14px;
@@ -43,6 +43,7 @@
   .v.good{color:var(--accent2);} .v.bad{color:var(--danger);}
   .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
   .period-note{font-size:11px; color:var(--muted); margin-bottom:10px;}
+  .error-note{font-size:12.5px; color:var(--danger); margin-bottom:10px;}
 
   /* ===== Shared MediStock Cloud navigation (matches MediStock Pro) ===== */
   .app-header{
@@ -134,9 +135,14 @@
   <a href="settings.html">Settings</a>
   <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
 </nav>
+
+<div class="card" id="errorCard" style="display:none;">
+  <div class="error-note" id="errorNote"></div>
+</div>
+
 <div class="card">
-  <h2>Business Overview</h2>
-  <div class="period-note">Sales/Expenses figures are for this calendar month, across all your shops. Stock and expiry figures are current right now.</div>
+  <h2 id="overviewTitle">Business Overview</h2>
+  <div class="period-note" id="overviewNote">Sales/Expenses figures are for this calendar month, across all your shops. Stock and expiry figures are current right now.</div>
   <div class="stat-grid">
     <div class="stat good"><div class="num" id="statSales">—</div><div class="lbl">Sales this month</div></div>
     <div class="stat"><div class="num" id="statExpenses">—</div><div class="lbl">Expenses this month</div></div>
@@ -148,7 +154,7 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card hidden" id="shopBreakdownCard">
   <h2>Shop Performance <span style="text-transform:none; font-weight:400;">(this month)</span></h2>
   <div id="shopBreakdown"><div class="empty">Loading…</div></div>
 </div>
@@ -204,15 +210,15 @@
   const db = getFirestore(app);
   enableIndexedDbPersistence(db).catch(() => {});
 
-  let currentUser = null;
-  let shopsById = {};   // id -> name
+  let currentRole = null;
+  let currentBusinessId = null;
+  let currentShopId = null; // operator only
+  let shopsById = {};   // owner only: id -> name
   let sales = [];
   let expenses = [];
   let drugs = [];
   let batches = [];
-  let creditAccounts = [];
   let creditTxns = [];
-  let loadedCount = 0; // once all 4 listeners have fired at least once, render
 
   function isThisMonth(ts) {
     if (!ts) return false;
@@ -226,8 +232,17 @@
   }
   function fmt(n) { return Math.round(n).toLocaleString(); }
 
+  function showError(label, err) {
+    const card = document.getElementById("errorCard");
+    const note = document.getElementById("errorNote");
+    card.style.display = "block";
+    note.textContent = `Couldn't load ${label}: ${err.message}. Some figures below may be incomplete — try reloading.`;
+    const badge = document.getElementById("netBadge");
+    badge.textContent = "error";
+    badge.className = "badge error";
+  }
+
   function renderAll() {
-    // ---- Business overview ----
     const salesThisMonth = sales.filter(s => isThisMonth(s.createdAt));
     const expensesThisMonth = expenses.filter(e => isThisMonth(e.createdAt));
     const totalSales = salesThisMonth.reduce((sum, s) => sum + (s.total || 0), 0);
@@ -236,12 +251,11 @@
       const stockUnitsWorth = d.baseUnitsPerStock ? (d.currentStockBase / d.baseUnitsPerStock) * (d.wholesale || 0) : 0;
       return sum + stockUnitsWorth;
     }, 0);
-    const lowStockCount = drugs.filter(d => d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock)).length;
-    const expiredCount = batches.filter(b => daysUntil(b.expiryDate) < 0 && b.quantity > 0).length;
+    const lowStockCount = drugs.filter(d => d.active !== false && d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock)).length;
+    const expiredCount = batches.filter(b => daysUntil(b.expiryDate) < 0 && Number(b.remainingBase || 0) > 0).length;
     const balancesById = {};
     creditTxns.forEach(t => { balancesById[t.customerId] = (balancesById[t.customerId] || 0) + (t.balanceChange || 0); });
     const totalCreditOwed = Object.values(balancesById).filter(b => b > 0).reduce((sum, b) => sum + b, 0);
-    document.getElementById("statCreditOwed").textContent = fmt(totalCreditOwed);
 
     document.getElementById("statSales").textContent = fmt(totalSales);
     document.getElementById("statExpenses").textContent = fmt(totalExpenses);
@@ -249,8 +263,10 @@
     document.getElementById("statStockValue").textContent = fmt(stockValue);
     document.getElementById("statLowStock").textContent = lowStockCount;
     document.getElementById("statExpired").textContent = expiredCount;
+    document.getElementById("statCreditOwed").textContent = fmt(totalCreditOwed);
 
-    // ---- Per-shop breakdown ----
+    if (currentRole !== "owner") return; // operator has no per-shop breakdown
+
     const shopIds = Object.keys(shopsById);
     const container = document.getElementById("shopBreakdown");
     if (shopIds.length === 0) {
@@ -262,8 +278,8 @@
       const shopSales = salesThisMonth.filter(s => s.shopId === id).reduce((sum, s) => sum + (s.total || 0), 0);
       const shopExpenses = expensesThisMonth.filter(e => e.shopId === id).reduce((sum, e) => sum + (e.amount || 0), 0);
       const net = shopSales - shopExpenses;
-      const shopLowStock = drugs.filter(d => d.shopId === id && d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock)).length;
-      const shopExpiring = batches.filter(b => b.shopId === id && daysUntil(b.expiryDate) >= 0 && daysUntil(b.expiryDate) <= 30 && b.quantity > 0).length;
+      const shopLowStock = drugs.filter(d => d.shopId === id && d.active !== false && d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock)).length;
+      const shopExpiring = batches.filter(b => b.shopId === id && daysUntil(b.expiryDate) >= 0 && daysUntil(b.expiryDate) <= 30 && Number(b.remainingBase || 0) > 0).length;
       return `
         <div class="shop-card">
           <div class="shop-name">${name}</div>
@@ -278,9 +294,18 @@
 
   onAuthStateChanged(auth, async (user) => {
     if (!user) { window.location.href = "login.html"; return; }
-    currentUser = user;
-    const userSnap = await getDoc(doc(db, "users", user.uid));
-    if (!userSnap.exists()) { window.location.href = "login.html"; return; }
+
+    let profile;
+    try {
+      const userSnap = await getDoc(doc(db, "users", user.uid));
+      if (!userSnap.exists()) { window.location.href = "login.html"; return; }
+      profile = userSnap.data();
+    } catch (err) {
+      showError("your profile", err);
+      return;
+    }
+    currentRole = profile.role;
+    currentBusinessId = profile.businessId;
 
     const badge = document.getElementById("netBadge");
     function markLoaded(fromCache) {
@@ -288,42 +313,50 @@
       badge.className = "badge " + (fromCache ? "offline" : "online");
     }
 
-    onSnapshot(query(collection(db, "shops"), where("ownerUid", "==", user.uid)), (snap) => {
-      shopsById = {};
-      snap.docs.forEach(d => { shopsById[d.id] = d.data().name; });
-      renderAll();
-    });
+    // ---- Build the query filters for each collection based on role.
+    // Owner: businessId only (sees every shop in the business).
+    // Operator: businessId + shopId (their one assigned shop, per the rules
+    // — they structurally can't read any other shop's data). ----
+    let filters;
+    if (currentRole === "owner") {
+      document.getElementById("shopBreakdownCard").classList.remove("hidden");
+      filters = [where("businessId", "==", currentBusinessId)];
 
-    onSnapshot(query(collection(db, "sales"), where("ownerUid", "==", user.uid)), { includeMetadataChanges: true }, (snap) => {
-      sales = snap.docs.map(d => d.data());
-      markLoaded(snap.metadata.fromCache);
-      renderAll();
-    });
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", currentBusinessId)),
+        (snap) => {
+          shopsById = {};
+          snap.docs.forEach(d => { shopsById[d.id] = d.data().name; });
+          renderAll();
+        },
+        (err) => showError("your shops", err)
+      );
+    } else {
+      currentShopId = profile.shopId;
+      document.getElementById("overviewTitle").textContent = "Your Shop";
+      document.getElementById("overviewNote").textContent = "Sales/Expenses figures are for this calendar month, for your shop. Stock and expiry figures are current right now.";
+      filters = [where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId)];
+    }
 
-    onSnapshot(query(collection(db, "expenses"), where("ownerUid", "==", user.uid)), (snap) => {
-      expenses = snap.docs.map(d => d.data());
-      renderAll();
-    });
-
-    onSnapshot(query(collection(db, "drugs"), where("ownerUid", "==", user.uid)), (snap) => {
-      drugs = snap.docs.map(d => d.data());
-      renderAll();
-    });
-
-    onSnapshot(query(collection(db, "batches"), where("ownerUid", "==", user.uid)), (snap) => {
-      batches = snap.docs.map(d => d.data());
-      renderAll();
-    });
-
-    onSnapshot(query(collection(db, "credit_accounts"), where("ownerUid", "==", user.uid)), (snap) => {
-      creditAccounts = snap.docs.map(d => d.data());
-      renderAll();
-    });
-
-    onSnapshot(query(collection(db, "credit_transactions"), where("ownerUid", "==", user.uid)), (snap) => {
-      creditTxns = snap.docs.map(d => d.data());
-      renderAll();
-    });
+    onSnapshot(query(collection(db, "sales"), ...filters), { includeMetadataChanges: true },
+      (snap) => { sales = snap.docs.map(d => d.data()); markLoaded(snap.metadata.fromCache); renderAll(); },
+      (err) => showError("sales", err)
+    );
+    onSnapshot(query(collection(db, "expenses"), ...filters),
+      (snap) => { expenses = snap.docs.map(d => d.data()); renderAll(); },
+      (err) => showError("expenses", err)
+    );
+    onSnapshot(query(collection(db, "drugs"), ...filters),
+      (snap) => { drugs = snap.docs.map(d => d.data()); renderAll(); },
+      (err) => showError("inventory", err)
+    );
+    onSnapshot(query(collection(db, "batches"), ...filters),
+      (snap) => { batches = snap.docs.map(d => d.data()); renderAll(); },
+      (err) => showError("batches", err)
+    );
+    onSnapshot(query(collection(db, "credit_transactions"), ...filters),
+      (snap) => { creditTxns = snap.docs.map(d => d.data()); renderAll(); },
+      (err) => showError("credit records", err)
+    );
   });
 </script>
 </body>
