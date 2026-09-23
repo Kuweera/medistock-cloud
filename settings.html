@@ -25,22 +25,25 @@
     background:var(--card); border:1px solid var(--border); border-radius:14px;
     padding:16px; margin-bottom:14px;
   }
-  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
-  .card .hint-top{font-size:12.5px; color:var(--muted); margin:-4px 0 12px;}
+  .card h2{font-size:15px; margin:0 0 4px; color:var(--accent); font-weight:700;}
+  .card .desc{font-size:12.5px; color:var(--muted); margin-bottom:12px;}
   label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
   input, select{
     width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
     background:var(--card); color:var(--text); font-size:14px;
   }
   input:focus, select:focus{outline:none; border-color:var(--accent);}
-  .row{display:flex; gap:8px;} .row > *{flex:1;}
   button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
-  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:14px;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:12px;}
+  .shop-block{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;}
+  .shop-block h3{font-size:14px; margin:0 0 8px; font-weight:600;}
+  .row{display:flex; gap:8px; align-items:flex-end;}
+  .row > *{flex:1;}
+  .status-line{font-size:12.5px; margin-top:6px; min-height:16px;}
   .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
-  .hint{font-size:11px; color:var(--muted); margin-top:6px;}
-  .hidden{display:none !important;}
+  #ownerGate{font-size:13px;}
 
-  /* ===== Shared MediStock Cloud navigation (matches MediStock Pro) ===== */
+  /* ===== Shared MediStock Cloud navigation ===== */
   .app-header{
     position:sticky; top:0; z-index:20;
     background:var(--accent); color:#fff;
@@ -131,48 +134,31 @@
   <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
 </nav>
 
-<div class="card">
-  <h2>Business Details</h2>
-  <div class="hint-top">Shared across every shop in this business.</div>
-  <label>Business name</label>
-  <input type="text" id="set_businessName" placeholder="e.g. Kuweera Drug Shops">
-  <div class="row">
-    <div>
-      <label>Phone</label>
-      <input type="text" id="set_phone" placeholder="e.g. 07XXXXXXXX">
-    </div>
-    <div>
-      <label>Currency label</label>
-      <input type="text" id="set_currency" placeholder="UGX">
-    </div>
-  </div>
-  <label>Address / head office</label>
-  <input type="text" id="set_address" placeholder="e.g. Main Street, Buwenge">
-  <label>Default reorder level (used when adding a new drug)</label>
-  <input type="number" id="set_reorderDefault" min="0" placeholder="e.g. 10">
-  <button class="btn-primary" id="saveBusinessBtn">Save Business Details</button>
-  <div id="businessStatus" style="font-size:13px; margin-top:8px;"></div>
+<div class="card" id="ownerGateCard" style="display:none;">
+  <div id="ownerGate">Settings is owner-only. Redirecting…</div>
 </div>
 
-<div class="card">
-  <h2>Starting Cash Balance</h2>
-  <div class="hint-top">
-    How much actual business cash did you have on the day you started using MediStock Cloud?
-    This is the starting point for Real Cash Available on the Cash Position page — you only need to set this once.
-    This is per-shop, since each shop's till is separate.
+<div id="ownerContent" style="display:none;">
+  <div class="card">
+    <h2>Business Details</h2>
+    <div class="desc">Applies across every shop in your business.</div>
+    <label>Business name</label>
+    <input type="text" id="bizName">
+    <label>Phone (optional)</label>
+    <input type="tel" id="bizPhone">
+    <label>Currency label</label>
+    <input type="text" id="bizCurrency" placeholder="e.g. UGX">
+    <label>Default reorder warning (days)</label>
+    <input type="number" id="bizReorderDays" placeholder="e.g. 7" min="0">
+    <button class="btn-primary" onclick="saveBusiness()">Save Business Details</button>
+    <div class="status-line" id="bizStatus"></div>
   </div>
-  <label>Shop</label>
-  <select id="set_shopSelect"></select>
-  <label>Starting cash for this shop</label>
-  <input type="number" id="set_startingCash" min="0" placeholder="e.g. 200000">
-  <button class="btn-primary" id="saveStartingCashBtn">Save Starting Cash</button>
-  <div id="cashStatus" style="font-size:13px; margin-top:8px;"></div>
-</div>
 
-<div class="card">
-  <h2>Account</h2>
-  <div class="hint-top">Signed in as <b id="whoAmI">—</b></div>
-  <button class="btn-primary" style="background:var(--danger);" id="logoutBtn">Log Out</button>
+  <div class="card">
+    <h2>Starting Cash Per Shop</h2>
+    <div class="desc">Each shop keeps its own till — set the opening cash balance for each.</div>
+    <div id="shopCashList"><div class="empty">Loading…</div></div>
+  </div>
 </div>
 
 <script>
@@ -189,7 +175,7 @@
 
     var themeBtn = document.getElementById('themeToggle');
     var order = ['auto','light','dark'];
-    var labels = {auto:'🌓 Theme: Auto', light:'☀️ Theme: Light', dark:'🌙 Theme: Dark'};
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
     function applyPref(pref){
       var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
       document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
@@ -204,12 +190,11 @@
     });
   })();
 </script>
-
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
-  import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, getDocs, setDoc, collection, onSnapshot,
+    getFirestore, doc, getDoc, updateDoc, collection, onSnapshot,
     enableIndexedDbPersistence, query, where
   } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
@@ -227,88 +212,105 @@
   const db = getFirestore(app);
   enableIndexedDbPersistence(db).catch(() => {});
 
-  let currentUser = null;
   let currentBusinessId = null;
-  let allShops = [];
 
-  window.doLogout = async function () { await signOut(auth); };
-  document.getElementById("logoutBtn").addEventListener("click", () => window.doLogout());
-
-  document.getElementById("saveBusinessBtn").addEventListener("click", async () => {
-    const statusEl = document.getElementById("businessStatus");
+  window.saveBusiness = async function () {
+    const statusEl = document.getElementById("bizStatus");
+    const name = document.getElementById("bizName").value.trim();
+    if (!name) {
+      statusEl.textContent = "Business name is required.";
+      statusEl.style.color = "var(--danger)";
+      return;
+    }
     try {
-      statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
-      await setDoc(doc(db, "businesses", currentBusinessId), {
-        name: document.getElementById("set_businessName").value.trim(),
-        phone: document.getElementById("set_phone").value.trim(),
-        currency: document.getElementById("set_currency").value.trim() || "UGX",
-        address: document.getElementById("set_address").value.trim(),
-        reorderDefault: Number(document.getElementById("set_reorderDefault").value) || 0
-      }, { merge: true });
+      statusEl.textContent = "Saving…";
+      statusEl.style.color = "var(--muted)";
+      await updateDoc(doc(db, "businesses", currentBusinessId), {
+        name,
+        phone: document.getElementById("bizPhone").value.trim() || null,
+        currency: document.getElementById("bizCurrency").value.trim() || null,
+        reorderDays: Number(document.getElementById("bizReorderDays").value) || null
+      });
       statusEl.textContent = "Saved.";
       statusEl.style.color = "var(--accent2)";
     } catch (err) {
       statusEl.textContent = "Failed: " + err.message;
       statusEl.style.color = "var(--danger)";
     }
-  });
+  };
 
-  async function loadStartingCashForSelectedShop() {
-    const shopId = document.getElementById("set_shopSelect").value;
-    if (!shopId) { document.getElementById("set_startingCash").value = 0; return; }
-    const shop = allShops.find(s => s.id === shopId);
-    document.getElementById("set_startingCash").value = (shop && shop.startingCash) || 0;
-  }
-  document.getElementById("set_shopSelect").addEventListener("change", loadStartingCashForSelectedShop);
-
-  document.getElementById("saveStartingCashBtn").addEventListener("click", async () => {
-    const statusEl = document.getElementById("cashStatus");
-    const shopId = document.getElementById("set_shopSelect").value;
-    if (!shopId) { statusEl.textContent = "Add a shop first (Shops page)."; statusEl.style.color = "var(--danger)"; return; }
-    const val = Number(document.getElementById("set_startingCash").value) || 0;
+  window.saveShopCash = async function (shopId) {
+    const statusEl = document.getElementById("cash-status-" + shopId);
+    const val = Number(document.getElementById("cash-" + shopId).value);
+    if (isNaN(val) || val < 0) {
+      statusEl.textContent = "Enter a valid amount.";
+      statusEl.style.color = "var(--danger)";
+      return;
+    }
     try {
-      statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
-      await setDoc(doc(db, "shops", shopId), { startingCash: val }, { merge: true });
-      statusEl.textContent = "Starting cash saved.";
+      statusEl.textContent = "Saving…";
+      statusEl.style.color = "var(--muted)";
+      await updateDoc(doc(db, "shops", shopId), { startingCash: val });
+      statusEl.textContent = "Saved.";
       statusEl.style.color = "var(--accent2)";
     } catch (err) {
       statusEl.textContent = "Failed: " + err.message;
       statusEl.style.color = "var(--danger)";
     }
-  });
+  };
+
+  function renderShopCash(shops) {
+    const container = document.getElementById("shopCashList");
+    if (shops.length === 0) {
+      container.innerHTML = '<div class="empty">No shops yet — add one from the Shops page first.</div>';
+      return;
+    }
+    container.innerHTML = shops.map(s => `
+      <div class="shop-block">
+        <h3>${s.name} <span style="color:var(--muted); font-weight:400; font-size:12px;">(${s.shopCode || "no code"})</span></h3>
+        <div class="row">
+          <div>
+            <label>Starting cash</label>
+            <input type="number" id="cash-${s.id}" value="${s.startingCash != null ? s.startingCash : 0}" min="0">
+          </div>
+          <button class="btn-primary" style="margin-top:0; width:auto; padding:10px 16px;" onclick="saveShopCash('${s.id}')">Save</button>
+        </div>
+        <div class="status-line" id="cash-status-${s.id}"></div>
+      </div>`).join("");
+  }
 
   onAuthStateChanged(auth, async (user) => {
     if (!user) { window.location.href = "login.html"; return; }
-    currentUser = user;
-    document.getElementById("whoAmI").textContent = user.email;
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.location.href = "login.html"; return; }
-    currentBusinessId = userSnap.data().businessId;
+    const profile = userSnap.data();
+    currentBusinessId = profile.businessId;
+
+    if (profile.role !== "owner") {
+      document.getElementById("ownerGateCard").style.display = "block";
+      setTimeout(() => { window.location.href = "dashboard.html"; }, 1500);
+      return;
+    }
+    document.getElementById("ownerContent").style.display = "block";
 
     const bizSnap = await getDoc(doc(db, "businesses", currentBusinessId));
-    const badge = document.getElementById("netBadge");
-    badge.textContent = "online (synced)";
-    badge.className = "badge online";
     if (bizSnap.exists()) {
       const b = bizSnap.data();
-      document.getElementById("set_businessName").value = b.name || "";
-      document.getElementById("set_phone").value = b.phone || "";
-      document.getElementById("set_currency").value = b.currency || "UGX";
-      document.getElementById("set_address").value = b.address || "";
-      document.getElementById("set_reorderDefault").value = b.reorderDefault || "";
+      document.getElementById("bizName").value = b.name || "";
+      document.getElementById("bizPhone").value = b.phone || "";
+      document.getElementById("bizCurrency").value = b.currency || "";
+      document.getElementById("bizReorderDays").value = b.reorderDays || "";
     }
 
-    const shopsSnap = await getDocs(query(collection(db, "shops"), where("ownerUid", "==", user.uid)));
-    allShops = shopsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const sel = document.getElementById("set_shopSelect");
-    sel.innerHTML = allShops.length
-      ? allShops.map(s => `<option value="${s.id}">${s.name}</option>`).join("")
-      : '<option value="">No shops yet — add one on the Shops page</option>';
-    if (allShops.length) {
-      const activeId = localStorage.getItem("mc_activeShopId");
-      if (allShops.some(s => s.id === activeId)) sel.value = activeId;
-      loadStartingCashForSelectedShop();
-    }
+    const shopsQ = query(collection(db, "shops"), where("businessId", "==", currentBusinessId));
+    onSnapshot(shopsQ, { includeMetadataChanges: true }, (snap) => {
+      const badge = document.getElementById("netBadge");
+      const fromCache = snap.metadata.fromCache;
+      badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
+      badge.className = "badge " + (fromCache ? "offline" : "online");
+      const shops = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
+      renderShopCash(shops);
+    });
   });
 </script>
 </body>
