@@ -175,7 +175,7 @@
 </nav>
 <div class="hint" id="shopIndicator" style="margin-bottom:8px;"></div>
 
-<div class="card">
+<div class="card" id="searchCard">
   <input class="search" type="text" id="searchBox" placeholder="Search name, generic, or class…">
   <div class="filter-row">
     <button class="filter-btn" id="lowStockBtn" onclick="toggleLowStockFilter()">Low stock only</button>
@@ -336,7 +336,7 @@
   <div id="formStatus" style="font-size:13px; margin-top:8px;"></div>
 </div>
 
-<div class="fab" onclick="openForm()">+</div>
+<div class="fab" id="fab" onclick="openForm()">+</div>
 
 <script>
   (function(){
@@ -663,16 +663,30 @@
     }, 300);
   }
 
+  function showOnlyForm() {
+    document.getElementById("searchCard").classList.add("hidden");
+    document.getElementById("bulkImportCard").classList.add("hidden");
+    document.getElementById("listCard").classList.add("hidden");
+    document.getElementById("fab").classList.add("hidden");
+  }
+  function showListView() {
+    document.getElementById("searchCard").classList.remove("hidden");
+    document.getElementById("listCard").classList.remove("hidden");
+    document.getElementById("fab").classList.remove("hidden");
+  }
+
   window.openForm = function () {
     editingId = null;
     document.getElementById("formTitle").textContent = "Add Drug";
     clearForm();
+    showOnlyForm();
     document.getElementById("formCard").classList.remove("hidden");
-    window.scrollTo(0, document.body.scrollHeight);
+    window.scrollTo(0, 0);
   };
   window.closeForm = function () {
     editingId = null;
     document.getElementById("formCard").classList.add("hidden");
+    showListView();
   };
 
   function clearForm() {
@@ -728,8 +742,9 @@
 
     document.getElementById("formStatus").textContent = "";
     updateCalcPreview();
+    showOnlyForm();
     document.getElementById("formCard").classList.remove("hidden");
-    window.scrollTo(0, document.body.scrollHeight);
+    window.scrollTo(0, 0);
   };
 
   window.saveDrug = async function () {
