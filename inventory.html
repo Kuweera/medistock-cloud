@@ -20,7 +20,6 @@
     padding:16px; padding-bottom:80px;
   }
   h1{font-size:19px; margin:0;}
-  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
   .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
   .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
   .card{
@@ -29,21 +28,27 @@
   }
   .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
   label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
-  input, select{
+  input, select, textarea{
     width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
-    background:var(--card); color:var(--text); font-size:14px;
+    background:var(--card); color:var(--text); font-size:14px; font-family:inherit;
   }
-  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  input:focus, select:focus, textarea:focus{outline:none; border-color:var(--accent);}
   .row{display:flex; gap:8px;} .row > *{flex:1;}
   .chk{display:flex; align-items:center; gap:8px; margin:10px 0;}
   .chk input{width:auto;}
   button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
   .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:14px;}
   .btn-toggle{background:transparent; color:var(--accent); border:1px solid var(--accent); width:100%; padding:10px; margin-bottom:12px;}
+  .filter-row{display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;}
+  .filter-btn{
+    background:transparent; color:var(--muted); border:1px solid var(--border);
+    padding:7px 12px; font-size:12.5px; width:auto;
+  }
+  .filter-btn.on{background:var(--accent); color:#fff; border-color:var(--accent);}
   .fab{
     position:fixed; bottom:20px; right:20px; width:56px; height:56px; border-radius:50%;
     background:var(--accent); color:#fff; font-size:28px; display:flex; align-items:center;
-    justify-content:center; box-shadow:0 4px 14px rgba(0,0,0,.4);
+    justify-content:center; box-shadow:0 4px 14px rgba(0,0,0,.4); cursor:pointer;
   }
   .drug-item{
     border-bottom:1px solid var(--border); padding:12px 0; display:flex; flex-direction:column; gap:2px;
@@ -53,12 +58,22 @@
   .drug-meta{font-size:12px; color:var(--muted);}
   .drug-stock{font-size:13px; margin-top:2px;}
   .low{color:var(--danger); font-weight:600;}
+  .inactive-tag{color:var(--muted); font-size:11px; font-weight:600; margin-left:6px;}
   .search{margin-bottom:12px;}
   .empty{color:var(--muted); font-size:13px; text-align:center; padding:20px 0;}
   .hint{font-size:11px; color:var(--muted); margin-top:6px;}
   .hidden{display:none !important;}
+  .btn-row{display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;}
+  .btn-small{width:auto; padding:6px 12px; font-size:12px;}
+  .btn-danger-outline{background:transparent; border:1px solid var(--danger); color:var(--danger);}
+  .btn-accent-outline{background:transparent; border:1px solid var(--accent2); color:var(--accent2);}
+  .btn-muted-outline{background:transparent; border:1px solid var(--border); color:var(--muted);}
+  .batch-history{margin-top:8px; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--bg); font-size:12.5px;}
+  .batch-line{padding:5px 0; border-bottom:1px solid var(--border);}
+  .batch-line:last-child{border-bottom:none;}
+  .pill{font-size:10px; background:var(--border); color:var(--muted); padding:1px 6px; border-radius:999px; margin-left:6px;}
 
-  /* ===== Shared MediStock Cloud navigation (matches MediStock Pro) ===== */
+  /* ===== Shared MediStock Cloud navigation ===== */
   .app-header{
     position:sticky; top:0; z-index:20;
     background:var(--accent); color:#fff;
@@ -145,12 +160,32 @@
   <a href="credit.html">Credit / Loans</a>
   <a href="suppliers.html">Suppliers</a>
   <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
   <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
 </nav>
 <div class="hint" id="shopIndicator" style="margin-bottom:8px;"></div>
 
 <div class="card">
-  <input class="search" type="text" id="searchBox" placeholder="Search drugs…">
+  <input class="search" type="text" id="searchBox" placeholder="Search name, generic, or class…">
+  <div class="filter-row">
+    <button class="filter-btn" id="lowStockBtn" onclick="toggleLowStockFilter()">Low stock only</button>
+    <button class="filter-btn" id="showInactiveBtn" onclick="toggleShowInactive()">Show deactivated</button>
+    <button class="filter-btn" onclick="toggleBulkImport()">Bulk import (JSON)</button>
+  </div>
+</div>
+
+<div class="card hidden" id="bulkImportCard">
+  <h2>Bulk Import</h2>
+  <div class="hint" style="margin-bottom:8px;">
+    Paste a JSON array, one object per drug. Same field names as MediStock Pro's export
+    (name, stockUnit, hasIntermediate, intermediateUnit, intermediatePerStock, baseUnit,
+    basePerIntermediate, wholesale, retailStock, openStock, openIntermediate, openBase,
+    drugClass, dosageForm). Adds to the shop you're currently viewing.
+  </div>
+  <textarea id="importJsonBox" rows="8" style="font-family:monospace; font-size:12px;"
+    placeholder='[{"name":"Paracetamol 500mg","stockUnit":"Packet","hasIntermediate":true,"intermediateUnit":"Strip","intermediatePerStock":10,"baseUnit":"Tablet","basePerIntermediate":10,"wholesale":1500,"retailStock":2000,"openStock":10,"openIntermediate":0,"openBase":0,"drugClass":"Analgesics","dosageForm":"Tablet"}]'></textarea>
+  <button class="btn-primary" onclick="runBulkImport()">Import</button>
+  <div id="importStatus" style="font-size:13px; margin-top:8px;"></div>
 </div>
 
 <div class="card" id="listCard">
@@ -322,7 +357,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, setDoc, deleteDoc, collection, addDoc, getDocs, onSnapshot,
+    getFirestore, doc, getDoc, setDoc, collection, addDoc, getDocs, onSnapshot,
     enableIndexedDbPersistence, serverTimestamp, query, where
   } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
@@ -341,10 +376,15 @@
   enableIndexedDbPersistence(db).catch(() => {});
 
   let currentUser = null;
+  let currentRole = null;
   let currentBusinessId = null;
   let currentShopId = null;
   let allDrugs = [];
   let editingId = null;
+  let lowStockOnly = false;
+  let showInactive = false;
+  const openBatchHistory = new Set();
+  const batchCache = {};
 
   // ---- Packaging engine (ported from V1, unchanged math) ----
   const PackagingEngine = {
@@ -466,13 +506,133 @@
     document.getElementById("f_form").value = name;
   };
 
-  window.deleteDrug = async function (id, name) {
-    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  // ---- Deactivate / Reactivate (soft delete — never a hard delete, since
+  // batches/sales/purchases keep referencing a drug by id) ----
+  window.toggleActive = async function (id, isCurrentlyActive) {
+    const verb = isCurrentlyActive ? "Deactivate" : "Reactivate";
+    const warn = isCurrentlyActive
+      ? " It'll disappear from the normal list (still visible under \"Show deactivated\") and won't be sellable, but its history stays intact."
+      : " It'll reappear in the normal list and become sellable again.";
+    if (!confirm(`${verb} this drug?${warn}`)) return;
     try {
-      await deleteDoc(doc(db, "drugs", id));
+      await setDoc(doc(db, "drugs", id), { active: !isCurrentlyActive }, { merge: true });
     } catch (err) {
-      alert("Couldn't delete: " + err.message);
+      alert("Failed: " + err.message);
     }
+  };
+
+  window.toggleLowStockFilter = function () {
+    lowStockOnly = !lowStockOnly;
+    document.getElementById("lowStockBtn").classList.toggle("on", lowStockOnly);
+    renderList(document.getElementById("searchBox").value);
+  };
+  window.toggleShowInactive = function () {
+    showInactive = !showInactive;
+    document.getElementById("showInactiveBtn").classList.toggle("on", showInactive);
+    renderList(document.getElementById("searchBox").value);
+  };
+  window.toggleBulkImport = function () {
+    document.getElementById("bulkImportCard").classList.toggle("hidden");
+  };
+
+  // ---- Batch history (best-effort: assumes batches carry businessId/shopId/
+  // drugId/batchNumber/purchasePricePerStockUnit/remainingBase like the rest
+  // of the shop-scoped collections — flag it to me if this doesn't match
+  // what the Batches page actually writes) ----
+  window.toggleBatchHistory = async function (drugId) {
+    const el = document.getElementById("batch-history-" + drugId);
+    if (!el) return;
+    if (openBatchHistory.has(drugId)) {
+      openBatchHistory.delete(drugId);
+      el.classList.add("hidden");
+      return;
+    }
+    openBatchHistory.add(drugId);
+    el.classList.remove("hidden");
+    if (batchCache[drugId]) return; // already loaded once
+    el.innerHTML = '<div class="empty">Loading batches…</div>';
+    try {
+      const snap = await getDocs(query(
+        collection(db, "batches"),
+        where("businessId", "==", currentBusinessId),
+        where("shopId", "==", currentShopId),
+        where("drugId", "==", drugId)
+      ));
+      const batches = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      batchCache[drugId] = batches;
+      renderBatchHistory(drugId);
+    } catch (err) {
+      el.innerHTML = `<div class="empty" style="color:var(--danger);">Couldn't load batch history: ${err.message}</div>`;
+    }
+  };
+
+  function renderBatchHistory(drugId) {
+    const el = document.getElementById("batch-history-" + drugId);
+    if (!el) return;
+    const batches = batchCache[drugId] || [];
+    const drug = allDrugs.find(d => d.id === drugId);
+    if (batches.length === 0) {
+      el.innerHTML = '<div class="empty">No batches recorded for this drug yet.</div>';
+      return;
+    }
+    const prices = batches.map(b => Number(b.purchasePricePerStockUnit) || 0).filter(p => p > 0);
+    const rangeLine = prices.length
+      ? `<div class="hint" style="margin-bottom:6px;">Price has ranged from ${Math.min(...prices).toLocaleString()} to ${Math.max(...prices).toLocaleString()} per ${drug ? drug.stockUnit : "stock unit"} across these purchases.</div>`
+      : "";
+    el.innerHTML = rangeLine + batches.map(b => {
+      const depleted = Number(b.remainingBase || 0) <= 0;
+      return `<div class="batch-line"><b>${b.batchNumber || "Batch —"}</b> — ${Number(b.purchasePricePerStockUnit || 0).toLocaleString()} / ${drug ? drug.stockUnit : "unit"}${depleted ? '<span class="pill">Depleted</span>' : ""}<br>
+        <span style="color:var(--muted);">Remaining: ${Number(b.remainingBase || 0).toLocaleString()} ${drug ? drug.baseUnit : "unit"}(s)${b.expiryDate ? " · Exp: " + b.expiryDate : ""}</span></div>`;
+    }).join("");
+  }
+
+  // ---- Bulk import ----
+  window.runBulkImport = async function () {
+    const statusEl = document.getElementById("importStatus");
+    if (!currentShopId) {
+      statusEl.textContent = "No shop selected — set one up on the Shops page first.";
+      statusEl.style.color = "var(--danger)";
+      return;
+    }
+    let items;
+    try {
+      items = JSON.parse(document.getElementById("importJsonBox").value);
+      if (!Array.isArray(items)) throw new Error("Expected a JSON array.");
+    } catch (err) {
+      statusEl.textContent = "Invalid JSON: " + err.message;
+      statusEl.style.color = "var(--danger)";
+      return;
+    }
+    statusEl.textContent = `Importing ${items.length} drug(s)…`;
+    statusEl.style.color = "var(--muted)";
+    let done = 0, failed = 0;
+    for (const s of items) {
+      try {
+        const baseUnitsPerStock = PackagingEngine.baseUnitsPerStock(s.intermediatePerStock, s.basePerIntermediate);
+        const currentStockBase = PackagingEngine.openingStockToBase(
+          s.openStock || 0, baseUnitsPerStock, s.openIntermediate || 0, s.basePerIntermediate, s.openBase || 0
+        );
+        await addDoc(collection(db, "drugs"), {
+          businessId: currentBusinessId, shopId: currentShopId, ownerUid: currentUser.uid,
+          name: s.name, generic: s.generic || "", drugClass: s.drugClass || "", dosageForm: s.dosageForm || "",
+          supplier: s.supplier || "", active: true,
+          stockUnit: s.stockUnit, hasIntermediate: !!s.hasIntermediate,
+          intermediateUnit: s.hasIntermediate ? s.intermediateUnit : null,
+          baseUnit: s.baseUnit, intermediatePerStock: s.intermediatePerStock || 1,
+          basePerIntermediate: s.basePerIntermediate, baseUnitsPerStock,
+          wholesale: Number(s.wholesale) || 0, retailStock: Number(s.retailStock) || 0,
+          retailIntermediate: Number(s.retailIntermediate) || 0, retailBase: Number(s.retailBase) || 0,
+          reorderLevel: Number(s.reorderLevel) || 0, targetStock: Number(s.targetStock) || 0,
+          currentStockBase, createdAt: serverTimestamp()
+        });
+        done++;
+      } catch (err) {
+        failed++;
+      }
+    }
+    statusEl.textContent = `Imported ${done} of ${items.length}${failed ? ` (${failed} failed)` : ""}.`;
+    statusEl.style.color = failed ? "var(--warn)" : "var(--accent2)";
+    if (done > 0) document.getElementById("importJsonBox").value = "";
   };
 
   let editHandoffApplied = false;
@@ -547,8 +707,6 @@
     document.getElementById("f_reorderLevel").value = d.reorderLevel || "";
     document.getElementById("f_targetStock").value = d.targetStock || "";
 
-    // Pre-fill opening stock with a breakdown of the CURRENT stock, so editing
-    // starts from where things actually stand rather than from zero.
     const breakdown = PackagingEngine.baseToBreakdown(d.currentStockBase || 0, d.baseUnitsPerStock, d.basePerIntermediate);
     document.getElementById("f_openStock").value = breakdown.stockUnits;
     document.getElementById("f_openIntermediate").value = breakdown.intermediateUnits;
@@ -564,6 +722,7 @@
     const statusEl = document.getElementById("formStatus");
     const name = document.getElementById("f_name").value.trim();
     if (!name) { statusEl.textContent = "Drug name is required."; statusEl.style.color = "var(--danger)"; return; }
+    if (!currentShopId) { statusEl.textContent = "No shop selected."; statusEl.style.color = "var(--danger)"; return; }
 
     const p = currentPackagingInputs();
     if (!p.stockUnit || !p.baseUnit || !p.baseUnitsPerStock) {
@@ -595,7 +754,7 @@
       drugClass: document.getElementById("f_class").value.trim(),
       dosageForm: document.getElementById("f_form").value.trim(),
       supplier: document.getElementById("f_supplier").value.trim(),
-      active: true,
+      active: editingId ? (allDrugs.find(d => d.id === editingId)?.active !== false) : true,
       stockUnit: p.stockUnit,
       hasIntermediate: p.has,
       intermediateUnit: p.has ? p.intermediateUnit : null,
@@ -631,13 +790,22 @@
 
   function renderList(filterText) {
     const container = document.getElementById("drugList");
-    const filtered = filterText
-      ? allDrugs.filter(d => d.name.toLowerCase().includes(filterText.toLowerCase()))
-      : allDrugs;
+    const f = (filterText || "").toLowerCase();
+    let filtered = allDrugs.filter(d => showInactive ? true : d.active !== false);
+    if (f) {
+      filtered = filtered.filter(d =>
+        d.name.toLowerCase().includes(f) ||
+        (d.generic || "").toLowerCase().includes(f) ||
+        (d.drugClass || "").toLowerCase().includes(f)
+      );
+    }
+    if (lowStockOnly) {
+      filtered = filtered.filter(d => d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock));
+    }
     document.getElementById("countTag").textContent = `(${filtered.length})`;
 
     if (filtered.length === 0) {
-      container.innerHTML = '<div class="empty">No drugs yet — tap + to add your first one.</div>';
+      container.innerHTML = '<div class="empty">No drugs match — tap + to add one, or clear a filter above.</div>';
       return;
     }
     container.innerHTML = filtered.map(d => {
@@ -648,41 +816,71 @@
       if (breakdown.looseBase) parts.push(`${breakdown.looseBase} ${d.baseUnit}(s)`);
       const stockText = parts.length ? parts.join(", ") : `0 ${d.baseUnit}(s)`;
       const isLow = d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock);
+      const isActive = d.active !== false;
       return `
-        <div class="drug-item" onclick="editDrug('${d.id}')" style="cursor:pointer;">
-          <div class="drug-name">${d.name}</div>
-          <div class="drug-meta">${d.generic || ""}${d.generic && d.supplier ? " · " : ""}${d.supplier || ""}</div>
-          <div class="drug-stock ${isLow ? "low" : ""}">${stockText}${isLow ? " — LOW STOCK" : ""}</div>
-          <button class="btn-toggle" style="width:auto; padding:5px 12px; margin:6px 0 0; border-color:var(--danger); color:var(--danger); font-size:12px;"
-            onclick="event.stopPropagation(); deleteDrug('${d.id}', '${d.name.replace(/'/g, "\\'")}')">Delete</button>
+        <div class="drug-item">
+          <div onclick="editDrug('${d.id}')" style="cursor:pointer;">
+            <div class="drug-name">${d.name}${!isActive ? '<span class="inactive-tag">DEACTIVATED</span>' : ""}</div>
+            <div class="drug-meta">${d.generic || ""}${d.generic && d.supplier ? " · " : ""}${d.supplier || ""}</div>
+            <div class="drug-stock ${isLow ? "low" : ""}">${stockText}${isLow ? " — LOW STOCK" : ""}</div>
+          </div>
+          <div class="btn-row">
+            <button class="btn-small btn-muted-outline" onclick="toggleBatchHistory('${d.id}')">Batch history</button>
+            ${isActive
+              ? `<button class="btn-small btn-danger-outline" onclick="toggleActive('${d.id}', true)">Deactivate</button>`
+              : `<button class="btn-small btn-accent-outline" onclick="toggleActive('${d.id}', false)">Reactivate</button>`}
+          </div>
+          <div class="batch-history hidden" id="batch-history-${d.id}"></div>
         </div>`;
     }).join("");
+    // Re-render any batch histories that were open before this refresh
+    openBatchHistory.forEach(id => {
+      const el = document.getElementById("batch-history-" + id);
+      if (el) { el.classList.remove("hidden"); if (batchCache[id]) renderBatchHistory(id); }
+    });
   }
 
   document.getElementById("searchBox").addEventListener("input", (e) => renderList(e.target.value));
 
   onAuthStateChanged(auth, async (user) => {
-    if (!user) {
-      window.location.href = "login.html";
-      return;
-    }
+    if (!user) { window.location.href = "login.html"; return; }
     currentUser = user;
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.location.href = "login.html"; return; }
-    currentBusinessId = userSnap.data().businessId;
+    const profile = userSnap.data();
+    currentRole = profile.role;
+    currentBusinessId = profile.businessId;
+
     await populateSelects();
     updateCalcPreview();
 
-    const shopsSnap = await getDocs(query(collection(db, "shops"), where("ownerUid", "==", user.uid)));
-    const activeId = localStorage.getItem("mc_activeShopId");
-    const foundShop = shopsSnap.docs.find(d => d.id === activeId);
-    const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
-    currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
-    document.getElementById("shopIndicator").textContent = resolvedShopDoc
-      ? `Working in: ${resolvedShopDoc.data().name}`
-      : "No shop set up yet — go to Shops to add one.";
+    if (currentRole === "owner") {
+      const shopsSnap = await getDocs(query(collection(db, "shops"), where("businessId", "==", currentBusinessId)));
+      const activeId = localStorage.getItem("mc_activeShopId");
+      const foundShop = shopsSnap.docs.find(d => d.id === activeId);
+      const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
+      currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
+      document.getElementById("shopIndicator").textContent = resolvedShopDoc
+        ? `Viewing: ${resolvedShopDoc.data().name}`
+        : "No shop set up yet — go to Shops to add one.";
+    } else {
+      currentShopId = profile.shopId;
+      const shopSnap = await getDoc(doc(db, "shops", currentShopId));
+      document.getElementById("shopIndicator").textContent = shopSnap.exists()
+        ? `Shop: ${shopSnap.data().name}`
+        : "(unknown shop)";
+    }
 
-    const drugsQ = query(collection(db, "drugs"), where("ownerUid", "==", user.uid), where("shopId", "==", currentShopId));
+    if (!currentShopId) {
+      document.getElementById("drugList").innerHTML = '<div class="empty">No shop to show inventory for yet.</div>';
+      return;
+    }
+
+    const drugsQ = query(
+      collection(db, "drugs"),
+      where("businessId", "==", currentBusinessId),
+      where("shopId", "==", currentShopId)
+    );
     onSnapshot(drugsQ, { includeMetadataChanges: true }, (snap) => {
       const badge = document.getElementById("netBadge");
       const fromCache = snap.metadata.fromCache;
