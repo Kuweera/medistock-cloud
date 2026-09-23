@@ -27,6 +27,16 @@
     padding:16px; margin-bottom:14px;
   }
   .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  .drug-card{border:1px solid var(--border); border-radius:12px; padding:14px; margin-bottom:12px;}
+  .drug-card .row-top{display:flex; justify-content:space-between; align-items:flex-start; gap:8px;}
+  .drug-card h3{font-size:15px; margin:0; font-weight:700;}
+  .status-badge{font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap;}
+  .status-badge.ok{background:rgba(46,125,50,.12); color:var(--accent2);}
+  .status-badge.low{background:rgba(178,59,59,.12); color:var(--danger);}
+  .status-badge.deactivated{background:var(--border); color:var(--muted);}
+  .class-badge{display:inline-block; font-size:11px; background:var(--border); color:var(--muted); padding:2px 8px; border-radius:999px; margin:6px 6px 0 0;}
+  .stock-line{font-size:13.5px; margin-top:8px; line-height:1.5;}
+  .meta-line{font-size:12px; color:var(--muted); margin-top:6px; line-height:1.6;}
   label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
   input, select, textarea{
     width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
@@ -177,11 +187,15 @@
 <div class="card hidden" id="bulkImportCard">
   <h2>Bulk Import</h2>
   <div class="hint" style="margin-bottom:8px;">
-    Paste a JSON array, one object per drug. Same field names as MediStock Pro's export
-    (name, stockUnit, hasIntermediate, intermediateUnit, intermediatePerStock, baseUnit,
-    basePerIntermediate, wholesale, retailStock, openStock, openIntermediate, openBase,
-    drugClass, dosageForm). Adds to the shop you're currently viewing.
+    Import from a JSON file saved on your phone, or paste JSON directly below.
+    Same field names as MediStock Pro's export (name, stockUnit, hasIntermediate,
+    intermediateUnit, intermediatePerStock, baseUnit, basePerIntermediate, wholesale,
+    retailStock, openStock, openIntermediate, openBase, drugClass, dosageForm).
+    Adds to the shop you're currently viewing.
   </div>
+  <label>Choose a .json file</label>
+  <input type="file" id="importFilePicker" accept=".json,application/json">
+  <label style="margin-top:10px;">…or paste JSON here</label>
   <textarea id="importJsonBox" rows="8" style="font-family:monospace; font-size:12px;"
     placeholder='[{"name":"Paracetamol 500mg","stockUnit":"Packet","hasIntermediate":true,"intermediateUnit":"Strip","intermediatePerStock":10,"baseUnit":"Tablet","basePerIntermediate":10,"wholesale":1500,"retailStock":2000,"openStock":10,"openIntermediate":0,"openBase":0,"drugClass":"Analgesics","dosageForm":"Tablet"}]'></textarea>
   <button class="btn-primary" onclick="runBulkImport()">Import</button>
@@ -810,21 +824,38 @@
     }
     container.innerHTML = filtered.map(d => {
       const breakdown = PackagingEngine.baseToBreakdown(d.currentStockBase, d.baseUnitsPerStock, d.basePerIntermediate);
-      const parts = [];
-      if (breakdown.stockUnits) parts.push(`${breakdown.stockUnits} ${d.stockUnit}(s)`);
-      if (d.hasIntermediate && breakdown.intermediateUnits) parts.push(`${breakdown.intermediateUnits} ${d.intermediateUnit}(s)`);
-      if (breakdown.looseBase) parts.push(`${breakdown.looseBase} ${d.baseUnit}(s)`);
-      const stockText = parts.length ? parts.join(", ") : `0 ${d.baseUnit}(s)`;
+      const breakdownLine = d.hasIntermediate && breakdown.intermediateUnits
+        ? `${breakdown.stockUnits} ${d.stockUnit}(s) + ${breakdown.intermediateUnits} ${d.intermediateUnit}(s) + ${breakdown.looseBase} ${d.baseUnit}(s)`
+        : `${breakdown.stockUnits} ${d.stockUnit}(s) + ${breakdown.looseBase} ${d.baseUnit}(s)`;
       const isLow = d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock);
       const isActive = d.active !== false;
+      const statusClass = !isActive ? "deactivated" : (isLow ? "low" : "ok");
+      const statusText = !isActive ? "DEACTIVATED" : (isLow ? "LOW STOCK" : "OK");
       return `
-        <div class="drug-item">
-          <div onclick="editDrug('${d.id}')" style="cursor:pointer;">
-            <div class="drug-name">${d.name}${!isActive ? '<span class="inactive-tag">DEACTIVATED</span>' : ""}</div>
-            <div class="drug-meta">${d.generic || ""}${d.generic && d.supplier ? " · " : ""}${d.supplier || ""}</div>
-            <div class="drug-stock ${isLow ? "low" : ""}">${stockText}${isLow ? " — LOW STOCK" : ""}</div>
+        <div class="drug-card">
+          <div class="row-top" onclick="editDrug('${d.id}')" style="cursor:pointer;">
+            <div>
+              <h3>${d.name}</h3>
+              <div class="meta-line" style="margin-top:2px;">${d.generic || "—"}</div>
+            </div>
+            <span class="status-badge ${statusClass}">${statusText}</span>
+          </div>
+          <div>
+            <span class="class-badge">${d.drugClass || "Other"}</span>
+            ${d.dosageForm ? `<span class="class-badge">${d.dosageForm}</span>` : ""}
+          </div>
+          <div class="stock-line">
+            Stock: ${d.currentStockBase.toLocaleString()} ${d.baseUnit}(s)<br>
+            = ${breakdownLine}
+          </div>
+          <div class="meta-line">
+            1 ${d.stockUnit} = ${d.baseUnitsPerStock} ${d.baseUnit}(s)${d.hasIntermediate ? ` (${d.intermediatePerStock} ${d.intermediateUnit} × ${d.basePerIntermediate} ${d.baseUnit})` : ""}<br>
+            Wholesale: ${Number(d.wholesale || 0).toLocaleString()} / ${d.stockUnit} &nbsp;·&nbsp; Retail: ${Number(d.retailStock || 0).toLocaleString()} / ${d.stockUnit}<br>
+            Reorder level: ${d.reorderLevel || 0} ${d.stockUnit}(s) &nbsp;·&nbsp; Target: ${d.targetStock || "—"} ${d.stockUnit}(s)<br>
+            Supplier: ${d.supplier || "—"}
           </div>
           <div class="btn-row">
+            <button class="btn-small btn-muted-outline" onclick="editDrug('${d.id}')">${isActive ? "Edit" : "View / Reactivate"}</button>
             <button class="btn-small btn-muted-outline" onclick="toggleBatchHistory('${d.id}')">Batch history</button>
             ${isActive
               ? `<button class="btn-small btn-danger-outline" onclick="toggleActive('${d.id}', true)">Deactivate</button>`
@@ -841,6 +872,23 @@
   }
 
   document.getElementById("searchBox").addEventListener("input", (e) => renderList(e.target.value));
+
+  document.getElementById("importFilePicker").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    const statusEl = document.getElementById("importStatus");
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      document.getElementById("importJsonBox").value = reader.result;
+      statusEl.textContent = `Loaded ${file.name} — tap Import to continue.`;
+      statusEl.style.color = "var(--muted)";
+    };
+    reader.onerror = () => {
+      statusEl.textContent = "Couldn't read that file.";
+      statusEl.style.color = "var(--danger)";
+    };
+    reader.readAsText(file);
+  });
 
   onAuthStateChanged(auth, async (user) => {
     if (!user) { window.location.href = "login.html"; return; }
