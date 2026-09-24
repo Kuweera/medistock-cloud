@@ -45,6 +45,14 @@
   .period-note{font-size:11px; color:var(--muted); margin-bottom:10px;}
   .error-note{font-size:12.5px; color:var(--danger); margin-bottom:10px;}
   .hidden{display:none !important;}
+  .pill-row{display:flex; gap:6px; flex-wrap:wrap;}
+  .pill-btn{
+    background:transparent; color:var(--muted); border:1px solid var(--border);
+    padding:6px 12px; font-size:12.5px; border-radius:999px; cursor:pointer;
+  }
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .row-inline{display:flex; gap:8px;}
+  .row-inline input{flex:1; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:13px;}
 
   /* ===== Shared MediStock Cloud navigation (matches MediStock Pro) ===== */
   .app-header{
@@ -143,10 +151,25 @@
 
 <div class="card">
   <h2 id="overviewTitle">Business Overview</h2>
-  <div class="period-note" id="overviewNote">Sales/Expenses figures are for this calendar month, across all your shops. Stock and expiry figures are current right now.</div>
-  <div class="stat-grid">
-    <div class="stat good"><div class="num" id="statSales">—</div><div class="lbl">Sales this month</div></div>
-    <div class="stat"><div class="num" id="statExpenses">—</div><div class="lbl">Expenses this month</div></div>
+  <div class="period-note" id="overviewNote">Sales/Expenses figures are for the period below, across all your shops. Stock and expiry figures are always current right now, whatever period you pick.</div>
+  <div class="pill-row" id="periodPills">
+    <button type="button" class="pill-btn" data-period="today">Day</button>
+    <button type="button" class="pill-btn" data-period="week">Week</button>
+    <button type="button" class="pill-btn selected" data-period="month">Month</button>
+    <button type="button" class="pill-btn" data-period="year">Year</button>
+    <button type="button" class="pill-btn" data-period="custom">Custom</button>
+    <button type="button" class="pill-btn" data-period="all">All time</button>
+  </div>
+  <div id="customRange" class="hidden" style="margin:8px 0;">
+    <div class="row-inline">
+      <input type="date" id="customFrom">
+      <input type="date" id="customTo">
+    </div>
+  </div>
+  <div class="period-note" id="periodRangeLabel" style="margin-top:2px;"></div>
+  <div class="stat-grid" style="margin-top:10px;">
+    <div class="stat good"><div class="num" id="statSales">—</div><div class="lbl">Sales</div></div>
+    <div class="stat"><div class="num" id="statExpenses">—</div><div class="lbl">Expenses</div></div>
     <div class="stat good"><div class="num" id="statNet">—</div><div class="lbl">Net (Sales − Expenses)</div></div>
     <div class="stat"><div class="num" id="statStockValue">—</div><div class="lbl">Stock value (at wholesale)</div></div>
     <div class="stat warn"><div class="num" id="statLowStock">—</div><div class="lbl">Low stock items</div></div>
@@ -221,12 +244,86 @@
   let batches = [];
   let creditTxns = [];
 
-  function isThisMonth(ts) {
+  // ---- Period engine (ported from Pro's Dashboard: Day/Week/Month/Year/
+  // Custom/All-time. Only the TYPE is remembered as a preference — the
+  // actual range always resolves against today's real date on reopen,
+  // it never resumes some stale range from last time.) ----
+  function getPeriodPref() {
+    try { const raw = localStorage.getItem("mcDashPeriod"); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+  }
+  function savePeriodPref() {
+    try {
+      localStorage.setItem("mcDashPeriod", JSON.stringify({
+        type: periodType,
+        from: document.getElementById("customFrom").value || "",
+        to: document.getElementById("customTo").value || ""
+      }));
+    } catch (e) {}
+  }
+  const periodPref = getPeriodPref();
+  let periodType = periodPref?.type || "month";
+
+  function computePeriodRange() {
+    const now = new Date();
+    let from, to;
+    if (periodType === "all") {
+      from = new Date(2000, 0, 1);
+      to = new Date(2099, 11, 31, 23, 59, 59, 999);
+    } else if (periodType === "today") {
+      from = new Date(now); from.setHours(0, 0, 0, 0);
+      to = new Date(now); to.setHours(23, 59, 59, 999);
+    } else if (periodType === "week") {
+      from = new Date(now); from.setDate(now.getDate() - now.getDay()); from.setHours(0, 0, 0, 0);
+      to = new Date(from); to.setDate(from.getDate() + 6); to.setHours(23, 59, 59, 999);
+    } else if (periodType === "month") {
+      from = new Date(now.getFullYear(), now.getMonth(), 1);
+      to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else if (periodType === "year") {
+      from = new Date(now.getFullYear(), 0, 1);
+      to = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+    } else {
+      const fromStr = document.getElementById("customFrom").value;
+      const toStr = document.getElementById("customTo").value;
+      from = fromStr ? new Date(fromStr + "T00:00:00") : new Date(2000, 0, 1);
+      to = toStr ? new Date(toStr + "T23:59:59") : new Date();
+    }
+    return { from, to };
+  }
+  function isInRange(ts, from, to) {
     if (!ts) return false;
     const d = ts.toDate();
-    const now = new Date();
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    return d >= from && d <= to;
   }
+  function formatRangeLabel(from, to) {
+    const f = d => d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    return `${f(from)} → ${f(to)}`;
+  }
+
+  document.querySelectorAll("#periodPills .pill-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#periodPills .pill-btn").forEach(b => b.classList.remove("selected"));
+      btn.classList.add("selected");
+      periodType = btn.dataset.period;
+      document.getElementById("customRange").classList.toggle("hidden", periodType !== "custom");
+      savePeriodPref();
+      renderAll();
+    });
+  });
+  document.getElementById("customFrom").addEventListener("change", () => { savePeriodPref(); renderAll(); });
+  document.getElementById("customTo").addEventListener("change", () => { savePeriodPref(); renderAll(); });
+
+  // Reflect the restored preference in the UI (markup hard-codes "Month" as selected).
+  if (periodPref?.type && periodPref.type !== "month") {
+    document.querySelectorAll("#periodPills .pill-btn").forEach(b => {
+      b.classList.toggle("selected", b.dataset.period === periodType);
+    });
+  }
+  if (periodType === "custom") {
+    document.getElementById("customFrom").value = periodPref?.from || "";
+    document.getElementById("customTo").value = periodPref?.to || "";
+    document.getElementById("customRange").classList.remove("hidden");
+  }
+
   function daysUntil(dateStr) {
     const today = new Date(); today.setHours(0,0,0,0);
     return Math.round((new Date(dateStr) - today) / 86400000);
@@ -244,8 +341,10 @@
   }
 
   function renderAll() {
-    const salesThisMonth = sales.filter(s => isThisMonth(s.createdAt));
-    const expensesThisMonth = expenses.filter(e => isThisMonth(e.createdAt));
+    const { from, to } = computePeriodRange();
+    document.getElementById("periodRangeLabel").textContent = formatRangeLabel(from, to);
+    const salesThisMonth = sales.filter(s => isInRange(s.createdAt, from, to));
+    const expensesThisMonth = expenses.filter(e => isInRange(e.createdAt, from, to));
     const totalSales = salesThisMonth.reduce((sum, s) => sum + (s.total || 0), 0);
     const totalExpenses = expensesThisMonth.reduce((sum, e) => sum + (e.amount || 0), 0);
     const stockValue = drugs.reduce((sum, d) => {
@@ -334,7 +433,7 @@
     } else {
       currentShopId = profile.shopId;
       document.getElementById("overviewTitle").textContent = "Your Shop";
-      document.getElementById("overviewNote").textContent = "Sales/Expenses figures are for this calendar month, for your shop. Stock and expiry figures are current right now.";
+      document.getElementById("overviewNote").textContent = "Sales/Expenses figures are for the period below, for your shop. Stock and expiry figures are always current right now, whatever period you pick.";
       filters = [where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId)];
     }
 
