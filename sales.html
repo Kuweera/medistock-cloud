@@ -19,7 +19,6 @@
     background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
   }
   h1{font-size:19px; margin:0;}
-  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
   .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
   .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
   .card{
@@ -28,19 +27,27 @@
   }
   .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
   label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
-  input, select{
+  input, select, textarea{
     width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
-    background:var(--card); color:var(--text); font-size:14px;
+    background:var(--card); color:var(--text); font-size:14px; font-family:inherit;
   }
   input:focus, select:focus{outline:none; border-color:var(--accent);}
   .row{display:flex; gap:8px;} .row > *{flex:1;}
+  .chk{display:flex; align-items:center; gap:8px; margin:10px 0;}
+  .chk input{width:auto;}
   button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
-  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px;}
-  .result-item{
-    padding:10px; border-bottom:1px solid var(--border); cursor:pointer;
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent); width:100%; padding:10px; margin-top:8px;}
+  .btn-danger-outline{background:transparent; border:1px solid var(--danger); color:var(--danger);}
+  .btn-small{width:auto; padding:7px 12px; font-size:12.5px;}
+  .chip-row{display:flex; gap:8px; flex-wrap:wrap;}
+  .chip{
+    background:var(--bg); border:1px solid var(--border); color:var(--text);
+    padding:8px 12px; border-radius:999px; font-size:13px; cursor:pointer;
   }
+  .result-item{padding:10px; border-bottom:1px solid var(--border); cursor:pointer;}
   .result-item:last-child{border-bottom:none;}
-  .result-item:active{background:var(--border);}
+  .result-item:active{background:var(--bg);}
   .result-name{font-weight:600; font-size:14px;}
   .result-stock{font-size:12px; color:var(--muted);}
   .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
@@ -48,9 +55,16 @@
   .total-line{font-size:20px; font-weight:700; text-align:right; margin-top:12px;}
   .hint{font-size:11px; color:var(--muted); margin-top:6px;}
   .hidden{display:none !important;}
-  .link{color:var(--accent); font-size:13px; text-decoration:none;}
+  .cart-item{display:flex; justify-content:space-between; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--border); gap:8px;}
+  .cart-item:last-child{border-bottom:none;}
+  .cart-item-name{font-weight:600; font-size:14px;}
+  .cart-item-meta{font-size:12px; color:var(--muted);}
+  .receipt-box{
+    font-family:monospace; font-size:12.5px; white-space:pre-wrap; background:var(--bg);
+    border:1px solid var(--border); border-radius:8px; padding:12px; line-height:1.6;
+  }
 
-  /* ===== Shared MediStock Cloud navigation (matches MediStock Pro) ===== */
+  /* ===== Shared MediStock Cloud navigation ===== */
   .app-header{
     position:sticky; top:0; z-index:20;
     background:var(--accent); color:#fff;
@@ -137,18 +151,24 @@
   <a href="credit.html">Credit / Loans</a>
   <a href="suppliers.html">Suppliers</a>
   <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
   <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
 </nav>
 <div class="hint" id="shopIndicator" style="margin-bottom:8px;"></div>
+
+<div class="card hidden" id="frequentCard">
+  <h2>Frequently Sold</h2>
+  <div class="chip-row" id="frequentChips"></div>
+</div>
 
 <div class="card" id="searchCard">
   <input type="text" id="searchBox" placeholder="Search drug to sell…" autocomplete="off">
   <div id="results" style="margin-top:8px;"></div>
 </div>
 
-<div class="card hidden selected-card" id="sellCard">
-  <h2 id="sellDrugName">—</h2>
-  <div class="hint" id="sellDrugStock"></div>
+<div class="card hidden selected-card" id="configureCard">
+  <h2 id="configDrugName">—</h2>
+  <div class="hint" id="configDrugStock"></div>
 
   <label>Sell by</label>
   <select id="unitLevel"></select>
@@ -156,11 +176,42 @@
   <label>Quantity</label>
   <input type="number" id="qty" min="1" value="1">
 
-  <div class="hint" id="stockCheckMsg"></div>
-  <div class="total-line" id="totalLine">Total: 0</div>
+  <label>Price per unit (editable)</label>
+  <input type="number" id="pricePerUnit" min="0">
 
-  <button class="btn-primary" onclick="completeSale()">Record Sale</button>
+  <div class="hint" id="stockCheckMsg"></div>
+  <div class="total-line" id="lineTotal">Total: 0</div>
+
+  <button class="btn-primary" onclick="addToCart()">Add to Cart</button>
+  <button class="btn-secondary" onclick="closeConfigure()">Cancel</button>
+</div>
+
+<div class="card hidden" id="cartCard">
+  <h2>Cart</h2>
+  <div id="cartList"></div>
+  <div class="total-line" id="cartTotal">Total: 0</div>
+
+  <div class="chk">
+    <input type="checkbox" id="onCredit">
+    <label style="margin:0;">Sell on credit / loan</label>
+  </div>
+  <div id="creditFields" class="hidden">
+    <label>Customer name</label>
+    <input type="text" id="customerName" list="customerSuggestions" placeholder="Search or type a new customer name">
+    <datalist id="customerSuggestions"></datalist>
+    <div class="hint" id="creditLimitHint"></div>
+  </div>
+
+  <button class="btn-primary" onclick="completeSale()">Complete Sale</button>
   <div id="saleStatus" style="font-size:13px; margin-top:8px;"></div>
+</div>
+
+<div class="card hidden" id="receiptCard">
+  <h2>Receipt <span id="receiptNumber"></span></h2>
+  <div class="receipt-box" id="receiptText"></div>
+  <button class="btn-primary" onclick="shareReceipt()">Share Receipt</button>
+  <button class="btn-secondary" onclick="saveReceiptToPhone()">Save to Phone</button>
+  <button class="btn-secondary" onclick="startNewSale()">New Sale</button>
 </div>
 
 <script>
@@ -196,8 +247,8 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, getDocs, updateDoc, writeBatch, collection, addDoc, onSnapshot,
-    enableIndexedDbPersistence, serverTimestamp, query, where
+    getFirestore, doc, getDoc, getDocs, writeBatch, runTransaction, collection, addDoc,
+    onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where
   } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -215,12 +266,20 @@
   enableIndexedDbPersistence(db).catch(() => {});
 
   let currentUser = null;
+  let currentRole = null;
+  let cashierName = "";
   let currentBusinessId = null;
   let currentShopId = null;
+  let currentShopName = "";
+  let businessName = "";
+  let businessPhone = "";
   let allDrugs = [];
+  let creditAccounts = [];
   let selectedDrug = null;
   let selectedBatches = []; // active, non-expired batches for selectedDrug, earliest expiry first
-  let sellableBase = 0;     // stock actually available to sell right now
+  let sellableBaseForDrug = 0; // stock actually available right now, before cart reservations
+  let cart = []; // { drugId, drugName, drugClass, unitLevel, unitLabel, qty, baseQtyNeeded, pricePerUnit, total, baseUnitsPerStock, basePerIntermediate, stockUnit, intermediateUnit, baseUnit }
+  let lastReceiptData = null;
 
   function daysUntil(dateStr) {
     const today = new Date(); today.setHours(0,0,0,0);
@@ -259,11 +318,41 @@
     if (b.looseBase) parts.push(`${b.looseBase} ${d.baseUnit}(s)`);
     return parts.length ? parts.join(", ") : `0 ${d.baseUnit}(s)`;
   }
+  // The clearest unit combination for a SOLD quantity, e.g. "5 Strip(s)"
+  // rather than "50 Tablet(s)" — used consistently on the cart and receipt.
+  function formatSoldQtyLabel(baseQty, drug) {
+    const b = PackagingEngine.baseToBreakdown(baseQty, drug.baseUnitsPerStock, drug.basePerIntermediate);
+    const parts = [];
+    if (b.stockUnits) parts.push(`${b.stockUnits} ${drug.stockUnit}(s)`);
+    if (drug.hasIntermediate && b.intermediateUnits) parts.push(`${b.intermediateUnits} ${drug.intermediateUnit}(s)`);
+    if (b.looseBase) parts.push(`${b.looseBase} ${drug.baseUnit}(s)`);
+    return parts.length ? parts.join(" + ") : `0 ${drug.baseUnit}(s)`;
+  }
+
+  function unitLabelFor(unitLevel, drug) {
+    if (unitLevel === "stock") return drug.stockUnit;
+    if (unitLevel === "intermediate") return drug.intermediateUnit;
+    return drug.baseUnit;
+  }
+  function priceFor(unitLevel, drug) {
+    if (unitLevel === "stock") return Number(drug.retailStock) || 0;
+    if (unitLevel === "intermediate") return Number(drug.retailIntermediate) || 0;
+    return Number(drug.retailBase) || 0;
+  }
+
+  function cartReservedBaseFor(drugId) {
+    return cart.filter(c => c.drugId === drugId).reduce((sum, c) => sum + c.baseQtyNeeded, 0);
+  }
 
   function renderResults(filterText) {
     const box = document.getElementById("results");
     if (!filterText) { box.innerHTML = ""; return; }
-    const matches = allDrugs.filter(d => d.name.toLowerCase().includes(filterText.toLowerCase()));
+    const f = filterText.toLowerCase();
+    const matches = allDrugs.filter(d => d.active !== false && (
+      d.name.toLowerCase().includes(f) ||
+      (d.generic || "").toLowerCase().includes(f) ||
+      (d.drugClass || "").toLowerCase().includes(f)
+    ));
     if (matches.length === 0) {
       box.innerHTML = '<div class="empty">No matching drug in stock.</div>';
       return;
@@ -279,22 +368,30 @@
   window.selectDrug = async function (id) {
     selectedDrug = allDrugs.find(d => d.id === id);
     if (!selectedDrug) return;
-    document.getElementById("searchBox").value = selectedDrug.name;
+    document.getElementById("searchBox").value = "";
     document.getElementById("results").innerHTML = "";
-    document.getElementById("sellCard").classList.remove("hidden");
-    document.getElementById("sellDrugName").textContent = selectedDrug.name;
-    document.getElementById("sellDrugStock").textContent = "Checking batches…";
+    document.getElementById("configureCard").classList.remove("hidden");
+    document.getElementById("configDrugName").textContent = selectedDrug.name;
+    document.getElementById("configDrugStock").textContent = "Checking batches…";
+    window.scrollTo({ top: document.getElementById("configureCard").offsetTop - 10, behavior: "smooth" });
 
-    const batchesQ = query(collection(db, "batches"), where("drugId", "==", selectedDrug.id), where("ownerUid", "==", currentUser.uid));
+    const batchesQ = query(
+      collection(db, "batches"),
+      where("businessId", "==", currentBusinessId),
+      where("shopId", "==", currentShopId),
+      where("drugId", "==", selectedDrug.id)
+    );
     const snap = await getDocs(batchesQ);
     const allBatchesForDrug = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
+    const reserved = cartReservedBaseFor(selectedDrug.id);
+
     if (allBatchesForDrug.length === 0) {
-      // No batches recorded for this drug yet — fall back to the simple
-      // total on the drug record itself (unchanged behavior).
       selectedBatches = [];
-      sellableBase = selectedDrug.currentStockBase;
-      document.getElementById("sellDrugStock").textContent = "In stock: " + stockSummary(selectedDrug);
+      sellableBaseForDrug = selectedDrug.currentStockBase;
+      const afterCart = sellableBaseForDrug - reserved;
+      document.getElementById("configDrugStock").textContent =
+        "In stock: " + stockSummary(selectedDrug) + (reserved ? ` (${formatSoldQtyLabel(reserved, selectedDrug)} already in cart)` : "");
     } else {
       const active = allBatchesForDrug
         .filter(b => daysUntil(b.expiryDate) >= 0 && b.quantity > 0)
@@ -304,149 +401,425 @@
         .reduce((sum, b) => sum + b.quantity, 0);
 
       selectedBatches = active;
-      sellableBase = active.reduce((sum, b) => sum + b.quantity, 0);
+      sellableBaseForDrug = active.reduce((sum, b) => sum + b.quantity, 0);
 
-      const breakdown = PackagingEngine.baseToBreakdown(sellableBase, selectedDrug.baseUnitsPerStock, selectedDrug.basePerIntermediate);
-      const parts = [];
-      if (breakdown.stockUnits) parts.push(`${breakdown.stockUnits} ${selectedDrug.stockUnit}(s)`);
-      if (selectedDrug.hasIntermediate && breakdown.intermediateUnits) parts.push(`${breakdown.intermediateUnits} ${selectedDrug.intermediateUnit}(s)`);
-      if (breakdown.looseBase) parts.push(`${breakdown.looseBase} ${selectedDrug.baseUnit}(s)`);
-      let stockText = parts.length ? parts.join(", ") : `0 ${selectedDrug.baseUnit}(s)`;
+      let stockText = "Sellable: " + formatSoldQtyLabel(sellableBaseForDrug, selectedDrug);
       if (expiredQty > 0) stockText += ` (+${expiredQty} ${selectedDrug.baseUnit}(s) expired, excluded)`;
+      if (reserved > 0) stockText += ` — ${formatSoldQtyLabel(reserved, selectedDrug)} already in cart`;
       const nextExpiry = active.length ? ` · next batch expires ${active[0].expiryDate}` : "";
-      document.getElementById("sellDrugStock").textContent = "Sellable: " + stockText + nextExpiry;
+      document.getElementById("configDrugStock").textContent = stockText + nextExpiry;
     }
 
     const unitSel = document.getElementById("unitLevel");
     const options = [];
-    options.push(`<option value="base">${selectedDrug.baseUnit} (base unit) — ${selectedDrug.retailBase || 0} each</option>`);
+    options.push(`<option value="base">${selectedDrug.baseUnit} (base unit)</option>`);
     if (selectedDrug.hasIntermediate) {
-      options.push(`<option value="intermediate">${selectedDrug.intermediateUnit} — ${selectedDrug.retailIntermediate || 0} each</option>`);
+      options.push(`<option value="intermediate">${selectedDrug.intermediateUnit}</option>`);
     }
-    options.push(`<option value="stock">${selectedDrug.stockUnit} — ${selectedDrug.retailStock || 0} each</option>`);
+    options.push(`<option value="stock">${selectedDrug.stockUnit}</option>`);
     unitSel.innerHTML = options.join("");
     document.getElementById("qty").value = 1;
-    document.getElementById("saleStatus").textContent = "";
-    updateTotal();
+    document.getElementById("pricePerUnit").value = priceFor(unitSel.value, selectedDrug);
+    updateConfigTotal();
   };
 
-  function priceFor(unitLevel) {
-    if (unitLevel === "stock") return Number(selectedDrug.retailStock) || 0;
-    if (unitLevel === "intermediate") return Number(selectedDrug.retailIntermediate) || 0;
-    return Number(selectedDrug.retailBase) || 0;
-  }
+  document.getElementById("unitLevel").addEventListener("change", () => {
+    document.getElementById("pricePerUnit").value = priceFor(document.getElementById("unitLevel").value, selectedDrug);
+    updateConfigTotal();
+  });
+  document.getElementById("qty").addEventListener("input", updateConfigTotal);
+  document.getElementById("pricePerUnit").addEventListener("input", updateConfigTotal);
 
-  function updateTotal() {
+  function updateConfigTotal() {
     if (!selectedDrug) return;
     const unitLevel = document.getElementById("unitLevel").value;
     const qty = Number(document.getElementById("qty").value) || 0;
+    const price = Number(document.getElementById("pricePerUnit").value) || 0;
     const baseQtyNeeded = PackagingEngine.unitQuantityToBase(qty, unitLevel, selectedDrug.baseUnitsPerStock, selectedDrug.basePerIntermediate);
-    const total = qty * priceFor(unitLevel);
-    document.getElementById("totalLine").textContent = "Total: " + total.toLocaleString();
+    const total = qty * price;
+    document.getElementById("lineTotal").textContent = "Total: " + total.toLocaleString();
 
     const msgEl = document.getElementById("stockCheckMsg");
-    if (baseQtyNeeded > sellableBase) {
-      msgEl.textContent = `Not enough sellable stock available for this quantity.`;
+    const reserved = cartReservedBaseFor(selectedDrug.id);
+    if (baseQtyNeeded + reserved > sellableBaseForDrug) {
+      msgEl.textContent = "Not enough sellable stock available for this quantity (accounting for what's already in the cart).";
       msgEl.style.color = "var(--danger)";
     } else {
       msgEl.textContent = "";
     }
   }
-  document.getElementById("unitLevel").addEventListener("change", updateTotal);
-  document.getElementById("qty").addEventListener("input", updateTotal);
 
-  window.completeSale = async function () {
-    const statusEl = document.getElementById("saleStatus");
+  window.closeConfigure = function () {
+    selectedDrug = null;
+    document.getElementById("configureCard").classList.add("hidden");
+  };
+
+  window.addToCart = function () {
     if (!selectedDrug) return;
     const unitLevel = document.getElementById("unitLevel").value;
     const qty = Number(document.getElementById("qty").value) || 0;
-    if (qty <= 0) { statusEl.textContent = "Enter a quantity."; statusEl.style.color = "var(--danger)"; return; }
-
+    const price = Number(document.getElementById("pricePerUnit").value) || 0;
+    if (qty <= 0) return;
     const baseQtyNeeded = PackagingEngine.unitQuantityToBase(qty, unitLevel, selectedDrug.baseUnitsPerStock, selectedDrug.basePerIntermediate);
-    if (baseQtyNeeded > sellableBase) {
-      statusEl.textContent = "Not enough sellable stock for this sale.";
+    const reserved = cartReservedBaseFor(selectedDrug.id);
+    if (baseQtyNeeded + reserved > sellableBaseForDrug) {
+      alert("Not enough sellable stock for this quantity.");
+      return;
+    }
+    cart.push({
+      drugId: selectedDrug.id, drugName: selectedDrug.name, drugClass: selectedDrug.drugClass || "",
+      unitLevel, unitLabel: unitLabelFor(unitLevel, selectedDrug), qty, baseQtyNeeded,
+      pricePerUnit: price, total: qty * price,
+      baseUnitsPerStock: selectedDrug.baseUnitsPerStock, basePerIntermediate: selectedDrug.basePerIntermediate,
+      stockUnit: selectedDrug.stockUnit, intermediateUnit: selectedDrug.intermediateUnit, baseUnit: selectedDrug.baseUnit,
+      hasIntermediate: selectedDrug.hasIntermediate
+    });
+    closeConfigure();
+    renderCart();
+  };
+
+  window.removeCartItem = function (idx) {
+    cart.splice(idx, 1);
+    renderCart();
+  };
+
+  function renderCart() {
+    const card = document.getElementById("cartCard");
+    const list = document.getElementById("cartList");
+    if (cart.length === 0) {
+      card.classList.add("hidden");
+      return;
+    }
+    card.classList.remove("hidden");
+    list.innerHTML = cart.map((c, idx) => `
+      <div class="cart-item">
+        <div>
+          <div class="cart-item-name">${c.drugName}</div>
+          <div class="cart-item-meta">${c.qty} ${c.unitLabel}(s) × ${c.pricePerUnit.toLocaleString()} = ${c.total.toLocaleString()}</div>
+        </div>
+        <button class="btn-small btn-danger-outline" onclick="removeCartItem(${idx})">Remove</button>
+      </div>`).join("");
+    const total = cart.reduce((sum, c) => sum + c.total, 0);
+    document.getElementById("cartTotal").textContent = "Total: " + total.toLocaleString();
+  }
+
+  document.getElementById("onCredit").addEventListener("change", (e) => {
+    document.getElementById("creditFields").classList.toggle("hidden", !e.target.checked);
+  });
+  document.getElementById("customerName").addEventListener("input", updateCreditLimitHint);
+
+  async function customerBalance(customerId) {
+    const snap = await getDocs(query(
+      collection(db, "credit_transactions"),
+      where("businessId", "==", currentBusinessId),
+      where("shopId", "==", currentShopId),
+      where("customerId", "==", customerId)
+    ));
+    return snap.docs.reduce((sum, d) => sum + (d.data().balanceChange || 0), 0);
+  }
+
+  async function updateCreditLimitHint() {
+    const name = document.getElementById("customerName").value.trim();
+    const hint = document.getElementById("creditLimitHint");
+    const match = creditAccounts.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (!match) { hint.textContent = name ? "New customer — will be added to Credit / Loans." : ""; return; }
+    if (!match.creditLimit) { hint.textContent = "Existing customer, no credit limit set."; return; }
+    const balance = await customerBalance(match.id);
+    hint.textContent = `Existing customer — currently owes ${Math.max(0, balance).toLocaleString()}, limit ${match.creditLimit.toLocaleString()}.`;
+  }
+
+  async function getNextReceiptNumber() {
+    const counterId = `${currentShopId}_sales`;
+    const counterRef = doc(db, "counters", counterId);
+    return await runTransaction(db, async (tx) => {
+      const snap = await tx.get(counterRef);
+      const next = snap.exists() ? (snap.data().next || 1) : 1;
+      tx.set(counterRef, { businessId: currentBusinessId, shopId: currentShopId, next: next + 1 }, { merge: true });
+      return next;
+    });
+  }
+
+  function buildReceiptText(receiptNo, items, total, paymentStatus, customerName) {
+    const lines = [];
+    lines.push(businessName || "MediStock Cloud");
+    if (currentShopName) lines.push(currentShopName);
+    if (businessPhone) lines.push(businessPhone);
+    lines.push("");
+    lines.push(`Receipt: S-${receiptNo}`);
+    lines.push(`Date: ${new Date().toLocaleString()}`);
+    lines.push(`Cashier: ${cashierName}`);
+    lines.push("---------------------------");
+    items.forEach(i => {
+      lines.push(`${i.drugName}`);
+      lines.push(`  ${i.qty} ${i.unitLabel}(s) x ${i.pricePerUnit.toLocaleString()} = ${i.total.toLocaleString()}`);
+    });
+    lines.push("---------------------------");
+    lines.push(`TOTAL: ${total.toLocaleString()}`);
+    lines.push(`Payment: ${paymentStatus === "CREDIT" ? "ON CREDIT" + (customerName ? " - " + customerName : "") : "PAID (CASH)"}`);
+    return lines.join("\n");
+  }
+
+  window.completeSale = async function () {
+    const statusEl = document.getElementById("saleStatus");
+    if (cart.length === 0) return;
+    const onCredit = document.getElementById("onCredit").checked;
+    const customerNameInput = document.getElementById("customerName").value.trim();
+    if (onCredit && !customerNameInput) {
+      statusEl.textContent = "Enter the credit customer's name.";
       statusEl.style.color = "var(--danger)";
       return;
     }
-    const total = qty * priceFor(unitLevel);
+    const grandTotal = cart.reduce((sum, c) => sum + c.total, 0);
+
+    let matchedCustomer = onCredit ? creditAccounts.find(c => c.name.toLowerCase() === customerNameInput.toLowerCase()) : null;
+    if (onCredit && matchedCustomer && matchedCustomer.creditLimit > 0) {
+      const currentBal = await customerBalance(matchedCustomer.id);
+      if (currentBal + grandTotal > matchedCustomer.creditLimit) {
+        const over = Math.round(currentBal + grandTotal - matchedCustomer.creditLimit).toLocaleString();
+        if (!confirm(`${customerNameInput} would exceed their credit limit by ${over}. Continue anyway?`)) return;
+      }
+    }
+
+    const itemsList = cart.map(c => `${c.qty} ${c.unitLabel}(s) ${c.drugName} — ${c.total.toLocaleString()}`).join("\n");
+    if (!confirm(`Complete this ${onCredit ? "CREDIT " : ""}sale?\n\n${itemsList}\n\nGrand total: ${grandTotal.toLocaleString()}${onCredit ? `\nCustomer: ${customerNameInput}` : ""}`)) return;
 
     try {
-      statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
-      const batch = writeBatch(db);
-      let batchesUsed = [];
+      statusEl.textContent = "Checking current stock…"; statusEl.style.color = "var(--muted)";
 
-      if (selectedBatches.length > 0) {
-        // FEFO: take from the earliest-expiring batch(es) first, splitting
-        // across batches if one alone doesn't cover the quantity.
-        let remaining = baseQtyNeeded;
-        for (const b of selectedBatches) {
-          if (remaining <= 0) break;
-          const take = Math.min(remaining, b.quantity);
-          if (take <= 0) continue;
-          batch.update(doc(db, "batches", b.id), { quantity: b.quantity - take });
-          batchesUsed.push({ batchId: b.id, batchNumber: b.batchNumber || "", qty: take });
-          remaining -= take;
+      // Re-fetch live batches for every cart drug right before committing —
+      // stock may have moved since items were added to the cart.
+      const liveBatchesByDrug = {};
+      for (const item of cart) {
+        if (!liveBatchesByDrug[item.drugId]) {
+          const snap = await getDocs(query(
+            collection(db, "batches"),
+            where("businessId", "==", currentBusinessId),
+            where("shopId", "==", currentShopId),
+            where("drugId", "==", item.drugId)
+          ));
+          liveBatchesByDrug[item.drugId] = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            .filter(b => daysUntil(b.expiryDate) >= 0 && b.quantity > 0)
+            .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
         }
-        const newStockBase = selectedDrug.currentStockBase - baseQtyNeeded;
-        batch.update(doc(db, "drugs", selectedDrug.id), { currentStockBase: newStockBase });
-        selectedDrug.currentStockBase = newStockBase;
-      } else {
-        // No batches recorded for this drug — simple direct deduction, same as before.
-        const newStockBase = selectedDrug.currentStockBase - baseQtyNeeded;
-        batch.update(doc(db, "drugs", selectedDrug.id), { currentStockBase: newStockBase });
-        selectedDrug.currentStockBase = newStockBase;
+      }
+      const liveDrugSnaps = {};
+      for (const item of cart) {
+        if (!liveDrugSnaps[item.drugId]) liveDrugSnaps[item.drugId] = await getDoc(doc(db, "drugs", item.drugId));
+      }
+
+      statusEl.textContent = "Reserving receipt number…";
+      const receiptNo = await getNextReceiptNumber();
+
+      statusEl.textContent = "Saving…";
+      const batch = writeBatch(db);
+      const drugDeductions = {}; // drugId -> remaining base to deduct, consumed across possibly-repeated cart lines
+      cart.forEach(c => { drugDeductions[c.drugId] = (drugDeductions[c.drugId] || 0) + c.baseQtyNeeded; });
+
+      const batchesUsedByDrug = {};
+      for (const drugId of Object.keys(drugDeductions)) {
+        let remaining = drugDeductions[drugId];
+        const liveBatches = liveBatchesByDrug[drugId] || [];
+        const used = [];
+        if (liveBatches.length > 0) {
+          for (const b of liveBatches) {
+            if (remaining <= 0) break;
+            const take = Math.min(remaining, b.quantity);
+            if (take <= 0) continue;
+            batch.update(doc(db, "batches", b.id), { quantity: b.quantity - take });
+            used.push({ batchId: b.id, batchNumber: b.batchNumber || "", qty: take, costPerStockUnit: b.purchasePricePerStockUnit || b.costPerStockUnit || 0 });
+            remaining -= take;
+          }
+        }
+        if (remaining > 0) {
+          // No batch coverage for the remainder (e.g. no batches recorded at all for this drug) —
+          // fall back to simple deduction, same as the drug's own running total.
+        }
+        batchesUsedByDrug[drugId] = used;
+        const drugSnap = liveDrugSnaps[drugId];
+        const currentBase = drugSnap.exists() ? (drugSnap.data().currentStockBase || 0) : 0;
+        batch.update(doc(db, "drugs", drugId), { currentStockBase: currentBase - drugDeductions[drugId] });
+      }
+
+      const receiptRef = doc(collection(db, "receipts"));
+      const paymentStatus = onCredit ? "CREDIT" : "PAID";
+      batch.set(receiptRef, {
+        businessId: currentBusinessId, shopId: currentShopId,
+        type: "SALE", displayNumber: `S-${receiptNo}`,
+        createdAt: serverTimestamp(), cashier: cashierName,
+        itemCount: cart.length, totalAmount: grandTotal, paymentStatus,
+        customerId: matchedCustomer ? matchedCustomer.id : null,
+        customerName: onCredit ? customerNameInput : "",
+        items: cart.map(c => ({
+          drugId: c.drugId, drugName: c.drugName, qty: c.qty, unitLabel: c.unitLabel,
+          unitLevel: c.unitLevel, pricePerUnit: c.pricePerUnit, total: c.total,
+          baseQtyNeeded: c.baseQtyNeeded, stockUnit: c.stockUnit, intermediateUnit: c.intermediateUnit,
+          baseUnit: c.baseUnit, baseUnitsPerStock: c.baseUnitsPerStock, basePerIntermediate: c.basePerIntermediate
+        }))
+      });
+
+      let customerId = matchedCustomer ? matchedCustomer.id : null;
+      if (onCredit && !matchedCustomer) {
+        const newCustomerRef = doc(collection(db, "credit_accounts"));
+        batch.set(newCustomerRef, {
+          businessId: currentBusinessId, shopId: currentShopId,
+          name: customerNameInput, creditLimit: 0, createdAt: serverTimestamp()
+        });
+        customerId = newCustomerRef.id;
+      }
+
+      cart.forEach(c => {
+        const used = batchesUsedByDrug[c.drugId] || [];
+        const costOfGoods = used.length
+          ? used.reduce((s, u) => s + (u.qty / (c.baseUnitsPerStock || 1)) * (u.costPerStockUnit || 0), 0)
+          : 0;
+        const saleRef = doc(collection(db, "sales"));
+        batch.set(saleRef, {
+          businessId: currentBusinessId, shopId: currentShopId, ownerUid: currentUser.uid,
+          drugId: c.drugId, drugName: c.drugName, drugClass: c.drugClass,
+          unitLevel: c.unitLevel, qty: c.qty, baseQtyDeducted: c.baseQtyNeeded,
+          pricePerUnit: c.pricePerUnit, total: c.total, costOfGoods,
+          receiptId: receiptRef.id, cashier: cashierName, paymentStatus,
+          customerId, createdAt: serverTimestamp()
+        });
+      });
+
+      if (onCredit) {
+        const creditTxnRef = doc(collection(db, "credit_transactions"));
+        batch.set(creditTxnRef, {
+          businessId: currentBusinessId, shopId: currentShopId,
+          customerId, customerName: customerNameInput, type: "SALE",
+          balanceChange: grandTotal, receiptId: receiptRef.id, createdAt: serverTimestamp()
+        });
       }
 
       await batch.commit();
 
-      await addDoc(collection(db, "sales"), {
-        businessId: currentBusinessId,
-        shopId: currentShopId,
-        ownerUid: currentUser.uid,
-        drugId: selectedDrug.id,
-        drugName: selectedDrug.name,
-        unitLevel,
-        qty,
-        baseQtyDeducted: baseQtyNeeded,
-        batchesUsed,
-        pricePerUnit: priceFor(unitLevel),
-        total,
-        createdAt: serverTimestamp()
-      });
+      lastReceiptData = { receiptNo, items: cart.slice(), total: grandTotal, paymentStatus, customerName: customerNameInput };
+      document.getElementById("receiptNumber").textContent = `S-${receiptNo}`;
+      document.getElementById("receiptText").textContent = buildReceiptText(receiptNo, cart, grandTotal, paymentStatus, customerNameInput);
+      document.getElementById("receiptCard").classList.remove("hidden");
+      document.getElementById("cartCard").classList.add("hidden");
+      window.scrollTo({ top: document.getElementById("receiptCard").offsetTop - 10, behavior: "smooth" });
 
-      statusEl.textContent = `Sale recorded — Total ${total.toLocaleString()}`;
-      statusEl.style.color = "var(--accent2)";
-      sellableBase -= baseQtyNeeded;
-      selectedBatches = selectedBatches.map(b => {
-        const used = batchesUsed.find(u => u.batchId === b.id);
-        return used ? { ...b, quantity: b.quantity - used.qty } : b;
-      }).filter(b => b.quantity > 0);
-      document.getElementById("sellDrugStock").textContent = "Sellable: " + stockSummary({ ...selectedDrug, currentStockBase: sellableBase });
-      document.getElementById("qty").value = 1;
-      updateTotal();
+      cart = [];
+      document.getElementById("onCredit").checked = false;
+      document.getElementById("creditFields").classList.add("hidden");
+      document.getElementById("customerName").value = "";
+      statusEl.textContent = "";
+      loadFrequentlySold();
+      loadCreditAccounts();
     } catch (err) {
       statusEl.textContent = "Failed: " + err.message;
       statusEl.style.color = "var(--danger)";
     }
   };
 
+  window.startNewSale = function () {
+    document.getElementById("receiptCard").classList.add("hidden");
+    document.getElementById("searchBox").focus();
+  };
+
+  window.shareReceipt = async function () {
+    if (!lastReceiptData) return;
+    const text = document.getElementById("receiptText").textContent;
+    if (navigator.share) {
+      try { await navigator.share({ title: `Receipt S-${lastReceiptData.receiptNo}`, text }); }
+      catch (e) { /* user cancelled share sheet — not an error */ }
+    } else {
+      try {
+        await navigator.clipboard.writeText(text);
+        alert("Sharing isn't available on this browser — the receipt text was copied instead, so you can paste it into WhatsApp or any app.");
+      } catch (e) {
+        alert("Sharing isn't available on this browser.");
+      }
+    }
+  };
+
+  window.saveReceiptToPhone = function () {
+    if (!lastReceiptData) return;
+    const text = document.getElementById("receiptText").textContent;
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Receipt-S-${lastReceiptData.receiptNo}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  async function loadFrequentlySold() {
+    const snap = await getDocs(query(
+      collection(db, "sales"),
+      where("businessId", "==", currentBusinessId),
+      where("shopId", "==", currentShopId)
+    ));
+    const cutoff = Date.now() - 30 * 86400000;
+    const counts = {};
+    snap.docs.forEach(d => {
+      const s = d.data();
+      const ts = s.createdAt?.toMillis ? s.createdAt.toMillis() : 0;
+      if (ts < cutoff) return;
+      counts[s.drugId] = (counts[s.drugId] || 0) + 1;
+    });
+    const topIds = Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, 6);
+    const card = document.getElementById("frequentCard");
+    const chips = document.getElementById("frequentChips");
+    if (topIds.length === 0) { card.classList.add("hidden"); return; }
+    const named = topIds.map(id => allDrugs.find(d => d.id === id)).filter(d => d && d.active !== false);
+    if (named.length === 0) { card.classList.add("hidden"); return; }
+    card.classList.remove("hidden");
+    chips.innerHTML = named.map(d => `<div class="chip" onclick="selectDrug('${d.id}')">${d.name}</div>`).join("");
+  }
+
+  async function loadCreditAccounts() {
+    const snap = await getDocs(query(
+      collection(db, "credit_accounts"),
+      where("businessId", "==", currentBusinessId),
+      where("shopId", "==", currentShopId)
+    ));
+    creditAccounts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    document.getElementById("customerSuggestions").innerHTML =
+      creditAccounts.map(c => `<option value="${c.name}"></option>`).join("");
+  }
+
   onAuthStateChanged(auth, async (user) => {
     if (!user) { window.location.href = "login.html"; return; }
     currentUser = user;
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.location.href = "login.html"; return; }
-    currentBusinessId = userSnap.data().businessId;
+    const profile = userSnap.data();
+    currentRole = profile.role;
+    currentBusinessId = profile.businessId;
+    cashierName = profile.role === "owner" ? user.email : profile.name;
 
-    const shopsSnap = await getDocs(query(collection(db, "shops"), where("ownerUid", "==", user.uid)));
-    const activeId = localStorage.getItem("mc_activeShopId");
-    const foundShop = shopsSnap.docs.find(d => d.id === activeId);
-    const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
-    currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
-    document.getElementById("shopIndicator").textContent = resolvedShopDoc
-      ? `Working in: ${resolvedShopDoc.data().name}`
-      : "No shop set up yet — go to Shops to add one.";
+    const bizSnap = await getDoc(doc(db, "businesses", currentBusinessId));
+    if (bizSnap.exists()) { businessName = bizSnap.data().name || ""; businessPhone = bizSnap.data().phone || ""; }
 
-    const drugsQ = query(collection(db, "drugs"), where("ownerUid", "==", user.uid), where("shopId", "==", currentShopId));
+    if (currentRole === "owner") {
+      const shopsSnap = await getDocs(query(collection(db, "shops"), where("businessId", "==", currentBusinessId)));
+      const activeId = localStorage.getItem("mc_activeShopId");
+      const foundShop = shopsSnap.docs.find(d => d.id === activeId);
+      const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
+      currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
+      currentShopName = resolvedShopDoc ? resolvedShopDoc.data().name : "";
+      document.getElementById("shopIndicator").textContent = resolvedShopDoc
+        ? `Working in: ${currentShopName}`
+        : "No shop set up yet — go to Shops to add one.";
+    } else {
+      currentShopId = profile.shopId;
+      const shopSnap = await getDoc(doc(db, "shops", currentShopId));
+      currentShopName = shopSnap.exists() ? shopSnap.data().name : "";
+      document.getElementById("shopIndicator").textContent = shopSnap.exists()
+        ? `Shop: ${currentShopName}` : "(unknown shop)";
+    }
+
+    if (!currentShopId) return;
+
+    const drugsQ = query(
+      collection(db, "drugs"),
+      where("businessId", "==", currentBusinessId),
+      where("shopId", "==", currentShopId)
+    );
     onSnapshot(drugsQ, { includeMetadataChanges: true }, (snap) => {
       const badge = document.getElementById("netBadge");
       const fromCache = snap.metadata.fromCache;
@@ -455,6 +828,9 @@
       allDrugs = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
       if (document.getElementById("searchBox").value) renderResults(document.getElementById("searchBox").value);
     });
+
+    loadFrequentlySold();
+    loadCreditAccounts();
   });
 </script>
 </body>
