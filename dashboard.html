@@ -352,7 +352,7 @@
       return sum + stockUnitsWorth;
     }, 0);
     const lowStockCount = drugs.filter(d => d.active !== false && d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock)).length;
-    const expiredCount = batches.filter(b => daysUntil(b.expiryDate) < 0 && Number(b.remainingBase || 0) > 0).length;
+    const expiredCount = batches.filter(b => daysUntil(b.expiryDate) < 0 && Number(b.quantity || 0) > 0).length;
     const balancesById = {};
     creditTxns.forEach(t => { balancesById[t.customerId] = (balancesById[t.customerId] || 0) + (t.balanceChange || 0); });
     const totalCreditOwed = Object.values(balancesById).filter(b => b > 0).reduce((sum, b) => sum + b, 0);
@@ -379,7 +379,7 @@
       const shopExpenses = expensesThisMonth.filter(e => e.shopId === id).reduce((sum, e) => sum + (e.amount || 0), 0);
       const net = shopSales - shopExpenses;
       const shopLowStock = drugs.filter(d => d.shopId === id && d.active !== false && d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock)).length;
-      const shopExpiring = batches.filter(b => b.shopId === id && daysUntil(b.expiryDate) >= 0 && daysUntil(b.expiryDate) <= 30 && Number(b.remainingBase || 0) > 0).length;
+      const shopExpiring = batches.filter(b => b.shopId === id && daysUntil(b.expiryDate) >= 0 && daysUntil(b.expiryDate) <= 30 && Number(b.quantity || 0) > 0).length;
       return `
         <div class="shop-card">
           <div class="shop-name">${name}</div>
