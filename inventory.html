@@ -556,7 +556,7 @@
   };
 
   // ---- Batch history (best-effort: assumes batches carry businessId/shopId/
-  // drugId/batchNumber/purchasePricePerStockUnit/remainingBase like the rest
+  // drugId/batchNumber/purchasePricePerStockUnit/quantity like the rest
   // of the shop-scoped collections — flag it to me if this doesn't match
   // what the Batches page actually writes) ----
   window.toggleBatchHistory = async function (drugId) {
@@ -600,9 +600,9 @@
       ? `<div class="hint" style="margin-bottom:6px;">Price has ranged from ${Math.min(...prices).toLocaleString()} to ${Math.max(...prices).toLocaleString()} per ${drug ? drug.stockUnit : "stock unit"} across these purchases.</div>`
       : "";
     el.innerHTML = rangeLine + batches.map(b => {
-      const depleted = Number(b.remainingBase || 0) <= 0;
+      const depleted = Number(b.quantity || 0) <= 0;
       return `<div class="batch-line"><b>${b.batchNumber || "Batch —"}</b> — ${Number(b.purchasePricePerStockUnit || 0).toLocaleString()} / ${drug ? drug.stockUnit : "unit"}${depleted ? '<span class="pill">Depleted</span>' : ""}<br>
-        <span style="color:var(--muted);">Remaining: ${Number(b.remainingBase || 0).toLocaleString()} ${drug ? drug.baseUnit : "unit"}(s)${b.expiryDate ? " · Exp: " + b.expiryDate : ""}</span></div>`;
+        <span style="color:var(--muted);">Remaining: ${Number(b.quantity || 0).toLocaleString()} ${drug ? drug.baseUnit : "unit"}(s)${b.expiryDate ? " · Exp: " + b.expiryDate : ""}</span></div>`;
     }).join("");
   }
 
