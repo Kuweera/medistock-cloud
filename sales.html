@@ -45,6 +45,15 @@
     background:var(--bg); border:1px solid var(--border); color:var(--text);
     padding:8px 12px; border-radius:999px; font-size:13px; cursor:pointer;
   }
+  .pill-row{display:flex; gap:8px; flex-wrap:wrap;}
+  .pill-btn{
+    display:flex; align-items:center; gap:8px;
+    background:transparent; border:1px solid var(--border); color:var(--text);
+    padding:9px 14px; border-radius:999px; font-size:13.5px; font-weight:500; cursor:pointer;
+  }
+  .pill-btn .dot{width:14px; height:14px; border-radius:50%; border:2px solid var(--muted); flex-shrink:0;}
+  .pill-btn.selected{border-color:var(--accent); color:var(--accent); font-weight:700;}
+  .pill-btn.selected .dot{border-color:var(--accent); background:var(--accent);}
   .result-item{padding:10px; border-bottom:1px solid var(--border); cursor:pointer;}
   .result-item:last-child{border-bottom:none;}
   .result-item:active{background:var(--bg);}
@@ -167,22 +176,28 @@
 </div>
 
 <div class="card hidden selected-card" id="configureCard">
+  <button class="btn-secondary" onclick="closeConfigure()">← Search a different drug</button>
   <h2 id="configDrugName">—</h2>
   <div class="hint" id="configDrugStock"></div>
 
   <label>Sell by</label>
-  <select id="unitLevel"></select>
+  <div class="pill-row" id="unitLevelPills"></div>
 
-  <label>Quantity</label>
-  <input type="number" id="qty" min="1" value="1">
-
-  <label>Price per unit (editable)</label>
-  <input type="number" id="pricePerUnit" min="0">
+  <div class="row" style="margin-top:10px;">
+    <div>
+      <label>Quantity</label>
+      <input type="number" id="qty" min="1" placeholder="0">
+    </div>
+    <div>
+      <label id="priceLabel">Price per unit</label>
+      <input type="number" id="pricePerUnit" min="0">
+    </div>
+  </div>
 
   <div class="hint" id="stockCheckMsg"></div>
-  <div class="total-line" id="lineTotal">Total: 0</div>
+  <div class="total-line" id="lineTotal">Line total: 0</div>
 
-  <button class="btn-primary" onclick="addToCart()">Add to Cart</button>
+  <button class="btn-primary" id="addToCartBtn" onclick="addToCart()">Add to Cart</button>
   <button class="btn-secondary" onclick="closeConfigure()">Cancel</button>
 </div>
 
@@ -197,12 +212,17 @@
   </div>
   <div id="creditFields" class="hidden">
     <label>Customer name</label>
-    <input type="text" id="customerName" list="customerSuggestions" placeholder="Search or type a new customer name">
+    <input type="text" id="customerName" list="customerSuggestions" placeholder="Customer name">
     <datalist id="customerSuggestions"></datalist>
+    <label>Phone (optional)</label>
+    <input type="tel" id="customerPhone" placeholder="Phone number">
+    <label>Expected payment date</label>
+    <input type="date" id="expectedPaymentDate">
     <div class="hint" id="creditLimitHint"></div>
   </div>
 
   <button class="btn-primary" onclick="completeSale()">Complete Sale</button>
+  <button class="btn-secondary" onclick="clearCart()">Clear Cart</button>
   <div id="saleStatus" style="font-size:13px; margin-top:8px;"></div>
 </div>
 
@@ -276,6 +296,8 @@
   let allDrugs = [];
   let creditAccounts = [];
   let selectedDrug = null;
+  let selectedUnitLevel = "base";
+  let editingCartIndex = null; // null = adding new; index = editing that cart line
   let selectedBatches = []; // active, non-expired batches for selectedDrug, earliest expiry first
   let sellableBaseForDrug = 0; // stock actually available right now, before cart reservations
   let cart = []; // { drugId, drugName, drugClass, unitLevel, unitLabel, qty, baseQtyNeeded, pricePerUnit, total, baseUnitsPerStock, basePerIntermediate, stockUnit, intermediateUnit, baseUnit }
@@ -340,8 +362,10 @@
     return Number(drug.retailBase) || 0;
   }
 
-  function cartReservedBaseFor(drugId) {
-    return cart.filter(c => c.drugId === drugId).reduce((sum, c) => sum + c.baseQtyNeeded, 0);
+  function cartReservedBaseFor(drugId, excludeIndex) {
+    return cart
+      .filter((c, idx) => c.drugId === drugId && idx !== excludeIndex)
+      .reduce((sum, c) => sum + c.baseQtyNeeded, 0);
   }
 
   function renderResults(filterText) {
@@ -365,9 +389,11 @@
   }
   document.getElementById("searchBox").addEventListener("input", (e) => renderResults(e.target.value));
 
-  window.selectDrug = async function (id) {
+  window.selectDrug = async function (id, prefillFromCartIndex) {
     selectedDrug = allDrugs.find(d => d.id === id);
     if (!selectedDrug) return;
+    editingCartIndex = (prefillFromCartIndex !== undefined) ? prefillFromCartIndex : null;
+    document.getElementById("addToCartBtn").textContent = editingCartIndex !== null ? "Save Changes" : "Add to Cart";
     document.getElementById("searchBox").value = "";
     document.getElementById("results").innerHTML = "";
     document.getElementById("configureCard").classList.remove("hidden");
@@ -384,12 +410,11 @@
     const snap = await getDocs(batchesQ);
     const allBatchesForDrug = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    const reserved = cartReservedBaseFor(selectedDrug.id);
+    const reserved = cartReservedBaseFor(selectedDrug.id, editingCartIndex);
 
     if (allBatchesForDrug.length === 0) {
       selectedBatches = [];
       sellableBaseForDrug = selectedDrug.currentStockBase;
-      const afterCart = sellableBaseForDrug - reserved;
       document.getElementById("configDrugStock").textContent =
         "In stock: " + stockSummary(selectedDrug) + (reserved ? ` (${formatSoldQtyLabel(reserved, selectedDrug)} already in cart)` : "");
     } else {
@@ -410,37 +435,49 @@
       document.getElementById("configDrugStock").textContent = stockText + nextExpiry;
     }
 
-    const unitSel = document.getElementById("unitLevel");
-    const options = [];
-    options.push(`<option value="base">${selectedDrug.baseUnit} (base unit)</option>`);
-    if (selectedDrug.hasIntermediate) {
-      options.push(`<option value="intermediate">${selectedDrug.intermediateUnit}</option>`);
-    }
-    options.push(`<option value="stock">${selectedDrug.stockUnit}</option>`);
-    unitSel.innerHTML = options.join("");
-    document.getElementById("qty").value = 1;
-    document.getElementById("pricePerUnit").value = priceFor(unitSel.value, selectedDrug);
+    const existing = editingCartIndex !== null ? cart[editingCartIndex] : null;
+    selectedUnitLevel = existing ? existing.unitLevel : "base";
+    renderUnitLevelPills();
+    document.getElementById("qty").value = existing ? existing.qty : "";
+    document.getElementById("pricePerUnit").value = existing ? existing.pricePerUnit : priceFor(selectedUnitLevel, selectedDrug);
     updateConfigTotal();
   };
 
-  document.getElementById("unitLevel").addEventListener("change", () => {
-    document.getElementById("pricePerUnit").value = priceFor(document.getElementById("unitLevel").value, selectedDrug);
+  function renderUnitLevelPills() {
+    const options = [{ level: "stock", label: selectedDrug.stockUnit }];
+    if (selectedDrug.hasIntermediate) options.push({ level: "intermediate", label: selectedDrug.intermediateUnit });
+    options.push({ level: "base", label: selectedDrug.baseUnit });
+    document.getElementById("unitLevelPills").innerHTML = options.map(o => `
+      <button type="button" class="pill-btn ${selectedUnitLevel === o.level ? "selected" : ""}" onclick="selectUnitLevel('${o.level}')">
+        <span class="dot"></span>${o.label}
+      </button>`).join("");
+    document.getElementById("priceLabel").textContent = `Price per ${options.find(o => o.level === selectedUnitLevel).label}`;
+  }
+
+  window.selectUnitLevel = function (level) {
+    selectedUnitLevel = level;
+    renderUnitLevelPills();
+    // Only default the price to the drug's list price when adding fresh —
+    // don't clobber a price the user already typed while editing.
+    if (editingCartIndex === null) {
+      document.getElementById("pricePerUnit").value = priceFor(level, selectedDrug);
+    }
     updateConfigTotal();
-  });
+  };
+
   document.getElementById("qty").addEventListener("input", updateConfigTotal);
   document.getElementById("pricePerUnit").addEventListener("input", updateConfigTotal);
 
   function updateConfigTotal() {
     if (!selectedDrug) return;
-    const unitLevel = document.getElementById("unitLevel").value;
     const qty = Number(document.getElementById("qty").value) || 0;
     const price = Number(document.getElementById("pricePerUnit").value) || 0;
-    const baseQtyNeeded = PackagingEngine.unitQuantityToBase(qty, unitLevel, selectedDrug.baseUnitsPerStock, selectedDrug.basePerIntermediate);
+    const baseQtyNeeded = PackagingEngine.unitQuantityToBase(qty, selectedUnitLevel, selectedDrug.baseUnitsPerStock, selectedDrug.basePerIntermediate);
     const total = qty * price;
-    document.getElementById("lineTotal").textContent = "Total: " + total.toLocaleString();
+    document.getElementById("lineTotal").textContent = "Line total: " + total.toLocaleString();
 
     const msgEl = document.getElementById("stockCheckMsg");
-    const reserved = cartReservedBaseFor(selectedDrug.id);
+    const reserved = cartReservedBaseFor(selectedDrug.id, editingCartIndex);
     if (baseQtyNeeded + reserved > sellableBaseForDrug) {
       msgEl.textContent = "Not enough sellable stock available for this quantity (accounting for what's already in the cart).";
       msgEl.style.color = "var(--danger)";
@@ -451,35 +488,53 @@
 
   window.closeConfigure = function () {
     selectedDrug = null;
+    editingCartIndex = null;
     document.getElementById("configureCard").classList.add("hidden");
   };
 
   window.addToCart = function () {
     if (!selectedDrug) return;
-    const unitLevel = document.getElementById("unitLevel").value;
     const qty = Number(document.getElementById("qty").value) || 0;
     const price = Number(document.getElementById("pricePerUnit").value) || 0;
-    if (qty <= 0) return;
-    const baseQtyNeeded = PackagingEngine.unitQuantityToBase(qty, unitLevel, selectedDrug.baseUnitsPerStock, selectedDrug.basePerIntermediate);
-    const reserved = cartReservedBaseFor(selectedDrug.id);
+    if (qty <= 0) { alert("Enter a quantity."); return; }
+    const baseQtyNeeded = PackagingEngine.unitQuantityToBase(qty, selectedUnitLevel, selectedDrug.baseUnitsPerStock, selectedDrug.basePerIntermediate);
+    const reserved = cartReservedBaseFor(selectedDrug.id, editingCartIndex);
     if (baseQtyNeeded + reserved > sellableBaseForDrug) {
       alert("Not enough sellable stock for this quantity.");
       return;
     }
-    cart.push({
+    const line = {
       drugId: selectedDrug.id, drugName: selectedDrug.name, drugClass: selectedDrug.drugClass || "",
-      unitLevel, unitLabel: unitLabelFor(unitLevel, selectedDrug), qty, baseQtyNeeded,
+      unitLevel: selectedUnitLevel, unitLabel: unitLabelFor(selectedUnitLevel, selectedDrug), qty, baseQtyNeeded,
       pricePerUnit: price, total: qty * price,
       baseUnitsPerStock: selectedDrug.baseUnitsPerStock, basePerIntermediate: selectedDrug.basePerIntermediate,
       stockUnit: selectedDrug.stockUnit, intermediateUnit: selectedDrug.intermediateUnit, baseUnit: selectedDrug.baseUnit,
       hasIntermediate: selectedDrug.hasIntermediate
-    });
+    };
+    if (editingCartIndex !== null) {
+      cart[editingCartIndex] = line;
+    } else {
+      cart.push(line);
+    }
     closeConfigure();
     renderCart();
   };
 
+  window.editCartItem = function (idx) {
+    selectDrug(cart[idx].drugId, idx);
+  };
+
   window.removeCartItem = function (idx) {
     cart.splice(idx, 1);
+    renderCart();
+  };
+
+  window.clearCart = function () {
+    if (cart.length === 0) return;
+    if (!confirm("Clear the whole cart?")) return;
+    cart = [];
+    document.getElementById("onCredit").checked = false;
+    document.getElementById("creditFields").classList.add("hidden");
     renderCart();
   };
 
@@ -497,7 +552,10 @@
           <div class="cart-item-name">${c.drugName}</div>
           <div class="cart-item-meta">${c.qty} ${c.unitLabel}(s) × ${c.pricePerUnit.toLocaleString()} = ${c.total.toLocaleString()}</div>
         </div>
-        <button class="btn-small btn-danger-outline" onclick="removeCartItem(${idx})">Remove</button>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <button class="btn-small btn-secondary" style="margin:0;" onclick="editCartItem(${idx})">Edit</button>
+          <button class="btn-small btn-danger-outline" onclick="removeCartItem(${idx})">Remove</button>
+        </div>
       </div>`).join("");
     const total = cart.reduce((sum, c) => sum + c.total, 0);
     document.getElementById("cartTotal").textContent = "Total: " + total.toLocaleString();
@@ -564,6 +622,8 @@
     if (cart.length === 0) return;
     const onCredit = document.getElementById("onCredit").checked;
     const customerNameInput = document.getElementById("customerName").value.trim();
+    const customerPhoneInput = document.getElementById("customerPhone").value.trim();
+    const expectedPaymentDateInput = document.getElementById("expectedPaymentDate").value;
     if (onCredit && !customerNameInput) {
       statusEl.textContent = "Enter the credit customer's name.";
       statusEl.style.color = "var(--danger)";
@@ -662,9 +722,11 @@
         const newCustomerRef = doc(collection(db, "credit_accounts"));
         batch.set(newCustomerRef, {
           businessId: currentBusinessId, shopId: currentShopId,
-          name: customerNameInput, creditLimit: 0, createdAt: serverTimestamp()
+          name: customerNameInput, phone: customerPhoneInput || null, creditLimit: 0, createdAt: serverTimestamp()
         });
         customerId = newCustomerRef.id;
+      } else if (onCredit && matchedCustomer && customerPhoneInput && customerPhoneInput !== matchedCustomer.phone) {
+        batch.update(doc(db, "credit_accounts", matchedCustomer.id), { phone: customerPhoneInput });
       }
 
       cart.forEach(c => {
@@ -688,7 +750,8 @@
         batch.set(creditTxnRef, {
           businessId: currentBusinessId, shopId: currentShopId,
           customerId, customerName: customerNameInput, type: "SALE",
-          balanceChange: grandTotal, receiptId: receiptRef.id, createdAt: serverTimestamp()
+          balanceChange: grandTotal, expectedPaymentDate: expectedPaymentDateInput || null,
+          receiptId: receiptRef.id, createdAt: serverTimestamp()
         });
       }
 
@@ -705,6 +768,8 @@
       document.getElementById("onCredit").checked = false;
       document.getElementById("creditFields").classList.add("hidden");
       document.getElementById("customerName").value = "";
+      document.getElementById("customerPhone").value = "";
+      document.getElementById("expectedPaymentDate").value = "";
       statusEl.textContent = "";
       loadFrequentlySold();
       loadCreditAccounts();
