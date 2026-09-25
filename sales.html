@@ -221,8 +221,8 @@
     <div class="hint" id="creditLimitHint"></div>
   </div>
 
-  <button class="btn-primary" onclick="completeSale()">Complete Sale</button>
-  <button class="btn-secondary" onclick="clearCart()">Clear Cart</button>
+  <button class="btn-primary" id="completeSaleBtn" onclick="completeSale()">Complete Sale</button>
+  <button class="btn-secondary" id="clearCartBtn" onclick="clearCart()">Clear Cart</button>
   <div id="saleStatus" style="font-size:13px; margin-top:8px;"></div>
 </div>
 
@@ -232,6 +232,11 @@
   <button class="btn-primary" onclick="shareReceipt()">Share Receipt</button>
   <button class="btn-secondary" onclick="saveReceiptToPhone()">Save to Phone</button>
   <button class="btn-secondary" onclick="startNewSale()">New Sale</button>
+</div>
+
+<div class="card">
+  <h2>Recent Receipts</h2>
+  <div id="recentReceiptsList"><div class="empty">Loading…</div></div>
 </div>
 
 <script>
@@ -637,9 +642,11 @@
     return lines.join("\n");
   }
 
+  let isSubmitting = false;
+
   window.completeSale = async function () {
     const statusEl = document.getElementById("saleStatus");
-    if (cart.length === 0) return;
+    if (cart.length === 0 || isSubmitting) return;
     const onCredit = document.getElementById("onCredit").checked;
     const customerNameInput = document.getElementById("customerName").value.trim();
     const customerPhoneInput = document.getElementById("customerPhone").value.trim();
@@ -649,7 +656,12 @@
       statusEl.style.color = "var(--danger)";
       return;
     }
-    const grandTotal = cart.reduce((sum, c) => sum + c.total, 0);
+    // Snapshot the cart right now — the rest of this function has several
+    // awaits (network round-trips), during which the person could still tap
+    // Edit/Remove/Clear Cart. Using this frozen copy for everything below
+    // means a mid-flight cart change can never corrupt the sale being submitted.
+    const saleItems = cart.slice();
+    const grandTotal = saleItems.reduce((sum, c) => sum + c.total, 0);
 
     let matchedCustomer = onCredit ? creditAccounts.find(c => c.name.toLowerCase() === customerNameInput.toLowerCase()) : null;
     if (onCredit && matchedCustomer && matchedCustomer.creditLimit > 0) {
@@ -660,16 +672,19 @@
       }
     }
 
-    const itemsList = cart.map(c => `${c.drugName} — ${cartLineDisplay(c).topLine}`).join("\n");
+    const itemsList = saleItems.map(c => `${c.drugName} — ${cartLineDisplay(c).topLine}`).join("\n");
     if (!confirm(`Complete this ${onCredit ? "CREDIT " : ""}sale?\n\n${itemsList}\n\nGrand total: ${grandTotal.toLocaleString()}${onCredit ? `\nCustomer: ${customerNameInput}` : ""}`)) return;
 
+    isSubmitting = true;
+    document.getElementById("completeSaleBtn").disabled = true;
+    document.getElementById("clearCartBtn").disabled = true;
     try {
       statusEl.textContent = "Checking current stock…"; statusEl.style.color = "var(--muted)";
 
       // Re-fetch live batches for every cart drug right before committing —
       // stock may have moved since items were added to the cart.
       const liveBatchesByDrug = {};
-      for (const item of cart) {
+      for (const item of saleItems) {
         if (!liveBatchesByDrug[item.drugId]) {
           const snap = await getDocs(query(
             collection(db, "batches"),
@@ -683,7 +698,7 @@
         }
       }
       const liveDrugSnaps = {};
-      for (const item of cart) {
+      for (const item of saleItems) {
         if (!liveDrugSnaps[item.drugId]) liveDrugSnaps[item.drugId] = await getDoc(doc(db, "drugs", item.drugId));
       }
 
@@ -693,7 +708,7 @@
       statusEl.textContent = "Saving…";
       const batch = writeBatch(db);
       const drugDeductions = {}; // drugId -> remaining base to deduct, consumed across possibly-repeated cart lines
-      cart.forEach(c => { drugDeductions[c.drugId] = (drugDeductions[c.drugId] || 0) + c.baseQtyNeeded; });
+      saleItems.forEach(c => { drugDeductions[c.drugId] = (drugDeductions[c.drugId] || 0) + c.baseQtyNeeded; });
 
       const batchesUsedByDrug = {};
       for (const drugId of Object.keys(drugDeductions)) {
@@ -726,10 +741,10 @@
         businessId: currentBusinessId, shopId: currentShopId,
         type: "SALE", displayNumber: `S-${receiptNo}`,
         createdAt: serverTimestamp(), cashier: cashierName,
-        itemCount: cart.length, totalAmount: grandTotal, paymentStatus,
+        itemCount: saleItems.length, totalAmount: grandTotal, paymentStatus,
         customerId: matchedCustomer ? matchedCustomer.id : null,
         customerName: onCredit ? customerNameInput : "",
-        items: cart.map(c => ({
+        items: saleItems.map(c => ({
           drugId: c.drugId, drugName: c.drugName, qty: c.qty, unitLabel: c.unitLabel,
           unitLevel: c.unitLevel, pricePerUnit: c.pricePerUnit, total: c.total,
           baseQtyNeeded: c.baseQtyNeeded, stockUnit: c.stockUnit, intermediateUnit: c.intermediateUnit,
@@ -749,7 +764,7 @@
         batch.update(doc(db, "credit_accounts", matchedCustomer.id), { phone: customerPhoneInput });
       }
 
-      cart.forEach(c => {
+      saleItems.forEach(c => {
         const used = batchesUsedByDrug[c.drugId] || [];
         const costOfGoods = used.length
           ? used.reduce((s, u) => s + (u.qty / (c.baseUnitsPerStock || 1)) * (u.costPerStockUnit || 0), 0)
@@ -777,9 +792,9 @@
 
       await batch.commit();
 
-      lastReceiptData = { receiptNo, items: cart.slice(), total: grandTotal, paymentStatus, customerName: customerNameInput };
+      lastReceiptData = { receiptNo, items: saleItems, total: grandTotal, paymentStatus, customerName: customerNameInput };
       document.getElementById("receiptNumber").textContent = `S-${receiptNo}`;
-      document.getElementById("receiptText").textContent = buildReceiptText(receiptNo, cart, grandTotal, paymentStatus, customerNameInput);
+      document.getElementById("receiptText").textContent = buildReceiptText(receiptNo, saleItems, grandTotal, paymentStatus, customerNameInput);
       document.getElementById("receiptCard").classList.remove("hidden");
       document.getElementById("cartCard").classList.add("hidden");
       window.scrollTo({ top: document.getElementById("receiptCard").offsetTop - 10, behavior: "smooth" });
@@ -793,9 +808,14 @@
       statusEl.textContent = "";
       loadFrequentlySold();
       loadCreditAccounts();
+      loadRecentReceipts();
     } catch (err) {
       statusEl.textContent = "Failed: " + err.message;
       statusEl.style.color = "var(--danger)";
+    } finally {
+      isSubmitting = false;
+      document.getElementById("completeSaleBtn").disabled = false;
+      document.getElementById("clearCartBtn").disabled = false;
     }
   };
 
@@ -867,6 +887,39 @@
       creditAccounts.map(c => `<option value="${c.name}"></option>`).join("");
   }
 
+  async function loadRecentReceipts() {
+    const container = document.getElementById("recentReceiptsList");
+    try {
+      const snap = await getDocs(query(
+        collection(db, "receipts"),
+        where("businessId", "==", currentBusinessId),
+        where("shopId", "==", currentShopId)
+      ));
+      const receipts = snap.docs.map(d => d.data())
+        .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0))
+        .slice(0, 10);
+      if (receipts.length === 0) {
+        container.innerHTML = '<div class="empty">No sales yet.</div>';
+        return;
+      }
+      container.innerHTML = receipts.map(r => {
+        const date = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleString() : "";
+        const itemsSummary = (r.items || []).map(i => `${i.qty} ${i.unitLabel}(s) ${i.drugName}`).join(", ");
+        const paymentTag = r.paymentStatus === "CREDIT" ? ` · CREDIT${r.customerName ? " - " + r.customerName : ""}` : "";
+        return `
+          <div class="cart-item">
+            <div>
+              <div class="cart-item-name">Receipt #${r.displayNumber} · ${date}</div>
+              <div class="cart-item-meta">${itemsSummary}</div>
+              <div class="cart-item-meta">Total: ${Number(r.totalAmount || 0).toLocaleString()} · ${r.cashier || ""}${paymentTag}</div>
+            </div>
+          </div>`;
+      }).join("");
+    } catch (err) {
+      container.innerHTML = `<div class="empty" style="color:var(--danger);">Couldn't load receipts: ${err.message}</div>`;
+    }
+  }
+
   onAuthStateChanged(auth, async (user) => {
     if (!user) { window.location.href = "login.html"; return; }
     currentUser = user;
@@ -916,6 +969,7 @@
 
     loadFrequentlySold();
     loadCreditAccounts();
+    loadRecentReceipts();
   });
 </script>
 </body>
