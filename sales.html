@@ -356,6 +356,20 @@
     if (unitLevel === "intermediate") return drug.intermediateUnit;
     return drug.baseUnit;
   }
+
+  // Pro's display convention: show the sold quantity converted into its
+  // clearest unit (e.g. "1 Strip(s)"), and only if that differs from what
+  // was actually keyed in, add a muted "(sold as 10 Tablet(s) x 50)" line
+  // underneath showing the real entered qty/unit/price.
+  function cartLineDisplay(c) {
+    const convertedLabel = formatSoldQtyLabel(c.baseQtyNeeded, c);
+    const rawLabel = `${c.qty} ${c.unitLabel}(s)`;
+    const sameAsRaw = convertedLabel === rawLabel;
+    return {
+      topLine: `${convertedLabel} = ${c.total.toLocaleString()}`,
+      subLine: sameAsRaw ? null : `(sold as ${c.qty} ${c.unitLabel}(s) × ${c.pricePerUnit.toLocaleString()})`
+    };
+  }
   function priceFor(unitLevel, drug) {
     if (unitLevel === "stock") return Number(drug.retailStock) || 0;
     if (unitLevel === "intermediate") return Number(drug.retailIntermediate) || 0;
@@ -546,17 +560,21 @@
       return;
     }
     card.classList.remove("hidden");
-    list.innerHTML = cart.map((c, idx) => `
+    list.innerHTML = cart.map((c, idx) => {
+      const disp = cartLineDisplay(c);
+      return `
       <div class="cart-item">
         <div>
           <div class="cart-item-name">${c.drugName}</div>
-          <div class="cart-item-meta">${c.qty} ${c.unitLabel}(s) × ${c.pricePerUnit.toLocaleString()} = ${c.total.toLocaleString()}</div>
+          <div class="cart-item-meta">${disp.topLine}</div>
+          ${disp.subLine ? `<div class="cart-item-meta">${disp.subLine}</div>` : ""}
         </div>
         <div style="display:flex; flex-direction:column; gap:6px;">
           <button class="btn-small btn-secondary" style="margin:0;" onclick="editCartItem(${idx})">Edit</button>
           <button class="btn-small btn-danger-outline" onclick="removeCartItem(${idx})">Remove</button>
         </div>
-      </div>`).join("");
+      </div>`;
+    }).join("");
     const total = cart.reduce((sum, c) => sum + c.total, 0);
     document.getElementById("cartTotal").textContent = "Total: " + total.toLocaleString();
   }
@@ -608,8 +626,10 @@
     lines.push(`Cashier: ${cashierName}`);
     lines.push("---------------------------");
     items.forEach(i => {
+      const disp = cartLineDisplay(i);
       lines.push(`${i.drugName}`);
-      lines.push(`  ${i.qty} ${i.unitLabel}(s) x ${i.pricePerUnit.toLocaleString()} = ${i.total.toLocaleString()}`);
+      lines.push(`  ${disp.topLine}`);
+      if (disp.subLine) lines.push(`  ${disp.subLine}`);
     });
     lines.push("---------------------------");
     lines.push(`TOTAL: ${total.toLocaleString()}`);
@@ -640,7 +660,7 @@
       }
     }
 
-    const itemsList = cart.map(c => `${c.qty} ${c.unitLabel}(s) ${c.drugName} — ${c.total.toLocaleString()}`).join("\n");
+    const itemsList = cart.map(c => `${c.drugName} — ${cartLineDisplay(c).topLine}`).join("\n");
     if (!confirm(`Complete this ${onCredit ? "CREDIT " : ""}sale?\n\n${itemsList}\n\nGrand total: ${grandTotal.toLocaleString()}${onCredit ? `\nCustomer: ${customerNameInput}` : ""}`)) return;
 
     try {
