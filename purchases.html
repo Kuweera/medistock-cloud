@@ -19,7 +19,6 @@
     background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
   }
   h1{font-size:19px; margin:0;}
-  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
   .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
   .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
   .card{
@@ -30,27 +29,38 @@
   label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
   input, select{
     width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
-    background:var(--card); color:var(--text); font-size:14px;
+    background:var(--card); color:var(--text); font-size:14px; font-family:inherit;
   }
   input:focus, select:focus{outline:none; border-color:var(--accent);}
   .row{display:flex; gap:8px;} .row > *{flex:1;}
+  .chk{display:flex; align-items:center; gap:8px; margin:10px 0;}
+  .chk input{width:auto;}
   button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
-  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:12px;}
-  .del-btn{background:transparent; color:var(--danger); border:1px solid var(--danger); padding:3px 8px; font-size:11px; margin-top:4px;}
-  .purchase-item{padding:10px 0; border-bottom:1px solid var(--border);}
-  .purchase-item:last-child{border-bottom:none;}
-  .p-drug{font-size:14px; font-weight:600;}
-  .p-meta{font-size:12px; color:var(--muted);}
-  .p-total{font-size:14px; font-weight:700; float:right;}
-  .pay-tag{font-size:11px; padding:2px 8px; border-radius:999px; margin-left:6px;}
-  .pay-tag.paid{background:rgba(34,197,94,.12); color:var(--accent2);}
-  .pay-tag.unpaid{background:rgba(239,68,68,.15); color:var(--danger);}
-  .pay-tag.partial{background:rgba(234,179,8,.15); color:var(--warn);}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent); width:100%; padding:10px; margin-top:8px;}
+  .btn-danger-outline{background:transparent; border:1px solid var(--danger); color:var(--danger);}
+  .btn-small{width:auto; padding:7px 12px; font-size:12.5px;}
+  .result-item{padding:10px; border-bottom:1px solid var(--border); cursor:pointer;}
+  .result-item:last-child{border-bottom:none;}
+  .result-item:active{background:var(--bg);}
+  .result-name{font-weight:600; font-size:14px;}
+  .result-stock{font-size:12px; color:var(--muted);}
   .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
-  .link{color:var(--accent); font-size:13px; text-decoration:none;}
-  .total-preview{font-size:15px; font-weight:700; text-align:right; margin-top:8px;}
+  .selected-card{border:1px solid var(--accent);}
+  .total-line{font-size:20px; font-weight:700; text-align:right; margin-top:12px;}
+  .hint{font-size:11px; color:var(--muted); margin-top:6px;}
+  .hidden{display:none !important;}
+  .cart-item{display:flex; justify-content:space-between; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--border); gap:8px;}
+  .cart-item:last-child{border-bottom:none;}
+  .cart-item-name{font-weight:600; font-size:14px;}
+  .cart-item-meta{font-size:12px; color:var(--muted);}
+  .receipt-box{
+    font-family:monospace; font-size:12.5px; white-space:pre-wrap; background:var(--bg);
+    border:1px solid var(--border); border-radius:8px; padding:12px; line-height:1.6;
+  }
+  .pay-tag{font-size:10px; background:var(--warn); color:#fff; padding:1px 7px; border-radius:999px; margin-left:6px;}
 
-  /* ===== Shared MediStock Cloud navigation (matches MediStock Pro) ===== */
+  /* ===== Shared MediStock Cloud navigation ===== */
   .app-header{
     position:sticky; top:0; z-index:20;
     background:var(--accent); color:#fff;
@@ -137,63 +147,84 @@
   <a href="credit.html">Credit / Loans</a>
   <a href="suppliers.html">Suppliers</a>
   <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
   <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
 </nav>
-<div class="hint" id="shopIndicator" style="margin-bottom:8px; color:var(--muted); font-size:11px;"></div>
+<div class="hint" id="shopIndicator" style="margin-bottom:8px;"></div>
 
-<div class="card">
-  <h2>Record Purchase</h2>
-  <label>Supplier</label>
-  <select id="p_supplier"></select>
+<div class="card" id="searchCard">
+  <input type="text" id="searchBox" placeholder="Search drug to restock…" autocomplete="off">
+  <div id="results" style="margin-top:8px;"></div>
+</div>
 
-  <div class="row">
-    <div>
-      <label>Invoice number</label>
-      <input type="text" id="p_invoice" placeholder="e.g. INV-2026-118">
-    </div>
-    <div>
-      <label>Payment status</label>
-      <select id="p_payment">
-        <option value="paid">Paid</option>
-        <option value="unpaid">Unpaid</option>
-        <option value="partial">Partial</option>
-      </select>
-    </div>
+<div class="card hidden selected-card" id="configureCard">
+  <button class="btn-secondary" onclick="closeConfigure()">← Search a different drug</button>
+  <h2 id="configDrugName">—</h2>
+  <div class="hint" id="configDrugStock"></div>
+
+  <label id="lbl_qtyStock">Complete Packet(s)</label>
+  <input type="number" id="p_qtyStock" min="0" placeholder="0">
+  <div id="interField">
+    <label id="lbl_qtyInter">Extra Strip(s)</label>
+    <input type="number" id="p_qtyInter" min="0" placeholder="0">
   </div>
+  <label id="lbl_qtyBase">Extra loose Tablet(s)</label>
+  <input type="number" id="p_qtyBase" min="0" placeholder="0">
+  <div class="hint" id="addPreview"></div>
 
-  <label>Drug</label>
-  <select id="p_drug"></select>
+  <label id="lbl_cost">Cost per Packet</label>
+  <input type="number" id="p_cost" min="0">
+
+  <label>Supplier</label>
+  <input type="text" id="p_supplier" list="supplierSuggestions" placeholder="Supplier name">
+  <datalist id="supplierSuggestions"></datalist>
 
   <div class="row">
     <div>
-      <label>Batch number</label>
-      <input type="text" id="p_batchNumber" placeholder="e.g. B2026-014">
+      <label>Batch number (optional)</label>
+      <input type="text" id="p_batch" list="batchSuggestions" placeholder="Auto-generated if left blank">
+      <datalist id="batchSuggestions"></datalist>
     </div>
     <div>
       <label>Expiry date</label>
-      <input type="date" id="p_expiryDate">
+      <input type="date" id="p_expiry">
     </div>
   </div>
 
-  <div class="row">
-    <div>
-      <label>Quantity (base units)</label>
-      <input type="number" id="p_quantity" min="0" placeholder="e.g. 500">
-    </div>
-    <div>
-      <label>Unit cost (per base unit)</label>
-      <input type="number" id="p_unitCost" min="0" placeholder="e.g. 90">
-    </div>
+  <div class="chk">
+    <input type="checkbox" id="p_onCredit">
+    <label style="margin:0;">Buy on credit</label>
   </div>
-  <div class="total-preview" id="totalPreview">Total cost: 0</div>
+  <div id="creditDueField" class="hidden">
+    <label>Credit due date</label>
+    <input type="date" id="p_creditDueDate">
+  </div>
 
-  <button class="btn-primary" onclick="savePurchase()">Save Purchase</button>
-  <div id="saveStatus" style="font-size:13px; margin-top:8px;"></div>
+  <div class="total-line" id="lineTotal">Line total: 0</div>
+  <button class="btn-primary" onclick="addToCart()">Add to Purchase Cart</button>
+  <button class="btn-secondary" onclick="closeConfigure()">Cancel</button>
+</div>
+
+<div class="card hidden" id="cartCard">
+  <h2>Purchase Cart</h2>
+  <div id="cartList"></div>
+  <div class="total-line" id="cartTotal">Grand total: 0</div>
+  <button class="btn-primary" onclick="completePurchase()">Complete Purchase</button>
+  <button class="btn-secondary" onclick="clearCart()">Clear Cart</button>
+  <div id="purchaseStatus" style="font-size:13px; margin-top:8px;"></div>
+</div>
+
+<div class="card hidden" id="receiptCard">
+  <h2>Receipt <span id="receiptNumber"></span></h2>
+  <div class="receipt-box" id="receiptText"></div>
+  <button class="btn-primary" onclick="shareReceipt()">Share Receipt</button>
+  <button class="btn-secondary" onclick="saveReceiptToPhone()">Save to Phone</button>
+  <button class="btn-secondary" onclick="startNewPurchase()">New Purchase</button>
 </div>
 
 <div class="card">
-  <h2>Purchase History</h2>
-  <div id="purchaseList"><div class="empty">Loading…</div></div>
+  <h2>Recent Purchases</h2>
+  <div id="recentPurchasesList"><div class="empty">Loading…</div></div>
 </div>
 
 <script>
@@ -229,8 +260,8 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, getDocs, deleteDoc, writeBatch, collection, onSnapshot,
-    enableIndexedDbPersistence, serverTimestamp, query, where
+    getFirestore, doc, getDoc, getDocs, writeBatch, runTransaction, collection, addDoc,
+    onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where
   } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -248,108 +279,422 @@
   enableIndexedDbPersistence(db).catch(() => {});
 
   let currentUser = null;
+  let currentRole = null;
+  let cashierName = "";
   let currentBusinessId = null;
   let currentShopId = null;
+  let currentShopName = "";
+  let businessName = "";
+  let businessPhone = "";
   let allDrugs = [];
   let allSuppliers = [];
-  let allPurchases = [];
+  let selectedDrug = null;
+  let editingCartIndex = null;
+  let cart = [];
+  let lastReceiptData = null;
+  let isSubmitting = false;
 
-  function populateSelects() {
-    const supSel = document.getElementById("p_supplier");
-    const drugSel = document.getElementById("p_drug");
-    const prevSup = supSel.value, prevDrug = drugSel.value;
-    supSel.innerHTML = allSuppliers.length
-      ? allSuppliers.map(s => `<option value="${s.id}">${s.name}</option>`).join("")
-      : '<option value="">No suppliers yet — add one on Suppliers page</option>';
-    drugSel.innerHTML = allDrugs.length
-      ? allDrugs.map(d => `<option value="${d.id}">${d.name}</option>`).join("")
-      : '<option value="">No drugs yet — add one on Inventory page</option>';
-    if (prevSup) supSel.value = prevSup;
-    if (prevDrug) drugSel.value = prevDrug;
-  }
-
-  function updateTotalPreview() {
-    const qty = Number(document.getElementById("p_quantity").value) || 0;
-    const cost = Number(document.getElementById("p_unitCost").value) || 0;
-    document.getElementById("totalPreview").textContent = "Total cost: " + (qty * cost).toLocaleString();
-  }
-  document.getElementById("p_quantity").addEventListener("input", updateTotalPreview);
-  document.getElementById("p_unitCost").addEventListener("input", updateTotalPreview);
-
-  window.savePurchase = async function () {
-    const statusEl = document.getElementById("saveStatus");
-    const supplierId = document.getElementById("p_supplier").value;
-    const supplier = allSuppliers.find(s => s.id === supplierId);
-    const drugId = document.getElementById("p_drug").value;
-    const drug = allDrugs.find(d => d.id === drugId);
-    const invoiceNumber = document.getElementById("p_invoice").value.trim();
-    const paymentStatus = document.getElementById("p_payment").value;
-    const batchNumber = document.getElementById("p_batchNumber").value.trim();
-    const expiryDate = document.getElementById("p_expiryDate").value;
-    const quantity = Number(document.getElementById("p_quantity").value) || 0;
-    const unitCost = Number(document.getElementById("p_unitCost").value) || 0;
-
-    if (!supplier || !drug || !expiryDate || quantity <= 0) {
-      statusEl.textContent = "Pick a supplier, a drug, an expiry date, and a quantity.";
-      statusEl.style.color = "var(--danger)";
-      return;
-    }
-    const totalCost = quantity * unitCost;
-
-    try {
-      statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
-      const wb = writeBatch(db);
-
-      const purchaseRef = doc(collection(db, "purchases"));
-      wb.set(purchaseRef, {
-        businessId: currentBusinessId, shopId: currentShopId, ownerUid: currentUser.uid,
-        supplierId, supplierName: supplier.name,
-        invoiceNumber, paymentStatus,
-        drugId, drugName: drug.name,
-        quantity, unitCost, totalCost,
-        createdAt: serverTimestamp()
-      });
-
-      const batchRef = doc(collection(db, "batches"));
-      wb.set(batchRef, {
-        businessId: currentBusinessId, shopId: currentShopId, ownerUid: currentUser.uid,
-        drugId, drugName: drug.name,
-        batchNumber: batchNumber || invoiceNumber, expiryDate, quantity, cost: totalCost,
-        createdAt: serverTimestamp()
-      });
-
-      wb.update(doc(db, "drugs", drugId), { currentStockBase: (drug.currentStockBase || 0) + quantity });
-
-      await wb.commit();
-      statusEl.textContent = "Saved — stock and batch updated.";
-      document.getElementById("p_invoice").value = "";
-      document.getElementById("p_batchNumber").value = "";
-      document.getElementById("p_expiryDate").value = "";
-      document.getElementById("p_quantity").value = "";
-      document.getElementById("p_unitCost").value = "";
-      updateTotalPreview();
-    } catch (err) {
-      statusEl.textContent = "Failed: " + err.message;
-      statusEl.style.color = "var(--danger)";
+  const PackagingEngine = {
+    baseToBreakdown(baseQty, baseUnitsPerStock, basePerIntermediate) {
+      baseUnitsPerStock = Number(baseUnitsPerStock) || 0;
+      basePerIntermediate = Number(basePerIntermediate) || 0;
+      let stockUnits = 0, remainder = baseQty;
+      if (baseUnitsPerStock > 0) {
+        stockUnits = Math.floor(baseQty / baseUnitsPerStock);
+        remainder = baseQty - stockUnits * baseUnitsPerStock;
+      }
+      let intermediateUnits = 0, looseBase = remainder;
+      if (basePerIntermediate > 0) {
+        intermediateUnits = Math.floor(remainder / basePerIntermediate);
+        looseBase = remainder - intermediateUnits * basePerIntermediate;
+      }
+      return { stockUnits, intermediateUnits, looseBase };
+    },
+    openingStockToBase(completeStockUnits, baseUnitsPerStock, openedIntermediateUnits, basePerIntermediate, openedLooseBase) {
+      const fromComplete = Number(completeStockUnits) * Number(baseUnitsPerStock);
+      const fromOpenedIntermediate = Number(openedIntermediateUnits) * Number(basePerIntermediate);
+      return fromComplete + fromOpenedIntermediate + Number(openedLooseBase || 0);
     }
   };
 
-  function renderList() {
-    const container = document.getElementById("purchaseList");
-    if (allPurchases.length === 0) {
-      container.innerHTML = '<div class="empty">No purchases recorded yet.</div>';
+  function stockSummary(d) {
+    const b = PackagingEngine.baseToBreakdown(d.currentStockBase, d.baseUnitsPerStock, d.basePerIntermediate);
+    const parts = [];
+    if (b.stockUnits) parts.push(`${b.stockUnits} ${d.stockUnit}(s)`);
+    if (d.hasIntermediate && b.intermediateUnits) parts.push(`${b.intermediateUnits} ${d.intermediateUnit}(s)`);
+    if (b.looseBase) parts.push(`${b.looseBase} ${d.baseUnit}(s)`);
+    return parts.length ? parts.join(", ") : `0 ${d.baseUnit}(s)`;
+  }
+  // "+X Packet(s) + Y Strip(s) + Z Tablet(s)" — the clearest combination for
+  // a purchased quantity, ported from Pro's formatPurchaseQuantity.
+  function formatAddedQtyLabel(baseQty, drug) {
+    const b = PackagingEngine.baseToBreakdown(baseQty, drug.baseUnitsPerStock, drug.basePerIntermediate);
+    const parts = [];
+    if (b.stockUnits) parts.push(`${b.stockUnits} ${drug.stockUnit}(s)`);
+    if (drug.hasIntermediate && b.intermediateUnits) parts.push(`${b.intermediateUnits} ${drug.intermediateUnit}(s)`);
+    if (b.looseBase) parts.push(`${b.looseBase} ${drug.baseUnit}(s)`);
+    return "+" + (parts.length ? parts.join(" + ") : `0 ${drug.baseUnit}(s)`);
+  }
+
+  function renderResults(filterText) {
+    const box = document.getElementById("results");
+    if (!filterText) { box.innerHTML = ""; return; }
+    const f = filterText.toLowerCase();
+    const matches = allDrugs.filter(d => d.active !== false && (
+      d.name.toLowerCase().includes(f) ||
+      (d.generic || "").toLowerCase().includes(f) ||
+      (d.drugClass || "").toLowerCase().includes(f)
+    ));
+    if (matches.length === 0) {
+      box.innerHTML = '<div class="empty">No matching drug.</div>';
       return;
     }
-    const sorted = [...allPurchases].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-    container.innerHTML = sorted.map(p => {
-      const dateStr = p.createdAt ? p.createdAt.toDate().toLocaleDateString() : "just now";
-      return `
-        <div class="purchase-item">
-          <div class="p-total">${p.totalCost.toLocaleString()}</div>
-          <div class="p-drug">${p.drugName} <span class="pay-tag ${p.paymentStatus}">${p.paymentStatus}</span></div>
-          <div class="p-meta">${p.supplierName} · Inv ${p.invoiceNumber || "—"} · Qty ${p.quantity} · ${dateStr}</div>
-        </div>`;
-    }).join("");
+    box.innerHTML = matches.map(d => `
+      <div class="result-item" onclick="selectDrug('${d.id}')">
+        <div class="result-name">${d.name}</div>
+        <div class="result-stock">${stockSummary(d)}</div>
+      </div>`).join("");
+  }
+  document.getElementById("searchBox").addEventListener("input", (e) => renderResults(e.target.value));
+
+  window.selectDrug = function (id, prefillFromCartIndex) {
+    selectedDrug = allDrugs.find(d => d.id === id);
+    if (!selectedDrug) return;
+    editingCartIndex = (prefillFromCartIndex !== undefined) ? prefillFromCartIndex : null;
+    const d = selectedDrug;
+    document.getElementById("searchBox").value = "";
+    document.getElementById("results").innerHTML = "";
+    document.getElementById("configureCard").classList.remove("hidden");
+    document.getElementById("configDrugName").textContent = d.name;
+    document.getElementById("configDrugStock").textContent = "Current stock: " + stockSummary(d);
+
+    document.getElementById("lbl_qtyStock").textContent = `Complete ${d.stockUnit}(s)`;
+    document.getElementById("interField").classList.toggle("hidden", !d.hasIntermediate);
+    document.getElementById("lbl_qtyInter").textContent = `Extra ${d.intermediateUnit || "intermediate unit"}(s)`;
+    document.getElementById("lbl_qtyBase").textContent = `Extra loose ${d.baseUnit}(s)`;
+    document.getElementById("lbl_cost").textContent = `Cost per ${d.stockUnit}`;
+
+    const existing = editingCartIndex !== null ? cart[editingCartIndex] : null;
+    document.getElementById("p_qtyStock").value = existing ? existing.qtyStock : "";
+    document.getElementById("p_qtyInter").value = existing ? existing.qtyInter : "";
+    document.getElementById("p_qtyBase").value = existing ? existing.qtyBase : "";
+    document.getElementById("p_cost").value = existing ? existing.costPerStockUnit : (d.wholesale || "");
+    document.getElementById("p_supplier").value = existing ? existing.supplier : (d.supplier || "");
+    document.getElementById("p_batch").value = existing ? existing.batchNumber : "";
+    document.getElementById("p_expiry").value = existing ? existing.expiryDate : "";
+    document.getElementById("p_onCredit").checked = existing ? existing.onCredit : false;
+    document.getElementById("creditDueField").classList.toggle("hidden", !(existing && existing.onCredit));
+    document.getElementById("p_creditDueDate").value = existing ? (existing.creditDueDate || "") : "";
+
+    updateAddPreview();
+    window.scrollTo({ top: document.getElementById("configureCard").offsetTop - 10, behavior: "smooth" });
+  };
+
+  ["p_qtyStock", "p_qtyInter", "p_qtyBase", "p_cost"].forEach(id =>
+    document.getElementById(id).addEventListener("input", updateAddPreview)
+  );
+  document.getElementById("p_onCredit").addEventListener("change", (e) => {
+    document.getElementById("creditDueField").classList.toggle("hidden", !e.target.checked);
+  });
+
+  function currentAddedBase() {
+    if (!selectedDrug) return 0;
+    const qtyStock = Number(document.getElementById("p_qtyStock").value) || 0;
+    const qtyInter = Number(document.getElementById("p_qtyInter").value) || 0;
+    const qtyBase = Number(document.getElementById("p_qtyBase").value) || 0;
+    return PackagingEngine.openingStockToBase(qtyStock, selectedDrug.baseUnitsPerStock, qtyInter, selectedDrug.basePerIntermediate, qtyBase);
+  }
+
+  function updateAddPreview() {
+    if (!selectedDrug) return;
+    const addedBase = currentAddedBase();
+    const newTotal = selectedDrug.currentStockBase + addedBase;
+    document.getElementById("addPreview").textContent =
+      `Adding ${addedBase.toLocaleString()} ${selectedDrug.baseUnit}(s) → new stock will be ${newTotal.toLocaleString()} ${selectedDrug.baseUnit}(s)`;
+    const cost = Number(document.getElementById("p_cost").value) || 0;
+    const quantityInStockUnits = selectedDrug.baseUnitsPerStock > 0 ? (addedBase / selectedDrug.baseUnitsPerStock) : 0;
+    document.getElementById("lineTotal").textContent = "Line total: " + Math.round(cost * quantityInStockUnits).toLocaleString();
+  }
+
+  window.closeConfigure = function () {
+    selectedDrug = null;
+    editingCartIndex = null;
+    document.getElementById("configureCard").classList.add("hidden");
+  };
+
+  window.addToCart = function () {
+    if (!selectedDrug) return;
+    const d = selectedDrug;
+    const addedBase = currentAddedBase();
+    if (addedBase <= 0) { alert("Enter a quantity greater than zero."); return; }
+    const cost = Number(document.getElementById("p_cost").value) || 0;
+    if (cost <= 0 && !confirm("No cost entered for this line — it will record 0, which will throw off profit figures later. Add anyway with 0?")) return;
+    const supplier = document.getElementById("p_supplier").value.trim();
+    const batchNumber = document.getElementById("p_batch").value.trim();
+    const expiryDate = document.getElementById("p_expiry").value;
+    const onCredit = document.getElementById("p_onCredit").checked;
+    const creditDueDate = document.getElementById("p_creditDueDate").value || "";
+    if (onCredit && !supplier) { alert("Enter a supplier name to buy on credit."); return; }
+
+    const quantityInStockUnits = d.baseUnitsPerStock > 0 ? (addedBase / d.baseUnitsPerStock) : 0;
+    const lineTotalCost = cost * quantityInStockUnits;
+
+    const line = {
+      drugId: d.id, drugName: d.name, baseUnit: d.baseUnit, stockUnit: d.stockUnit,
+      intermediateUnit: d.intermediateUnit, hasIntermediate: d.hasIntermediate,
+      baseUnitsPerStock: d.baseUnitsPerStock, basePerIntermediate: d.basePerIntermediate,
+      qtyStock: Number(document.getElementById("p_qtyStock").value) || 0,
+      qtyInter: Number(document.getElementById("p_qtyInter").value) || 0,
+      qtyBase: Number(document.getElementById("p_qtyBase").value) || 0,
+      addedBase, costPerStockUnit: cost, quantityInStockUnits, lineTotalCost,
+      supplier, batchNumber, expiryDate, onCredit, creditDueDate
+    };
+    if (editingCartIndex !== null) cart[editingCartIndex] = line; else cart.push(line);
+    closeConfigure();
+    renderCart();
+  };
+
+  window.editCartItem = function (idx) { selectDrug(cart[idx].drugId, idx); };
+  window.removeCartItem = function (idx) { cart.splice(idx, 1); renderCart(); };
+  window.clearCart = function () {
+    if (cart.length === 0) return;
+    if (!confirm("Clear this whole purchase cart without saving anything?")) return;
+    cart = [];
+    renderCart();
+  };
+
+  function renderCart() {
+    const card = document.getElementById("cartCard");
+    const list = document.getElementById("cartList");
+    if (cart.length === 0) { card.classList.add("hidden"); return; }
+    card.classList.remove("hidden");
+    list.innerHTML = cart.map((c, idx) => `
+      <div class="cart-item">
+        <div>
+          <div class="cart-item-name">${c.drugName}${c.onCredit ? '<span class="pay-tag">CREDIT</span>' : ""}</div>
+          <div class="cart-item-meta">${formatAddedQtyLabel(c.addedBase, c)} (${c.quantityInStockUnits.toLocaleString()} ${c.stockUnit}(s))</div>
+          <div class="cart-item-meta">${c.costPerStockUnit.toLocaleString()} / ${c.stockUnit} → total ${Math.round(c.lineTotalCost).toLocaleString()}</div>
+          <div class="cart-item-meta">${c.batchNumber ? "Batch " + c.batchNumber + " · " : ""}${c.expiryDate ? "Exp " + c.expiryDate + " · " : ""}${c.supplier || ""}</div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <button class="btn-small btn-secondary" style="margin:0;" onclick="editCartItem(${idx})">Edit</button>
+          <button class="btn-small btn-danger-outline" onclick="removeCartItem(${idx})">Remove</button>
+        </div>
+      </div>`).join("");
+    const total = cart.reduce((sum, c) => sum + c.lineTotalCost, 0);
+    document.getElementById("cartTotal").textContent = "Grand total: " + Math.round(total).toLocaleString();
+  }
+
+  async function getNextReceiptNumber() {
+    const counterId = `${currentShopId}_purchases`;
+    const counterRef = doc(db, "counters", counterId);
+    return await runTransaction(db, async (tx) => {
+      const snap = await tx.get(counterRef);
+      const next = snap.exists() ? (snap.data().next || 1) : 1;
+      tx.set(counterRef, { businessId: currentBusinessId, shopId: currentShopId, next: next + 1 }, { merge: true });
+      return next;
+    });
+  }
+
+  function buildReceiptText(receiptNo, items, total, creditPortion) {
+    const lines = [];
+    lines.push(businessName || "MediStock Cloud");
+    if (currentShopName) lines.push(currentShopName);
+    if (businessPhone) lines.push(businessPhone);
+    lines.push("");
+    lines.push(`Purchase Receipt: P-${receiptNo}`);
+    lines.push(`Date: ${new Date().toLocaleString()}`);
+    lines.push(`Recorded by: ${cashierName}`);
+    lines.push("---------------------------");
+    items.forEach(i => {
+      lines.push(`${i.drugName}`);
+      lines.push(`  ${formatAddedQtyLabel(i.addedBase, i)} — ${Math.round(i.lineTotalCost).toLocaleString()}${i.onCredit ? " (CREDIT)" : ""}`);
+    });
+    lines.push("---------------------------");
+    lines.push(`TOTAL COST: ${Math.round(total).toLocaleString()}`);
+    if (creditPortion > 0) lines.push(`Of which on credit: ${Math.round(creditPortion).toLocaleString()}`);
+    return lines.join("\n");
+  }
+
+  window.completePurchase = async function () {
+    const statusEl = document.getElementById("purchaseStatus");
+    if (cart.length === 0 || isSubmitting) return;
+    const purchaseItems = cart.slice();
+    const grandCost = purchaseItems.reduce((s, i) => s + i.lineTotalCost, 0);
+    const creditPortion = purchaseItems.filter(i => i.onCredit).reduce((s, i) => s + i.lineTotalCost, 0);
+    const itemsList = purchaseItems.map(i => `${formatAddedQtyLabel(i.addedBase, i)} ${i.drugName} — ${Math.round(i.lineTotalCost).toLocaleString()}${i.onCredit ? " (CREDIT)" : ""}`).join("\n");
+    if (!confirm(`Complete this purchase?\n\n${itemsList}\n\nGrand total cost: ${Math.round(grandCost).toLocaleString()}${creditPortion > 0 ? `\nOf which on credit: ${Math.round(creditPortion).toLocaleString()}` : ""}`)) return;
+
+    isSubmitting = true;
+    document.getElementById("purchaseStatus").textContent = "";
+    try {
+      statusEl.textContent = "Reserving receipt number…"; statusEl.style.color = "var(--muted)";
+      const receiptNo = await getNextReceiptNumber();
+
+      statusEl.textContent = "Saving…";
+      const wb = writeBatch(db);
+
+      const receiptRef = doc(collection(db, "receipts"));
+      wb.set(receiptRef, {
+        businessId: currentBusinessId, shopId: currentShopId,
+        type: "PURCHASE", displayNumber: `P-${receiptNo}`,
+        createdAt: serverTimestamp(), cashier: cashierName,
+        itemCount: purchaseItems.length, totalAmount: grandCost,
+        items: purchaseItems.map(i => ({
+          drugId: i.drugId, drugName: i.drugName, addedBase: i.addedBase, baseUnit: i.baseUnit,
+          stockUnit: i.stockUnit, intermediateUnit: i.intermediateUnit, baseUnitsPerStock: i.baseUnitsPerStock,
+          basePerIntermediate: i.basePerIntermediate, costPerStockUnit: i.costPerStockUnit,
+          lineTotalCost: i.lineTotalCost, supplier: i.supplier, batchNumber: i.batchNumber,
+          expiryDate: i.expiryDate, onCredit: !!i.onCredit
+        }))
+      });
+
+      const drugSnaps = {};
+      for (const item of purchaseItems) {
+        if (!drugSnaps[item.drugId]) drugSnaps[item.drugId] = await getDoc(doc(db, "drugs", item.drugId));
+      }
+
+      const supplierNamesSeen = new Set();
+      purchaseItems.forEach(item => {
+        const drugSnap = drugSnaps[item.drugId];
+        const currentBase = drugSnap.exists() ? (drugSnap.data().currentStockBase || 0) : 0;
+        const drugUpdate = { currentStockBase: currentBase + item.addedBase };
+        if (item.costPerStockUnit > 0) drugUpdate.wholesale = item.costPerStockUnit;
+        if (item.supplier) drugUpdate.supplier = item.supplier;
+        wb.update(doc(db, "drugs", item.drugId), drugUpdate);
+
+        const displayBatchNumber = item.batchNumber || `AUTO-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`;
+        const batchRef = doc(collection(db, "batches"));
+        wb.set(batchRef, {
+          businessId: currentBusinessId, shopId: currentShopId,
+          drugId: item.drugId, drugName: item.drugName, batchNumber: displayBatchNumber,
+          expiryDate: item.expiryDate, quantity: item.addedBase,
+          purchasePricePerStockUnit: item.costPerStockUnit, supplier: item.supplier,
+          purchaseDate: serverTimestamp(), createdAt: serverTimestamp()
+        });
+
+        const txnRef = doc(collection(db, "stock_transactions"));
+        wb.set(txnRef, {
+          businessId: currentBusinessId, shopId: currentShopId,
+          drugId: item.drugId, type: "PURCHASE", baseUnitsChange: item.addedBase,
+          note: `Purchase — batch ${displayBatchNumber}${item.supplier ? " from " + item.supplier : ""} (receipt P-${receiptNo})${item.onCredit ? " — ON CREDIT" : ""}`,
+          batchId: batchRef.id, cashier: cashierName, createdAt: serverTimestamp()
+        });
+
+        if (item.supplier && !supplierNamesSeen.has(item.supplier.toLowerCase())) {
+          supplierNamesSeen.add(item.supplier.toLowerCase());
+          const existing = allSuppliers.find(s => s.name.toLowerCase() === item.supplier.toLowerCase());
+          if (!existing) {
+            const supplierRef = doc(collection(db, "suppliers"));
+            wb.set(supplierRef, { businessId: currentBusinessId, shopId: currentShopId, name: item.supplier, createdAt: serverTimestamp() });
+          }
+        }
+
+        if (item.onCredit) {
+          const supplierTxnRef = doc(collection(db, "supplier_transactions"));
+          wb.set(supplierTxnRef, {
+            businessId: currentBusinessId, shopId: currentShopId,
+            supplierName: item.supplier, type: "CREDIT_PURCHASE", amount: item.lineTotalCost,
+            receiptId: receiptRef.id, dueDate: item.creditDueDate || "",
+            description: `Credit purchase receipt P-${receiptNo} — ${item.drugName}`,
+            createdAt: serverTimestamp()
+          });
+        }
+      });
+
+      await wb.commit();
+
+      lastReceiptData = { receiptNo };
+      document.getElementById("receiptNumber").textContent = `P-${receiptNo}`;
+      document.getElementById("receiptText").textContent = buildReceiptText(receiptNo, purchaseItems, grandCost, creditPortion);
+      document.getElementById("receiptCard").classList.remove("hidden");
+      document.getElementById("cartCard").classList.add("hidden");
+      window.scrollTo({ top: document.getElementById("receiptCard").offsetTop - 10, behavior: "smooth" });
+
+      cart = [];
+      statusEl.textContent = "";
+      loadRecentPurchases();
+    } catch (err) {
+      statusEl.textContent = "Failed: " + err.message;
+      statusEl.style.color = "var(--danger)";
+    } finally {
+      isSubmitting = false;
+    }
+  };
+
+  window.startNewPurchase = function () {
+    document.getElementById("receiptCard").classList.add("hidden");
+    document.getElementById("searchBox").focus();
+  };
+
+  window.shareReceipt = async function () {
+    if (!lastReceiptData) return;
+    const text = document.getElementById("receiptText").textContent;
+    if (navigator.share) {
+      try { await navigator.share({ title: `Receipt P-${lastReceiptData.receiptNo}`, text }); }
+      catch (e) { /* user cancelled — not an error */ }
+    } else {
+      try {
+        await navigator.clipboard.writeText(text);
+        alert("Sharing isn't available on this browser — the receipt text was copied instead.");
+      } catch (e) { alert("Sharing isn't available on this browser."); }
+    }
+  };
+
+  window.saveReceiptToPhone = function () {
+    if (!lastReceiptData) return;
+    const text = document.getElementById("receiptText").textContent;
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Receipt-P-${lastReceiptData.receiptNo}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  async function loadRecentPurchases() {
+    const container = document.getElementById("recentPurchasesList");
+    try {
+      const snap = await getDocs(query(
+        collection(db, "receipts"),
+        where("businessId", "==", currentBusinessId),
+        where("shopId", "==", currentShopId),
+        where("type", "==", "PURCHASE")
+      ));
+      const receipts = snap.docs.map(d => d.data())
+        .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0))
+        .slice(0, 10);
+      if (receipts.length === 0) { container.innerHTML = '<div class="empty">No purchases recorded yet.</div>'; return; }
+      container.innerHTML = receipts.map(r => {
+        const date = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleString() : "";
+        const itemsSummary = (r.items || []).map(i => `${i.drugName}${i.onCredit ? " (credit)" : ""}`).join(", ");
+        return `
+          <div class="cart-item">
+            <div>
+              <div class="cart-item-name">Receipt #${r.displayNumber} · ${date}</div>
+              <div class="cart-item-meta">${itemsSummary}</div>
+              <div class="cart-item-meta">Total: ${Number(r.totalAmount || 0).toLocaleString()} · ${r.cashier || ""}</div>
+            </div>
+          </div>`;
+      }).join("");
+    } catch (err) {
+      container.innerHTML = `<div class="empty" style="color:var(--danger);">Couldn't load purchases: ${err.message}</div>`;
+    }
+  }
+
+  function refreshSupplierSuggestions() {
+    document.getElementById("supplierSuggestions").innerHTML =
+      allSuppliers.map(s => `<option value="${s.name}"></option>`).join("");
+  }
+  async function loadBatchNumberSuggestions() {
+    const snap = await getDocs(query(
+      collection(db, "batches"),
+      where("businessId", "==", currentBusinessId),
+      where("shopId", "==", currentShopId)
+    ));
+    const distinct = [...new Set(snap.docs.map(d => d.data().batchNumber).filter(Boolean))];
+    document.getElementById("batchSuggestions").innerHTML = distinct.map(bn => `<option value="${bn}"></option>`).join("");
   }
 
   onAuthStateChanged(auth, async (user) => {
@@ -357,38 +702,50 @@
     currentUser = user;
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.location.href = "login.html"; return; }
-    currentBusinessId = userSnap.data().businessId;
+    const profile = userSnap.data();
+    currentRole = profile.role;
+    currentBusinessId = profile.businessId;
+    cashierName = profile.role === "owner" ? user.email : profile.name;
 
-    const shopsSnap = await getDocs(query(collection(db, "shops"), where("ownerUid", "==", user.uid)));
-    const activeId = localStorage.getItem("mc_activeShopId");
-    const foundShop = shopsSnap.docs.find(d => d.id === activeId);
-    const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
-    currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
-    document.getElementById("shopIndicator").textContent = resolvedShopDoc
-      ? `Working in: ${resolvedShopDoc.data().name}`
-      : "No shop set up yet — go to Shops to add one.";
+    const bizSnap = await getDoc(doc(db, "businesses", currentBusinessId));
+    if (bizSnap.exists()) { businessName = bizSnap.data().name || ""; businessPhone = bizSnap.data().phone || ""; }
 
-    const drugsQ = query(collection(db, "drugs"), where("ownerUid", "==", user.uid), where("shopId", "==", currentShopId));
-    onSnapshot(drugsQ, (snap) => {
-      allDrugs = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
-      populateSelects();
-    });
+    if (currentRole === "owner") {
+      const shopsSnap = await getDocs(query(collection(db, "shops"), where("businessId", "==", currentBusinessId)));
+      const activeId = localStorage.getItem("mc_activeShopId");
+      const foundShop = shopsSnap.docs.find(d => d.id === activeId);
+      const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
+      currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
+      currentShopName = resolvedShopDoc ? resolvedShopDoc.data().name : "";
+      document.getElementById("shopIndicator").textContent = resolvedShopDoc
+        ? `Working in: ${currentShopName}` : "No shop set up yet — go to Shops to add one.";
+    } else {
+      currentShopId = profile.shopId;
+      const shopSnap = await getDoc(doc(db, "shops", currentShopId));
+      currentShopName = shopSnap.exists() ? shopSnap.data().name : "";
+      document.getElementById("shopIndicator").textContent = shopSnap.exists() ? `Shop: ${currentShopName}` : "(unknown shop)";
+    }
 
-    const suppliersQ = query(collection(db, "suppliers"), where("ownerUid", "==", user.uid));
-    onSnapshot(suppliersQ, (snap) => {
-      allSuppliers = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
-      populateSelects();
-    });
+    if (!currentShopId) return;
 
-    const purchasesQ = query(collection(db, "purchases"), where("ownerUid", "==", user.uid), where("shopId", "==", currentShopId));
-    onSnapshot(purchasesQ, { includeMetadataChanges: true }, (snap) => {
+    const drugsQ = query(collection(db, "drugs"), where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId));
+    onSnapshot(drugsQ, { includeMetadataChanges: true }, (snap) => {
       const badge = document.getElementById("netBadge");
       const fromCache = snap.metadata.fromCache;
       badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
       badge.className = "badge " + (fromCache ? "offline" : "online");
-      allPurchases = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderList();
+      allDrugs = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
+      if (document.getElementById("searchBox").value) renderResults(document.getElementById("searchBox").value);
     });
+
+    const suppliersQ = query(collection(db, "suppliers"), where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId));
+    onSnapshot(suppliersQ, (snap) => {
+      allSuppliers = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
+      refreshSupplierSuggestions();
+    });
+
+    loadBatchNumberSuggestions();
+    loadRecentPurchases();
   });
 </script>
 </body>
