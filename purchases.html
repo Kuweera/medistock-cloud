@@ -691,7 +691,7 @@
 
   function refreshSupplierSuggestions() {
     document.getElementById("supplierSuggestions").innerHTML =
-      allSuppliers.map(s => `<option value="${s.name}"></option>`).join("");
+      allSuppliers.filter(s => s.active !== false).map(s => `<option value="${s.name}"></option>`).join("");
   }
   async function loadBatchNumberSuggestions() {
     const snap = await getDocs(query(

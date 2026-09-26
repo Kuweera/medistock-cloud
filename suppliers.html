@@ -19,7 +19,6 @@
     background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
   }
   h1{font-size:19px; margin:0;}
-  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
   .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
   .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
   .card{
@@ -28,23 +27,32 @@
   }
   .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
   label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
-  input, textarea{
+  input{
     width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
-    background:var(--card); color:var(--text); font-size:14px; font-family:inherit;
+    background:var(--card); color:var(--text); font-size:14px;
   }
-  input:focus, textarea:focus{outline:none; border-color:var(--accent);}
-  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  input:focus{outline:none; border-color:var(--accent);}
   button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
-  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:12px;}
-  .supplier-item{padding:12px 0; border-bottom:1px solid var(--border);}
-  .supplier-item:last-child{border-bottom:none;}
-  .sup-name{font-size:15px; font-weight:600;}
-  .sup-meta{font-size:12px; color:var(--muted); margin-top:2px;}
-  .del-btn{background:transparent; color:var(--danger); border:1px solid var(--danger); padding:3px 8px; font-size:11px; margin-top:6px;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent); width:100%; padding:10px; margin-top:8px;}
+  .btn-danger-outline{background:transparent; border:1px solid var(--danger); color:var(--danger); width:100%; padding:10px; margin-top:8px;}
+  .btn-small{width:auto; padding:7px 12px; font-size:12.5px; margin-top:0;}
+  .filter-row{display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;}
+  .filter-btn{background:transparent; color:var(--muted); border:1px solid var(--border); padding:7px 12px; font-size:12.5px; width:auto;}
+  .filter-btn.on{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .supplier-row{padding:12px 0; border-bottom:1px solid var(--border); cursor:pointer;}
+  .supplier-row:last-child{border-bottom:none;}
+  .supplier-row:active{background:var(--bg);}
+  .supplier-name{font-weight:600; font-size:15px;}
+  .supplier-meta{font-size:12.5px; color:var(--muted); margin-top:2px;}
+  .pill{font-size:10px; padding:2px 8px; border-radius:999px; margin-left:6px; background:var(--border); color:var(--muted);}
+  .pill.danger{background:rgba(178,59,59,.15); color:var(--danger);}
   .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
-  .link{color:var(--accent); font-size:13px; text-decoration:none;}
+  .hidden{display:none !important;}
+  .tx-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .tx-row:last-child{border-bottom:none;}
 
-  /* ===== Shared MediStock Cloud navigation (matches MediStock Pro) ===== */
+  /* ===== Shared MediStock Cloud navigation ===== */
   .app-header{
     position:sticky; top:0; z-index:20;
     background:var(--accent); color:#fff;
@@ -134,34 +142,41 @@
   <a href="settings.html">Settings</a>
   <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
 </nav>
-<div class="card">
-  <h2>Add Supplier</h2>
-  <label>Name *</label>
-  <input type="text" id="s_name" placeholder="e.g. ABC Pharmaceuticals">
-  <div class="row">
-    <div>
-      <label>Phone</label>
-      <input type="text" id="s_phone" placeholder="e.g. 0700 000000">
-    </div>
-    <div>
-      <label>Contact person</label>
-      <input type="text" id="s_contact" placeholder="e.g. Mr. Okello">
-    </div>
-  </div>
-  <label>Email</label>
-  <input type="text" id="s_email" placeholder="optional">
-  <label>Address</label>
-  <input type="text" id="s_address" placeholder="optional">
-  <label>Notes</label>
-  <textarea id="s_notes" rows="2" placeholder="optional"></textarea>
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
 
-  <button class="btn-primary" onclick="saveSupplier()">Save Supplier</button>
-  <div id="saveStatus" style="font-size:13px; margin-top:8px;"></div>
+<div class="card">
+  <input type="text" id="searchBox" placeholder="Search supplier name or phone…" style="margin-bottom:10px;">
+  <div class="filter-row">
+    <button class="filter-btn" id="showDeactivatedBtn">Show deactivated</button>
+  </div>
+  <div id="suppliersList"><div class="empty">Loading…</div></div>
 </div>
 
-<div class="card">
-  <h2>Your Suppliers</h2>
-  <div id="supplierList"><div class="empty">Loading…</div></div>
+<div class="card hidden" id="accountCard">
+  <h2 id="accountTitle">—</h2>
+  <div class="hint" id="accountSummary" style="font-size:13px; color:var(--text); margin-bottom:10px;"></div>
+
+  <div class="filter-row">
+    <button class="btn-small filter-btn" onclick="promptRecordPayment()">Record Payment</button>
+    <button class="btn-small filter-btn" onclick="openEditBlock()">Edit Details</button>
+    <button class="btn-small filter-btn" id="toggleActiveBtn" onclick="toggleSupplierActive()"></button>
+  </div>
+
+  <div id="editBlock" class="hidden" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
+    <label>Supplier name</label>
+    <input type="text" id="editName">
+    <label>Phone</label>
+    <input type="text" id="editPhone">
+    <button class="btn-primary" onclick="saveSupplierEdit()">Save Changes</button>
+    <button class="btn-secondary" onclick="document.getElementById('editBlock').classList.add('hidden')">Cancel</button>
+    <div id="editStatus" style="font-size:12.5px; margin-top:6px;"></div>
+  </div>
+
+  <h2 style="margin-top:16px;">Transaction History</h2>
+  <div id="accountTransactions"></div>
+
+  <button class="btn-danger-outline" onclick="deleteSupplier()">Delete Supplier</button>
+  <div id="accountStatus" style="font-size:12.5px; margin-top:6px;"></div>
 </div>
 
 <script>
@@ -197,8 +212,8 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, deleteDoc, collection, addDoc, onSnapshot,
-    enableIndexedDbPersistence, serverTimestamp, query, where
+    getFirestore, doc, getDoc, getDocs, updateDoc, deleteDoc, collection, addDoc,
+    onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where, writeBatch
   } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -215,73 +230,204 @@
   const db = getFirestore(app);
   enableIndexedDbPersistence(db).catch(() => {});
 
-  let currentUser = null;
   let currentBusinessId = null;
+  let currentShopId = null;
   let allSuppliers = [];
+  let allTxns = [];
+  let showDeactivated = false;
+  let currentAccountName = null;
 
-  window.saveSupplier = async function () {
-    const statusEl = document.getElementById("saveStatus");
-    const name = document.getElementById("s_name").value.trim();
-    if (!name) { statusEl.textContent = "Enter a supplier name."; statusEl.style.color = "var(--danger)"; return; }
+  function supplierBalance(name) {
+    return allTxns
+      .filter(t => t.supplierName === name)
+      .reduce((sum, t) => sum + (t.type === "CREDIT_PURCHASE" ? (t.amount || 0) : -(t.amount || 0)), 0);
+  }
+
+  function renderList() {
+    const box = document.getElementById("suppliersList");
+    const q = document.getElementById("searchBox").value.toLowerCase();
+    let list = allSuppliers.filter(s => showDeactivated ? s.active === false : s.active !== false);
+    if (q) list = list.filter(s => s.name.toLowerCase().includes(q) || (s.phone || "").includes(q));
+    const withBalance = list.map(s => ({ s, b: supplierBalance(s.name) }));
+    withBalance.sort((a, b) => b.b - a.b);
+    if (withBalance.length === 0) {
+      box.innerHTML = `<div class="empty">${showDeactivated ? "No deactivated suppliers." : "No suppliers yet — add one during a Purchase."}</div>`;
+      return;
+    }
+    box.innerHTML = withBalance.map(({ s, b }) => `
+      <div class="supplier-row" onclick="openAccount('${s.name.replace(/'/g, "\\'")}')">
+        <div class="supplier-name">${s.name}${s.active === false ? '<span class="pill">Deactivated</span>' : (b > 0 ? '<span class="pill danger">Owed</span>' : "")}</div>
+        <div class="supplier-meta">${s.phone || "No phone"} · Balance owed: <b>${Math.round(b).toLocaleString()}</b></div>
+      </div>`).join("");
+  }
+
+  document.getElementById("searchBox").addEventListener("input", renderList);
+  document.getElementById("showDeactivatedBtn").addEventListener("click", (e) => {
+    showDeactivated = !showDeactivated;
+    e.target.classList.toggle("on", showDeactivated);
+    renderList();
+  });
+
+  window.openAccount = function (name) {
+    currentAccountName = name;
+    const s = allSuppliers.find(x => x.name === name) || { name };
+    const b = supplierBalance(name);
+    document.getElementById("accountCard").classList.remove("hidden");
+    document.getElementById("accountTitle").textContent = s.name + (s.active === false ? " (Deactivated)" : "");
+    document.getElementById("accountSummary").innerHTML = `Phone: ${s.phone || "—"}<br>Balance owed: <b>${Math.round(b).toLocaleString()}</b>`;
+    document.getElementById("editBlock").classList.add("hidden");
+    document.getElementById("toggleActiveBtn").textContent = s.active === false ? "Reactivate Supplier" : "Deactivate Supplier";
+    document.getElementById("accountStatus").textContent = "";
+
+    const txs = allTxns.filter(t => t.supplierName === name)
+      .sort((a, b2) => (b2.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+    document.getElementById("accountTransactions").innerHTML = txs.length
+      ? txs.map(t => `
+          <div class="tx-row">
+            <span class="pill" style="margin-left:0;">${t.type}</span> ${Math.round(t.amount || 0).toLocaleString()}<br>
+            <span class="supplier-meta">${t.createdAt?.toDate ? t.createdAt.toDate().toLocaleString() : ""} · ${t.description || ""}${t.dueDate ? " · due " + t.dueDate : ""}</span>
+          </div>`).join("")
+      : '<div class="empty">No transactions.</div>';
+    document.getElementById("accountCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  window.promptRecordPayment = async function () {
+    const name = currentAccountName;
+    const bal = supplierBalance(name);
+    if (bal <= 0) { alert("No outstanding balance for this supplier."); return; }
+    const raw = prompt(`Enter payment amount to ${name}. Outstanding: ${Math.round(bal).toLocaleString()}`);
+    if (raw === null) return;
+    const amount = Number(raw);
+    if (!Number.isFinite(amount) || amount <= 0) { alert("Enter a valid payment amount."); return; }
+    if (amount > bal) {
+      alert(`Payment cannot be greater than the outstanding balance.\n\nOutstanding: ${Math.round(bal).toLocaleString()}\nEntered: ${Math.round(amount).toLocaleString()}`);
+      return;
+    }
+    try {
+      await addDoc(collection(db, "supplier_transactions"), {
+        businessId: currentBusinessId, shopId: currentShopId,
+        supplierName: name, type: "PAYMENT", amount,
+        description: "Payment to supplier", createdAt: serverTimestamp()
+      });
+      openAccount(name);
+    } catch (err) {
+      alert("Failed: " + err.message);
+    }
+  };
+
+  window.openEditBlock = function () {
+    const s = allSuppliers.find(x => x.name === currentAccountName) || { name: currentAccountName };
+    document.getElementById("editName").value = s.name;
+    document.getElementById("editPhone").value = s.phone || "";
+    document.getElementById("editBlock").classList.remove("hidden");
+  };
+
+  window.saveSupplierEdit = async function () {
+    const statusEl = document.getElementById("editStatus");
+    const oldName = currentAccountName;
+    const newName = document.getElementById("editName").value.trim();
+    const newPhone = document.getElementById("editPhone").value.trim();
+    if (!newName) { statusEl.textContent = "Enter a supplier name."; statusEl.style.color = "var(--danger)"; return; }
+    const existing = allSuppliers.find(x => x.name === oldName);
 
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
-      await addDoc(collection(db, "suppliers"), {
-        businessId: currentBusinessId,
-        ownerUid: currentUser.uid,
-        name,
-        phone: document.getElementById("s_phone").value.trim(),
-        contactPerson: document.getElementById("s_contact").value.trim(),
-        email: document.getElementById("s_email").value.trim(),
-        address: document.getElementById("s_address").value.trim(),
-        notes: document.getElementById("s_notes").value.trim(),
-        createdAt: serverTimestamp()
-      });
-      statusEl.textContent = "Saved.";
-      ["s_name","s_phone","s_contact","s_email","s_address","s_notes"].forEach(id => document.getElementById(id).value = "");
+      if (newName === oldName) {
+        if (existing) await updateDoc(doc(db, "suppliers", existing.id), { phone: newPhone });
+        else await addDoc(collection(db, "suppliers"), { businessId: currentBusinessId, shopId: currentShopId, name: newName, phone: newPhone, createdAt: serverTimestamp() });
+      } else {
+        const clash = allSuppliers.find(x => x.name.toLowerCase() === newName.toLowerCase());
+        if (clash) { statusEl.textContent = `A supplier named "${newName}" already exists.`; statusEl.style.color = "var(--danger)"; return; }
+        // Supplier is keyed by name (matching Pro) — renaming means re-pointing
+        // every ledger entry at the new name so balance/history aren't orphaned.
+        const wb = writeBatch(db);
+        if (existing) {
+          wb.update(doc(db, "suppliers", existing.id), { name: newName, phone: newPhone });
+        } else {
+          wb.set(doc(collection(db, "suppliers")), { businessId: currentBusinessId, shopId: currentShopId, name: newName, phone: newPhone, createdAt: serverTimestamp() });
+        }
+        const affectedTxns = await getDocs(query(
+          collection(db, "supplier_transactions"),
+          where("businessId", "==", currentBusinessId),
+          where("shopId", "==", currentShopId),
+          where("supplierName", "==", oldName)
+        ));
+        affectedTxns.docs.forEach(d => wb.update(d.ref, { supplierName: newName }));
+        await wb.commit();
+        currentAccountName = newName;
+      }
+      document.getElementById("editBlock").classList.add("hidden");
     } catch (err) {
       statusEl.textContent = "Failed: " + err.message;
       statusEl.style.color = "var(--danger)";
     }
   };
 
-  window.deleteSupplier = async function (id) {
-    if (!confirm("Delete this supplier? Past purchases will keep the supplier name on record.")) return;
-    try { await deleteDoc(doc(db, "suppliers", id)); }
-    catch (err) { alert("Couldn't delete: " + err.message); }
+  window.toggleSupplierActive = async function () {
+    const s = allSuppliers.find(x => x.name === currentAccountName);
+    if (!s) { alert("Add a purchase or transaction for this supplier first, then deactivation becomes available."); return; }
+    try {
+      await updateDoc(doc(db, "suppliers", s.id), { active: s.active === false ? true : false });
+      document.getElementById("accountCard").classList.add("hidden");
+    } catch (err) {
+      alert("Failed: " + err.message);
+    }
   };
 
-  function renderList() {
-    const container = document.getElementById("supplierList");
-    if (allSuppliers.length === 0) {
-      container.innerHTML = '<div class="empty">No suppliers yet.</div>';
+  window.deleteSupplier = async function () {
+    const name = currentAccountName;
+    const s = allSuppliers.find(x => x.name === name);
+    const balance = supplierBalance(name);
+    const txCount = allTxns.filter(t => t.supplierName === name).length;
+    if (balance !== 0 || txCount > 0) {
+      alert(`"${name}" has ${txCount} transaction(s) on record${balance !== 0 ? " and an outstanding balance" : ""}, so deleting it would break that history. Deactivate it instead if you no longer buy from them.`);
       return;
     }
-    container.innerHTML = allSuppliers.map(s => `
-      <div class="supplier-item">
-        <div class="sup-name">${s.name}</div>
-        <div class="sup-meta">${[s.contactPerson, s.phone, s.email].filter(Boolean).join(" · ")}</div>
-        ${s.address ? `<div class="sup-meta">${s.address}</div>` : ""}
-        ${s.notes ? `<div class="sup-meta">${s.notes}</div>` : ""}
-        <button class="del-btn" onclick="deleteSupplier('${s.id}')">Delete</button>
-      </div>`).join("");
-  }
+    if (!confirm(`Delete "${name}"? This supplier has no transaction history, so this can't be undone but won't affect any other records.`)) return;
+    try {
+      if (s) await deleteDoc(doc(db, "suppliers", s.id));
+      document.getElementById("accountCard").classList.add("hidden");
+    } catch (err) {
+      alert("Failed: " + err.message);
+    }
+  };
 
   onAuthStateChanged(auth, async (user) => {
     if (!user) { window.location.href = "login.html"; return; }
-    currentUser = user;
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.location.href = "login.html"; return; }
-    currentBusinessId = userSnap.data().businessId;
+    const profile = userSnap.data();
+    currentBusinessId = profile.businessId;
 
-    const suppliersQ = query(collection(db, "suppliers"), where("ownerUid", "==", user.uid));
-    onSnapshot(suppliersQ, { includeMetadataChanges: true }, (snap) => {
+    if (profile.role === "owner") {
+      const shopsSnap = await getDocs(query(collection(db, "shops"), where("businessId", "==", currentBusinessId)));
+      const activeId = localStorage.getItem("mc_activeShopId");
+      const foundShop = shopsSnap.docs.find(d => d.id === activeId);
+      const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
+      currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
+      document.getElementById("shopIndicator").textContent = resolvedShopDoc ? `Viewing: ${resolvedShopDoc.data().name}` : "No shop set up yet.";
+    } else {
+      currentShopId = profile.shopId;
+      const shopSnap = await getDoc(doc(db, "shops", currentShopId));
+      document.getElementById("shopIndicator").textContent = shopSnap.exists() ? `Shop: ${shopSnap.data().name}` : "";
+    }
+    if (!currentShopId) return;
+
+    const suppliersQ = query(collection(db, "suppliers"), where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId));
+    onSnapshot(suppliersQ, (snap) => {
+      allSuppliers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderList();
+    });
+
+    const txnQ = query(collection(db, "supplier_transactions"), where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId));
+    onSnapshot(txnQ, { includeMetadataChanges: true }, (snap) => {
       const badge = document.getElementById("netBadge");
       const fromCache = snap.metadata.fromCache;
       badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
       badge.className = "badge " + (fromCache ? "offline" : "online");
-      allSuppliers = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
+      allTxns = snap.docs.map(d => d.data());
       renderList();
+      if (currentAccountName) openAccount(currentAccountName);
     });
   });
 </script>
