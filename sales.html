@@ -893,7 +893,8 @@
       const snap = await getDocs(query(
         collection(db, "receipts"),
         where("businessId", "==", currentBusinessId),
-        where("shopId", "==", currentShopId)
+        where("shopId", "==", currentShopId),
+        where("type", "==", "SALE")
       ));
       const receipts = snap.docs.map(d => d.data())
         .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0))
@@ -904,15 +905,26 @@
       }
       container.innerHTML = receipts.map(r => {
         const date = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleString() : "";
-        const itemsSummary = (r.items || []).map(i => `${i.qty} ${i.unitLabel}(s) ${i.drugName}`).join(", ");
         const paymentTag = r.paymentStatus === "CREDIT" ? ` · CREDIT${r.customerName ? " - " + r.customerName : ""}` : "";
+        const itemLines = (r.items || []).map(i => {
+          // hasIntermediate wasn't stored on older receipts — derive it from
+          // whether an intermediate unit name exists at all.
+          const disp = cartLineDisplay({ ...i, hasIntermediate: i.hasIntermediate ?? !!i.intermediateUnit });
+          return `
+            <div class="cart-item">
+              <div>
+                <div class="cart-item-name">${i.drugName}</div>
+                <div class="cart-item-meta">${disp.topLine}</div>
+                ${disp.subLine ? `<div class="cart-item-meta">${disp.subLine}</div>` : ""}
+              </div>
+            </div>`;
+        }).join("");
         return `
-          <div class="cart-item">
-            <div>
-              <div class="cart-item-name">Receipt #${r.displayNumber} · ${date}</div>
-              <div class="cart-item-meta">${itemsSummary}</div>
-              <div class="cart-item-meta">Total: ${Number(r.totalAmount || 0).toLocaleString()} · ${r.cashier || ""}${paymentTag}</div>
-            </div>
+          <div style="margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid var(--border);">
+            <div class="cart-item-name">Receipt #${r.displayNumber} · ${date}</div>
+            <div class="cart-item-meta" style="margin-bottom:6px;">${r.cashier || ""}${paymentTag}</div>
+            ${itemLines || '<div class="empty">No item detail saved for this receipt.</div>'}
+            <div class="total-line" style="font-size:15px; margin-top:6px;">Total: ${Number(r.totalAmount || 0).toLocaleString()}</div>
           </div>`;
       }).join("");
     } catch (err) {

@@ -677,15 +677,12 @@
             <div class="cart-item-name">${Math.round(i.lineTotalCost || 0).toLocaleString()}</div>
           </div>`).join("");
         return `
-          <details style="margin-bottom:10px;">
-            <summary style="cursor:pointer; font-weight:600; font-size:14px;">
-              Receipt #${r.displayNumber} · ${date} · ${r.itemCount || (r.items || []).length} item(s) · ${Number(r.totalAmount || 0).toLocaleString()}${r.cashier ? " · " + r.cashier : ""}
-            </summary>
-            <div style="margin-top:8px; border-top:1px solid var(--border); padding-top:8px;">
-              ${itemLines || '<div class="empty">No item detail saved for this receipt.</div>'}
-              <div class="total-line" style="font-size:15px; margin-top:8px;">Total: ${Number(r.totalAmount || 0).toLocaleString()}</div>
-            </div>
-          </details>`;
+          <div style="margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid var(--border);">
+            <div class="cart-item-name">Receipt #${r.displayNumber} · ${date}</div>
+            <div class="cart-item-meta" style="margin-bottom:6px;">${r.cashier || ""}</div>
+            ${itemLines || '<div class="empty">No item detail saved for this receipt.</div>'}
+            <div class="total-line" style="font-size:15px; margin-top:6px;">Total: ${Number(r.totalAmount || 0).toLocaleString()}</div>
+          </div>`;
       }).join("");
     } catch (err) {
       container.innerHTML = `<div class="empty" style="color:var(--danger);">Couldn't load purchases: ${err.message}</div>`;
