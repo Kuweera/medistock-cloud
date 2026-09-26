@@ -734,6 +734,7 @@
 
     if (!currentShopId) return;
 
+    let handoffApplied = false;
     const drugsQ = query(collection(db, "drugs"), where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId));
     onSnapshot(drugsQ, { includeMetadataChanges: true }, (snap) => {
       const badge = document.getElementById("netBadge");
@@ -742,6 +743,20 @@
       badge.className = "badge " + (fromCache ? "offline" : "online");
       allDrugs = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
       if (document.getElementById("searchBox").value) renderResults(document.getElementById("searchBox").value);
+
+      // Handoff from What to Buy's "Purchase now" — opens straight into the
+      // configure card for that drug, with the suggested quantity prefilled.
+      if (!handoffApplied) {
+        const params = new URLSearchParams(window.location.search);
+        const handoffDrugId = params.get("drugId");
+        if (handoffDrugId && allDrugs.find(d => d.id === handoffDrugId)) {
+          handoffApplied = true;
+          selectDrug(handoffDrugId);
+          const qtyStock = params.get("qtyStock");
+          if (qtyStock) document.getElementById("p_qtyStock").value = qtyStock;
+          updateAddPreview();
+        }
+      }
     });
 
     const suppliersQ = query(collection(db, "suppliers"), where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId));

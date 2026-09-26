@@ -328,24 +328,32 @@
     currentUser = user;
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.location.href = "login.html"; return; }
-    currentBusinessId = userSnap.data().businessId;
+    const profile = userSnap.data();
+    currentBusinessId = profile.businessId;
 
-    const shopsSnap = await getDocs(query(collection(db, "shops"), where("ownerUid", "==", user.uid)));
-    const activeId = localStorage.getItem("mc_activeShopId");
-    const foundShop = shopsSnap.docs.find(d => d.id === activeId);
-    const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
-    currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
-    document.getElementById("shopIndicator").textContent = resolvedShopDoc
-      ? `Working in: ${resolvedShopDoc.data().name}`
-      : "No shop set up yet — go to Shops to add one.";
+    if (profile.role === "owner") {
+      const shopsSnap = await getDocs(query(collection(db, "shops"), where("businessId", "==", currentBusinessId)));
+      const activeId = localStorage.getItem("mc_activeShopId");
+      const foundShop = shopsSnap.docs.find(d => d.id === activeId);
+      const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
+      currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
+      document.getElementById("shopIndicator").textContent = resolvedShopDoc
+        ? `Working in: ${resolvedShopDoc.data().name}`
+        : "No shop set up yet — go to Shops to add one.";
+    } else {
+      currentShopId = profile.shopId;
+      const shopSnap = await getDoc(doc(db, "shops", currentShopId));
+      document.getElementById("shopIndicator").textContent = shopSnap.exists() ? `Shop: ${shopSnap.data().name}` : "(unknown shop)";
+    }
+    if (!currentShopId) return;
 
-    const drugsQ = query(collection(db, "drugs"), where("ownerUid", "==", user.uid), where("shopId", "==", currentShopId));
+    const drugsQ = query(collection(db, "drugs"), where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId));
     onSnapshot(drugsQ, (snap) => {
       allDrugs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderResults();
     });
 
-    const adjQ = query(collection(db, "stock_adjustments"), where("ownerUid", "==", user.uid), where("shopId", "==", currentShopId));
+    const adjQ = query(collection(db, "stock_adjustments"), where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId));
     onSnapshot(adjQ, { includeMetadataChanges: true }, (snap) => {
       const badge = document.getElementById("netBadge");
       const fromCache = snap.metadata.fromCache;

@@ -19,7 +19,6 @@
     background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
   }
   h1{font-size:19px; margin:0;}
-  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
   .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
   .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
   .card{
@@ -35,22 +34,20 @@
   input:focus, select:focus, textarea:focus{outline:none; border-color:var(--accent);}
   .row{display:flex; gap:8px;} .row > *{flex:1;}
   button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
-  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:12px;}
-  .expense-item{
-    display:flex; justify-content:space-between; align-items:flex-start;
-    padding:10px 0; border-bottom:1px solid var(--border);
-  }
-  .expense-item:last-child{border-bottom:none;}
-  .exp-cat{font-size:13px; font-weight:600;}
-  .exp-desc{font-size:12px; color:var(--muted);}
-  .exp-date{font-size:11px; color:var(--muted);}
-  .exp-amt{font-size:14px; font-weight:700; white-space:nowrap; margin-left:10px;}
-  .del-btn{background:transparent; color:var(--danger); border:1px solid var(--danger); padding:3px 8px; font-size:11px; margin-top:4px;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent); width:100%; padding:10px; margin-top:8px;}
+  .btn-small{width:auto; padding:7px 12px; font-size:12.5px; margin-top:6px;}
+  .del-btn{background:transparent; color:var(--danger); border:1px solid var(--danger); padding:3px 8px; font-size:11px;}
+  .cart-item{display:flex; justify-content:space-between; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--border); gap:8px;}
+  .cart-item:last-child{border-bottom:none;}
+  .cart-item-name{font-weight:600; font-size:14px;}
+  .cart-item-meta{font-size:12px; color:var(--muted);}
+  .total-line{font-size:16px; font-weight:700; margin-top:10px; text-align:right;}
   .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
-  .link{color:var(--accent); font-size:13px; text-decoration:none;}
-  .total-line{font-size:15px; font-weight:700; margin-bottom:10px;}
+  .hidden{display:none !important;}
+  .hint{font-size:11px; color:var(--muted); margin-top:6px;}
 
-  /* ===== Shared MediStock Cloud navigation (matches MediStock Pro) ===== */
+  /* ===== Shared MediStock Cloud navigation ===== */
   .app-header{
     position:sticky; top:0; z-index:20;
     background:var(--accent); color:#fff;
@@ -137,37 +134,53 @@
   <a href="credit.html">Credit / Loans</a>
   <a href="suppliers.html">Suppliers</a>
   <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
   <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
 </nav>
 <div class="hint" id="shopIndicator" style="margin-bottom:8px;"></div>
 
 <div class="card">
-  <h2>Record Expense</h2>
-  <label>Category</label>
-  <select id="e_category">
-    <option>Transport</option>
-    <option>Rent</option>
-    <option>Electricity</option>
-    <option>Water</option>
-    <option>Salaries</option>
-    <option>Airtime</option>
-    <option>Repairs</option>
-    <option>Supplies</option>
-    <option>Other</option>
-  </select>
+  <h2>Add Expense Item</h2>
+  <label>Item</label>
+  <input type="text" id="e_item" list="itemSuggestions" placeholder="e.g. Boda fare, Airtime">
+  <datalist id="itemSuggestions"></datalist>
+
+  <div class="row">
+    <div>
+      <label>Category</label>
+      <select id="e_category"></select>
+    </div>
+    <div>
+      <label>Qty / Unit (optional)</label>
+      <input type="text" id="e_qtyUnit" placeholder="e.g. 2 trips">
+    </div>
+  </div>
+  <div class="row">
+    <input type="text" id="e_newCategory" placeholder="New category name…">
+    <button class="btn-small btn-secondary" style="margin-top:0;" onclick="addNewCategory()">+ Add category</button>
+  </div>
 
   <label>Amount</label>
   <input type="number" id="e_amount" min="0" placeholder="e.g. 15000">
 
-  <label>Description (optional)</label>
-  <textarea id="e_description" rows="2" placeholder="e.g. Boda fare to supplier"></textarea>
+  <button class="btn-primary" onclick="addToCart()">Add to Cart</button>
+</div>
 
-  <button class="btn-primary" onclick="saveExpense()">Save Expense</button>
+<div class="card hidden" id="cartCard">
+  <h2>Expense Cart</h2>
+  <div id="cartList"></div>
+  <div class="total-line" id="cartTotal">Total: 0</div>
+  <label>Date</label>
+  <input type="date" id="e_date">
+  <label>Note (optional)</label>
+  <textarea id="e_note" rows="2" placeholder="e.g. End of month utility bills"></textarea>
+  <button class="btn-primary" onclick="saveExpenseReceipt()">Save Expense</button>
+  <button class="btn-secondary" onclick="clearCart()">Clear Cart</button>
   <div id="saveStatus" style="font-size:13px; margin-top:8px;"></div>
 </div>
 
 <div class="card">
-  <div class="total-line" id="totalLine">Total this month: —</div>
+  <div class="total-line" id="monthTotalLine" style="text-align:left;">Total this month: —</div>
   <h2>History</h2>
   <div id="expenseList"><div class="empty">Loading…</div></div>
 </div>
@@ -205,7 +218,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, getDocs, deleteDoc, collection, addDoc, onSnapshot,
+    getFirestore, doc, getDoc, getDocs, setDoc, deleteDoc, collection, addDoc, onSnapshot,
     enableIndexedDbPersistence, serverTimestamp, query, where
   } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
@@ -224,29 +237,87 @@
   enableIndexedDbPersistence(db).catch(() => {});
 
   let currentUser = null;
+  let cashierName = "";
   let currentBusinessId = null;
   let currentShopId = null;
   let allExpenses = [];
+  let cart = [];
 
-  window.saveExpense = async function () {
-    const statusEl = document.getElementById("saveStatus");
+  document.getElementById("e_date").value = new Date().toISOString().slice(0, 10);
+
+  async function populateCategories() {
+    const snap = await getDocs(collection(db, "expense_categories"));
+    const sel = document.getElementById("e_category");
+    const prev = sel.value;
+    const names = snap.docs.map(d => d.id);
+    const defaults = ["Transport", "Rent", "Electricity", "Water", "Salaries", "Airtime", "Repairs", "Supplies", "Other"];
+    const all = [...new Set([...defaults, ...names])];
+    sel.innerHTML = all.map(n => `<option value="${n}">${n}</option>`).join("");
+    if (prev) sel.value = prev;
+  }
+  window.addNewCategory = async function () {
+    const name = document.getElementById("e_newCategory").value.trim();
+    if (!name) return;
+    await setDoc(doc(db, "expense_categories", name), { name });
+    document.getElementById("e_newCategory").value = "";
+    await populateCategories();
+    document.getElementById("e_category").value = name;
+  };
+
+  window.addToCart = function () {
+    const item = document.getElementById("e_item").value.trim();
     const category = document.getElementById("e_category").value;
+    const qtyUnit = document.getElementById("e_qtyUnit").value.trim();
     const amount = Number(document.getElementById("e_amount").value) || 0;
-    const description = document.getElementById("e_description").value.trim();
-    if (amount <= 0) { statusEl.textContent = "Enter an amount."; statusEl.style.color = "var(--danger)"; return; }
+    if (!item || amount <= 0) { alert("Enter an item name and an amount greater than zero."); return; }
+    cart.push({ item, category, qtyUnit, amount });
+    document.getElementById("e_item").value = "";
+    document.getElementById("e_qtyUnit").value = "";
+    document.getElementById("e_amount").value = "";
+    renderCart();
+  };
+  window.removeCartItem = function (idx) { cart.splice(idx, 1); renderCart(); };
+  window.clearCart = function () {
+    if (cart.length === 0) return;
+    if (!confirm("Clear this expense cart?")) return;
+    cart = [];
+    renderCart();
+  };
 
+  function renderCart() {
+    const card = document.getElementById("cartCard");
+    if (cart.length === 0) { card.classList.add("hidden"); return; }
+    card.classList.remove("hidden");
+    document.getElementById("cartList").innerHTML = cart.map((c, idx) => `
+      <div class="cart-item">
+        <div>
+          <div class="cart-item-name">${c.item}</div>
+          <div class="cart-item-meta">${c.category}${c.qtyUnit ? " · " + c.qtyUnit : ""} — ${c.amount.toLocaleString()}</div>
+        </div>
+        <button class="del-btn" onclick="removeCartItem(${idx})">Remove</button>
+      </div>`).join("");
+    const total = cart.reduce((sum, c) => sum + c.amount, 0);
+    document.getElementById("cartTotal").textContent = "Total: " + total.toLocaleString();
+  }
+
+  window.saveExpenseReceipt = async function () {
+    const statusEl = document.getElementById("saveStatus");
+    if (cart.length === 0) return;
+    const items = cart.slice();
+    const total = items.reduce((sum, c) => sum + c.amount, 0);
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
       await addDoc(collection(db, "expenses"), {
-        businessId: currentBusinessId,
-        shopId: currentShopId,
-        ownerUid: currentUser.uid,
-        category, amount, description,
+        businessId: currentBusinessId, shopId: currentShopId, ownerUid: currentUser.uid,
+        date: document.getElementById("e_date").value,
+        note: document.getElementById("e_note").value.trim(),
+        items, totalAmount: total, cashier: cashierName,
         createdAt: serverTimestamp()
       });
-      statusEl.textContent = "Saved.";
-      document.getElementById("e_amount").value = "";
-      document.getElementById("e_description").value = "";
+      cart = [];
+      renderCart();
+      document.getElementById("e_note").value = "";
+      statusEl.textContent = "";
     } catch (err) {
       statusEl.textContent = "Failed: " + err.message;
       statusEl.style.color = "var(--danger)";
@@ -254,35 +325,48 @@
   };
 
   window.deleteExpense = async function (id) {
-    if (!confirm("Delete this expense?")) return;
+    if (!confirm("Delete this whole expense record?")) return;
     try { await deleteDoc(doc(db, "expenses", id)); }
     catch (err) { alert("Couldn't delete: " + err.message); }
   };
+
+  function refreshItemSuggestions() {
+    const names = new Set();
+    allExpenses.forEach(e => (e.items || []).forEach(i => names.add(i.item)));
+    document.getElementById("itemSuggestions").innerHTML =
+      [...names].map(n => `<option value="${n}"></option>`).join("");
+  }
 
   function renderList() {
     const container = document.getElementById("expenseList");
     if (allExpenses.length === 0) {
       container.innerHTML = '<div class="empty">No expenses recorded yet.</div>';
-      document.getElementById("totalLine").textContent = "Total this month: 0";
+      document.getElementById("monthTotalLine").textContent = "Total this month: 0";
       return;
     }
     const now = new Date();
     const thisMonthTotal = allExpenses
       .filter(e => e.createdAt && e.createdAt.toDate().getMonth() === now.getMonth() && e.createdAt.toDate().getFullYear() === now.getFullYear())
-      .reduce((sum, e) => sum + e.amount, 0);
-    document.getElementById("totalLine").textContent = `Total this month: ${thisMonthTotal.toLocaleString()}`;
+      .reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+    document.getElementById("monthTotalLine").textContent = `Total this month: ${thisMonthTotal.toLocaleString()}`;
 
     container.innerHTML = allExpenses.map(e => {
-      const dateStr = e.createdAt ? e.createdAt.toDate().toLocaleDateString() : "just now";
-      return `
-        <div class="expense-item">
+      const dateStr = e.date || (e.createdAt ? e.createdAt.toDate().toLocaleDateString() : "");
+      const itemLines = (e.items || []).map(i => `
+        <div class="cart-item">
           <div>
-            <div class="exp-cat">${e.category}</div>
-            ${e.description ? `<div class="exp-desc">${e.description}</div>` : ""}
-            <div class="exp-date">${dateStr}</div>
-            <button class="del-btn" onclick="deleteExpense('${e.id}')">Delete</button>
+            <div class="cart-item-name">${i.item}</div>
+            <div class="cart-item-meta">${i.category}${i.qtyUnit ? " · " + i.qtyUnit : ""}</div>
           </div>
-          <div class="exp-amt">${e.amount.toLocaleString()}</div>
+          <div class="cart-item-name">${Number(i.amount || 0).toLocaleString()}</div>
+        </div>`).join("");
+      return `
+        <div style="margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid var(--border);">
+          <div class="cart-item-name">${dateStr}${e.cashier ? " · " + e.cashier : ""}</div>
+          ${e.note ? `<div class="cart-item-meta" style="margin-bottom:6px;">${e.note}</div>` : ""}
+          ${itemLines || '<div class="empty">No item detail.</div>'}
+          <div class="total-line" style="font-size:15px;">Total: ${Number(e.totalAmount || 0).toLocaleString()}</div>
+          <button class="del-btn" onclick="deleteExpense('${e.id}')">Delete Record</button>
         </div>`;
     }).join("");
   }
@@ -292,18 +376,29 @@
     currentUser = user;
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.location.href = "login.html"; return; }
-    currentBusinessId = userSnap.data().businessId;
+    const profile = userSnap.data();
+    currentBusinessId = profile.businessId;
+    cashierName = profile.role === "owner" ? user.email : profile.name;
 
-    const shopsSnap = await getDocs(query(collection(db, "shops"), where("ownerUid", "==", user.uid)));
-    const activeId = localStorage.getItem("mc_activeShopId");
-    const foundShop = shopsSnap.docs.find(d => d.id === activeId);
-    const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
-    currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
-    document.getElementById("shopIndicator").textContent = resolvedShopDoc
-      ? `Working in: ${resolvedShopDoc.data().name}`
-      : "No shop set up yet — go to Shops to add one.";
+    await populateCategories();
 
-    const expensesQ = query(collection(db, "expenses"), where("ownerUid", "==", user.uid), where("shopId", "==", currentShopId));
+    if (profile.role === "owner") {
+      const shopsSnap = await getDocs(query(collection(db, "shops"), where("businessId", "==", currentBusinessId)));
+      const activeId = localStorage.getItem("mc_activeShopId");
+      const foundShop = shopsSnap.docs.find(d => d.id === activeId);
+      const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
+      currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
+      document.getElementById("shopIndicator").textContent = resolvedShopDoc
+        ? `Working in: ${resolvedShopDoc.data().name}`
+        : "No shop set up yet — go to Shops to add one.";
+    } else {
+      currentShopId = profile.shopId;
+      const shopSnap = await getDoc(doc(db, "shops", currentShopId));
+      document.getElementById("shopIndicator").textContent = shopSnap.exists() ? `Shop: ${shopSnap.data().name}` : "(unknown shop)";
+    }
+    if (!currentShopId) return;
+
+    const expensesQ = query(collection(db, "expenses"), where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId));
     onSnapshot(expensesQ, { includeMetadataChanges: true }, (snap) => {
       const badge = document.getElementById("netBadge");
       const fromCache = snap.metadata.fromCache;
@@ -313,6 +408,7 @@
         .map(d => ({ id: d.id, ...d.data() }))
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       renderList();
+      refreshItemSuggestions();
     });
   });
 </script>

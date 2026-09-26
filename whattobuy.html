@@ -221,9 +221,8 @@
     return Math.max(1, Math.ceil(target - currentStockUnits));
   }
 
-  window.jumpToPurchase = function (drugId, suggestedStockUnitQty, baseUnitsPerStock) {
-    const qtyBase = Math.round(suggestedStockUnitQty * baseUnitsPerStock);
-    window.location.href = `purchases.html?drugId=${encodeURIComponent(drugId)}&qty=${qtyBase}`;
+  window.jumpToPurchase = function (drugId, suggestedStockUnitQty) {
+    window.location.href = `purchases.html?drugId=${encodeURIComponent(drugId)}&qtyStock=${suggestedStockUnitQty}`;
   };
   window.goSetReorderLevel = function (drugId) {
     window.location.href = `inventory.html?edit=${encodeURIComponent(drugId)}`;
@@ -264,7 +263,7 @@
               Reorder level: ${Number(d.reorderLevel)} ${d.stockUnit}(s) (${thresholdBase.toLocaleString()} ${d.baseUnit}(s))
             </div>
             <div class="meta"><b>Suggested purchase: ${suggestedQty} ${d.stockUnit}(s)</b>${d.supplier ? " · Supplier: " + d.supplier : " · No supplier on file"}</div>
-            <button class="btn-primary" onclick="jumpToPurchase('${d.id}', ${suggestedQty}, ${Number(d.baseUnitsPerStock) || 1})">Purchase now</button>
+            <button class="btn-primary" onclick="jumpToPurchase('${d.id}', ${suggestedQty})">Purchase now</button>
           </div>`;
       }).join("");
     }
@@ -288,14 +287,22 @@
     if (!user) { window.location.href = "login.html"; return; }
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.location.href = "login.html"; return; }
+    const profile = userSnap.data();
+    const currentBusinessId = profile.businessId;
 
-    const shopsSnap = await getDocs(query(collection(db, "shops"), where("ownerUid", "==", user.uid)));
-    const activeId = localStorage.getItem("mc_activeShopId");
-    const foundShop = shopsSnap.docs.find(d => d.id === activeId);
-    const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
-    const currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
+    let currentShopId;
+    if (profile.role === "owner") {
+      const shopsSnap = await getDocs(query(collection(db, "shops"), where("businessId", "==", currentBusinessId)));
+      const activeId = localStorage.getItem("mc_activeShopId");
+      const foundShop = shopsSnap.docs.find(d => d.id === activeId);
+      const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
+      currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
+    } else {
+      currentShopId = profile.shopId;
+    }
+    if (!currentShopId) return;
 
-    const drugsQ = query(collection(db, "drugs"), where("ownerUid", "==", user.uid), where("shopId", "==", currentShopId));
+    const drugsQ = query(collection(db, "drugs"), where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId));
     onSnapshot(drugsQ, { includeMetadataChanges: true }, (snap) => {
       const badge = document.getElementById("netBadge");
       const fromCache = snap.metadata.fromCache;
