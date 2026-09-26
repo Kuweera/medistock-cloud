@@ -784,9 +784,11 @@
         const creditTxnRef = doc(collection(db, "credit_transactions"));
         batch.set(creditTxnRef, {
           businessId: currentBusinessId, shopId: currentShopId,
-          customerId, customerName: customerNameInput, type: "SALE",
-          balanceChange: grandTotal, expectedPaymentDate: expectedPaymentDateInput || null,
-          receiptId: receiptRef.id, createdAt: serverTimestamp()
+          customerId, customerName: customerNameInput, type: "CREDIT_SALE",
+          amount: grandTotal, paidAmount: 0, balanceChange: grandTotal,
+          dueDate: expectedPaymentDateInput || null,
+          receiptId: receiptRef.id, description: `Credit sale receipt S-${receiptNo}`,
+          createdAt: serverTimestamp()
         });
       }
 

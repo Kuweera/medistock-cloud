@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MediStock Cloud — Credit</title>
+<title>MediStock Cloud — Credit / Loans</title>
 <style>
   :root{
     --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
@@ -19,7 +19,6 @@
     background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
   }
   h1{font-size:19px; margin:0;}
-  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
   .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
   .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
   .card{
@@ -28,38 +27,35 @@
   }
   .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
   label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
-  input, textarea{
+  input, select{
     width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
-    background:var(--card); color:var(--text); font-size:14px; font-family:inherit;
+    background:var(--card); color:var(--text); font-size:14px;
   }
-  input:focus, textarea:focus{outline:none; border-color:var(--accent);}
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
   .row{display:flex; gap:8px;} .row > *{flex:1;}
   button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
-  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:12px;}
-  .btn-toggle{background:transparent; color:var(--accent); border:1px solid var(--accent); width:100%; padding:10px;}
-  .btn-charge{background:var(--danger); color:#fff; flex:1; padding:10px;}
-  .btn-pay{background:var(--accent2); color:#111; flex:1; padding:10px;}
-  .cust-item{
-    display:flex; justify-content:space-between; align-items:center;
-    padding:10px 0; border-bottom:1px solid var(--border); cursor:pointer;
-  }
-  .cust-item:last-child{border-bottom:none;}
-  .cust-name{font-size:14px; font-weight:600;}
-  .cust-meta{font-size:12px; color:var(--muted);}
-  .cust-bal{font-size:14px; font-weight:700;}
-  .cust-bal.over{color:var(--danger);}
-  .hidden{display:none !important;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent); width:100%; padding:10px; margin-top:8px;}
+  .btn-danger-outline{background:transparent; border:1px solid var(--danger); color:var(--danger); width:100%; padding:10px; margin-top:8px;}
+  .btn-small{width:auto; padding:7px 12px; font-size:12.5px; margin-top:0;}
+  .filter-row{display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;}
+  .filter-btn{background:transparent; color:var(--muted); border:1px solid var(--border); padding:7px 12px; font-size:12.5px; width:auto;}
+  .filter-btn.on{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .cust-row{padding:12px 0; border-bottom:1px solid var(--border); cursor:pointer;}
+  .cust-row:last-child{border-bottom:none;}
+  .cust-row:active{background:var(--bg);}
+  .cust-name{font-weight:600; font-size:15px;}
+  .cust-meta{font-size:12.5px; color:var(--muted); margin-top:2px;}
+  .pill{font-size:10px; padding:2px 8px; border-radius:999px; margin-left:6px;}
+  .pill.ok{background:rgba(46,125,50,.12); color:var(--accent2);}
+  .pill.danger{background:rgba(178,59,59,.15); color:var(--danger);}
+  .pill.neutral{background:var(--border); color:var(--muted);}
   .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
-  .link{color:var(--accent); font-size:13px; text-decoration:none;}
-  .back-link{display:inline-block; margin-bottom:10px;}
-  .txn-row{display:flex; justify-content:space-between; font-size:13px; padding:6px 0; border-bottom:1px solid var(--border);}
-  .txn-row:last-child{border-bottom:none;}
-  .txn-amt.charge{color:var(--danger);}
-  .txn-amt.payment{color:var(--accent2);}
-  .balance-big{font-size:26px; font-weight:800; text-align:center; margin:6px 0;}
-  .limit-note{font-size:12px; color:var(--muted); text-align:center; margin-bottom:10px;}
+  .hidden{display:none !important;}
+  .tx-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .tx-row:last-child{border-bottom:none;}
 
-  /* ===== Shared MediStock Cloud navigation (matches MediStock Pro) ===== */
+  /* ===== Shared MediStock Cloud navigation ===== */
   .app-header{
     position:sticky; top:0; z-index:20;
     background:var(--accent); color:#fff;
@@ -146,68 +142,65 @@
   <a href="credit.html" class="active">Credit / Loans</a>
   <a href="suppliers.html">Suppliers</a>
   <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
   <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
 </nav>
-<!-- CUSTOMER LIST + ADD -->
-<div id="listView">
-  <div class="card">
-    <input type="text" id="searchBox" placeholder="Search customer…">
-  </div>
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
 
-  <div class="card">
-    <h2>Customers</h2>
-    <div id="custList"><div class="empty">Loading…</div></div>
+<div class="card">
+  <input type="text" id="searchBox" placeholder="Search customer name or phone…" style="margin-bottom:10px;">
+  <div class="filter-row">
+    <select id="ratingFilter" style="width:auto; flex:1;">
+      <option value="all">All ratings</option>
+      <option value="OVERDUE">⚠ Overdue</option>
+      <option value="GOOD">✓ Good standing</option>
+      <option value="SETTLED">★ Settled</option>
+    </select>
+    <button class="filter-btn" id="showDeactivatedBtn">Show deactivated</button>
   </div>
+  <div id="customersList"><div class="empty">Loading…</div></div>
+</div>
 
-  <div class="card">
-    <h2>Add Customer</h2>
-    <label>Name *</label>
-    <input type="text" id="c_name" placeholder="e.g. John Doe">
-    <div class="row">
-      <div>
-        <label>Phone</label>
-        <input type="text" id="c_phone" placeholder="Optional">
-      </div>
-      <div>
-        <label>Credit limit (0 = no limit)</label>
-        <input type="number" id="c_limit" min="0" value="0">
-      </div>
-    </div>
-    <label>Note</label>
-    <input type="text" id="c_note" placeholder="Optional">
-    <button class="btn-primary" onclick="addCustomer()">Add Customer</button>
-    <div id="addStatus" style="font-size:13px; margin-top:8px;"></div>
+<div class="card">
+  <button class="btn-secondary" id="toggleAddFormBtn" style="margin-top:0;">+ Add Customer</button>
+  <div id="addFormBlock" class="hidden" style="margin-top:12px;">
+    <label>Name</label>
+    <input type="text" id="newName">
+    <label>Phone (optional)</label>
+    <input type="text" id="newPhone">
+    <label>Credit limit (optional — 0 means no limit)</label>
+    <input type="number" id="newLimit" value="0" min="0">
+    <label>Note (optional)</label>
+    <input type="text" id="newNote">
+    <button class="btn-primary" onclick="addCustomer()">Save Customer</button>
+    <div id="addStatus" style="font-size:12.5px; margin-top:6px;"></div>
   </div>
 </div>
 
-<!-- CUSTOMER DETAIL -->
-<div id="detailView" class="hidden">
-  <a class="link back-link" href="#" onclick="backToList(); return false;">← All customers</a>
+<div class="card hidden" id="accountCard">
+  <h2 id="accountTitle">—</h2>
+  <div class="hint" id="accountSummary" style="font-size:13px; color:var(--text); margin-bottom:10px;"></div>
 
-  <div class="card">
-    <h2 id="detailName">—</h2>
-    <div class="balance-big" id="detailBalance">0</div>
-    <div class="limit-note" id="detailLimitNote"></div>
-    <div class="row">
-      <button class="btn-charge" onclick="openTxnForm('charge')">+ Add Charge</button>
-      <button class="btn-pay" onclick="openTxnForm('payment')">Record Payment</button>
-    </div>
+  <div class="filter-row">
+    <button class="btn-small filter-btn" onclick="promptRecordPayment()">Record Payment</button>
+    <button class="btn-small filter-btn" onclick="openEditBlock()">Edit Details</button>
+    <button class="btn-small filter-btn" id="toggleActiveBtn" onclick="toggleCustomerActive()"></button>
   </div>
 
-  <div class="card hidden" id="txnFormCard">
-    <h2 id="txnFormTitle">Add Charge</h2>
-    <label>Amount</label>
-    <input type="number" id="t_amount" min="0" placeholder="e.g. 20000">
-    <label>Description</label>
-    <input type="text" id="t_description" placeholder="e.g. Amoxicillin, 2 packets">
-    <button class="btn-primary" onclick="saveTxn()">Save</button>
-    <div id="txnStatus" style="font-size:13px; margin-top:8px;"></div>
+  <div id="editBlock" class="hidden" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
+    <label>Name</label>
+    <input type="text" id="editName">
+    <label>Phone</label>
+    <input type="text" id="editPhone">
+    <label>Credit limit</label>
+    <input type="number" id="editLimit" min="0">
+    <button class="btn-primary" onclick="saveCustomerEdit()">Save Changes</button>
+    <button class="btn-secondary" onclick="document.getElementById('editBlock').classList.add('hidden')">Cancel</button>
+    <div id="editStatus" style="font-size:12.5px; margin-top:6px;"></div>
   </div>
 
-  <div class="card">
-    <h2>History</h2>
-    <div id="txnList"><div class="empty">Loading…</div></div>
-  </div>
+  <h2 style="margin-top:16px;">Transaction History</h2>
+  <div id="accountTransactions"></div>
 </div>
 
 <script>
@@ -237,14 +230,23 @@
       localStorage.setItem('mcThemePreference', current);
       applyPref(current);
     });
+
+    var addBtn = document.getElementById('toggleAddFormBtn');
+    addBtn.addEventListener('click', function(){
+      var block = document.getElementById('addFormBlock');
+      var isOpen = !block.classList.contains('hidden');
+      block.classList.toggle('hidden', isOpen);
+      addBtn.textContent = isOpen ? '+ Add Customer' : '– Close';
+      if (!isOpen) document.getElementById('newName').focus();
+    });
   })();
 </script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, collection, addDoc, writeBatch, onSnapshot,
-    enableIndexedDbPersistence, serverTimestamp, query, where
+    getFirestore, doc, getDoc, getDocs, updateDoc, collection, addDoc,
+    onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where
   } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -261,192 +263,208 @@
   const db = getFirestore(app);
   enableIndexedDbPersistence(db).catch(() => {});
 
-  let currentUser = null;
   let currentBusinessId = null;
   let currentShopId = null;
   let allCustomers = [];
-  let allTxns = [];      // every credit_transaction this owner has, across all customers
-  let selectedCustomer = null;
-  let txnMode = "charge";
-  let unsubTxns = null;
+  let allTxns = [];
+  let showDeactivated = false;
+  let currentAccountId = null;
 
-  // Matches V1 exactly: balance is NEVER stored/trusted directly — it's always
-  // recomputed by summing this customer's balanceChange history. This is what
-  // makes it impossible for the number to drift out of sync with its own ledger.
-  function balanceFor(customerId) {
-    return allTxns
-      .filter(t => t.customerId === customerId)
-      .reduce((sum, t) => sum + (t.balanceChange || 0), 0);
+  function customerBalance(id) {
+    return allTxns.filter(t => t.customerId === id).reduce((sum, t) => sum + (t.balanceChange || 0), 0);
   }
+
+  function customerRating(id) {
+    const bal = customerBalance(id);
+    if (bal <= 0) return { code: "SETTLED", label: "★ Settled", cls: "neutral" };
+    const today = new Date();
+    const overdue = allTxns.some(t => t.customerId === id && t.type === "CREDIT_SALE" && t.dueDate && new Date(t.dueDate) < today);
+    return overdue ? { code: "OVERDUE", label: "⚠ Overdue", cls: "danger" } : { code: "GOOD", label: "✓ Good standing", cls: "ok" };
+  }
+
+  function renderList() {
+    const box = document.getElementById("customersList");
+    const q = document.getElementById("searchBox").value.toLowerCase();
+    const ratingFilter = document.getElementById("ratingFilter").value;
+    let list = allCustomers.filter(c => showDeactivated ? c.active === false : c.active !== false);
+    if (q) list = list.filter(c => c.name.toLowerCase().includes(q) || (c.phone || "").includes(q));
+    const rows = list.map(c => ({ c, b: customerBalance(c.id), rating: customerRating(c.id) }))
+      .filter(r => ratingFilter === "all" || r.rating.code === ratingFilter);
+    const order = { OVERDUE: 0, GOOD: 1, SETTLED: 2 };
+    rows.sort((a, b) => order[a.rating.code] - order[b.rating.code]);
+    if (rows.length === 0) {
+      box.innerHTML = '<div class="empty">No credit customers match this filter.</div>';
+      return;
+    }
+    box.innerHTML = rows.map(({ c, b, rating }) => `
+      <div class="cust-row" onclick="openAccount('${c.id}')">
+        <div class="cust-name">${c.name}<span class="pill ${rating.cls}">${rating.label}</span>${c.active === false ? '<span class="pill neutral">Deactivated</span>' : ""}</div>
+        <div class="cust-meta">${c.phone || "No phone"} · Outstanding: <b>${Math.round(b).toLocaleString()}</b></div>
+      </div>`).join("");
+  }
+
+  document.getElementById("searchBox").addEventListener("input", renderList);
+  document.getElementById("ratingFilter").addEventListener("change", renderList);
+  document.getElementById("showDeactivatedBtn").addEventListener("click", (e) => {
+    showDeactivated = !showDeactivated;
+    e.target.classList.toggle("on", showDeactivated);
+    renderList();
+  });
 
   window.addCustomer = async function () {
     const statusEl = document.getElementById("addStatus");
-    const name = document.getElementById("c_name").value.trim();
-    if (!name) { statusEl.textContent = "Enter a name."; statusEl.style.color = "var(--danger)"; return; }
+    const name = document.getElementById("newName").value.trim();
+    if (!name) { statusEl.textContent = "Enter a customer name."; statusEl.style.color = "var(--danger)"; return; }
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
       await addDoc(collection(db, "credit_accounts"), {
-        businessId: currentBusinessId, shopId: currentShopId, ownerUid: currentUser.uid,
-        name,
-        phone: document.getElementById("c_phone").value.trim(),
-        creditLimit: Number(document.getElementById("c_limit").value) || 0,
-        note: document.getElementById("c_note").value.trim(),
-        createdAt: serverTimestamp()
+        businessId: currentBusinessId, shopId: currentShopId,
+        name, phone: document.getElementById("newPhone").value.trim(),
+        creditLimit: Number(document.getElementById("newLimit").value) || 0,
+        note: document.getElementById("newNote").value.trim(),
+        active: true, createdAt: serverTimestamp()
       });
-      statusEl.textContent = "Added.";
-      ["c_name","c_phone","c_note"].forEach(id => document.getElementById(id).value = "");
-      document.getElementById("c_limit").value = 0;
+      document.getElementById("newName").value = "";
+      document.getElementById("newPhone").value = "";
+      document.getElementById("newLimit").value = "0";
+      document.getElementById("newNote").value = "";
+      document.getElementById("addFormBlock").classList.add("hidden");
+      document.getElementById("toggleAddFormBtn").textContent = "+ Add Customer";
+      statusEl.textContent = "";
     } catch (err) {
       statusEl.textContent = "Failed: " + err.message;
       statusEl.style.color = "var(--danger)";
     }
   };
 
-  function renderCustList(filterText) {
-    const container = document.getElementById("custList");
-    const list = filterText
-      ? allCustomers.filter(c => c.name.toLowerCase().includes(filterText.toLowerCase()))
-      : allCustomers;
-    if (list.length === 0) {
-      container.innerHTML = '<div class="empty">No customers yet.</div>';
+  window.openAccount = function (id) {
+    currentAccountId = id;
+    const c = allCustomers.find(x => x.id === id);
+    if (!c) return;
+    const b = customerBalance(id);
+    const rating = customerRating(id);
+    document.getElementById("accountCard").classList.remove("hidden");
+    document.getElementById("editBlock").classList.add("hidden");
+    document.getElementById("accountTitle").textContent = c.name;
+    document.getElementById("accountSummary").innerHTML =
+      `Phone: ${c.phone || "—"}<br>Outstanding: <b>${Math.round(b).toLocaleString()}</b><br>` +
+      `Credit limit: ${c.creditLimit ? Math.round(c.creditLimit).toLocaleString() : "Not set"}<br>` +
+      `Rating: <span class="pill ${rating.cls}">${rating.label}</span>`;
+    document.getElementById("toggleActiveBtn").textContent = c.active === false ? "Reactivate Customer" : "Deactivate Customer";
+
+    const txs = allTxns.filter(t => t.customerId === id)
+      .sort((a, b2) => (b2.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+    document.getElementById("accountTransactions").innerHTML = txs.length
+      ? txs.map(t => `
+          <div class="tx-row">
+            <span class="pill neutral" style="margin-left:0;">${t.type}</span> ${Math.round(t.amount || Math.abs(t.balanceChange || 0)).toLocaleString()}<br>
+            <span class="cust-meta">${t.createdAt?.toDate ? t.createdAt.toDate().toLocaleString() : ""} · ${t.description || ""}${t.dueDate ? " · due " + t.dueDate : ""}</span>
+          </div>`).join("")
+      : '<div class="empty">No transactions.</div>';
+    document.getElementById("accountCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  window.promptRecordPayment = async function () {
+    const id = currentAccountId;
+    const c = allCustomers.find(x => x.id === id);
+    const bal = customerBalance(id);
+    if (bal <= 0) { alert("This customer has no outstanding balance."); return; }
+    const raw = prompt(`Enter payment amount for ${c.name}. Outstanding: ${Math.round(bal).toLocaleString()}`);
+    if (raw === null) return;
+    const amount = Number(raw);
+    if (!Number.isFinite(amount) || amount <= 0) { alert("Enter a valid payment amount."); return; }
+    if (amount > bal) {
+      alert(`Payment cannot be greater than the outstanding balance.\n\nOutstanding: ${Math.round(bal).toLocaleString()}\nEntered: ${Math.round(amount).toLocaleString()}`);
       return;
     }
-    container.innerHTML = list.map(c => {
-      const bal = balanceFor(c.id);
-      const over = c.creditLimit > 0 && bal > c.creditLimit;
-      return `
-        <div class="cust-item" onclick="openCustomer('${c.id}')">
-          <div>
-            <div class="cust-name">${c.name}</div>
-            <div class="cust-meta">${c.phone || ""}</div>
-          </div>
-          <div class="cust-bal ${over ? "over" : ""}">${bal.toLocaleString()}</div>
-        </div>`;
-    }).join("");
-  }
-  document.getElementById("searchBox").addEventListener("input", (e) => renderCustList(e.target.value));
-
-  window.openCustomer = function (id) {
-    selectedCustomer = allCustomers.find(c => c.id === id);
-    if (!selectedCustomer) return;
-    document.getElementById("listView").classList.add("hidden");
-    document.getElementById("detailView").classList.remove("hidden");
-    document.getElementById("txnFormCard").classList.add("hidden");
-    renderDetail();
-    renderTxnHistory();
-  };
-
-  window.backToList = function () {
-    document.getElementById("detailView").classList.add("hidden");
-    document.getElementById("listView").classList.remove("hidden");
-    selectedCustomer = null;
-  };
-
-  function renderDetail() {
-    document.getElementById("detailName").textContent = selectedCustomer.name;
-    const bal = balanceFor(selectedCustomer.id);
-    const over = selectedCustomer.creditLimit > 0 && bal > selectedCustomer.creditLimit;
-    const balEl = document.getElementById("detailBalance");
-    balEl.textContent = bal.toLocaleString();
-    balEl.style.color = over ? "var(--danger)" : "var(--text)";
-    document.getElementById("detailLimitNote").textContent = selectedCustomer.creditLimit > 0
-      ? `Limit: ${selectedCustomer.creditLimit.toLocaleString()}${over ? " — OVER LIMIT" : ""}`
-      : "No credit limit set";
-  }
-
-  window.openTxnForm = function (mode) {
-    txnMode = mode;
-    document.getElementById("txnFormTitle").textContent = mode === "charge" ? "Add Charge" : "Record Payment";
-    document.getElementById("t_amount").value = "";
-    document.getElementById("t_description").value = "";
-    document.getElementById("txnStatus").textContent = "";
-    document.getElementById("txnFormCard").classList.remove("hidden");
-  };
-
-  window.saveTxn = async function () {
-    const statusEl = document.getElementById("txnStatus");
-    const amount = Number(document.getElementById("t_amount").value) || 0;
-    const description = document.getElementById("t_description").value.trim();
-    if (amount <= 0) { statusEl.textContent = "Enter an amount."; statusEl.style.color = "var(--danger)"; return; }
-
-    const currentBalance = balanceFor(selectedCustomer.id);
-
-    // Matches V1: a payment can never exceed what's actually owed — this is
-    // what stops a mistaken/too-large payment from creating a nonsense
-    // negative debt.
-    if (txnMode === "payment" && amount > currentBalance) {
-      statusEl.textContent = currentBalance <= 0
-        ? "This customer has no outstanding balance."
-        : `Payment cannot exceed the outstanding balance (${currentBalance.toLocaleString()}).`;
-      statusEl.style.color = "var(--danger)";
-      return;
+    try {
+      await addDoc(collection(db, "credit_transactions"), {
+        businessId: currentBusinessId, shopId: currentShopId,
+        customerId: id, customerName: c.name, type: "PAYMENT",
+        amount, paidAmount: amount, balanceChange: -amount,
+        description: "Customer credit payment", createdAt: serverTimestamp()
+      });
+      openAccount(id);
+    } catch (err) {
+      alert("Failed: " + err.message);
     }
+  };
 
+  window.openEditBlock = function () {
+    const c = allCustomers.find(x => x.id === currentAccountId);
+    if (!c) return;
+    document.getElementById("editName").value = c.name || "";
+    document.getElementById("editPhone").value = c.phone || "";
+    document.getElementById("editLimit").value = c.creditLimit || 0;
+    document.getElementById("editBlock").classList.remove("hidden");
+  };
+
+  window.saveCustomerEdit = async function () {
+    const statusEl = document.getElementById("editStatus");
+    const newName = document.getElementById("editName").value.trim();
+    if (!newName) { statusEl.textContent = "Name cannot be empty."; statusEl.style.color = "var(--danger)"; return; }
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
-      const balanceChange = txnMode === "charge" ? amount : -amount;
-      await addDoc(collection(db, "credit_transactions"), {
-        businessId: currentBusinessId, shopId: currentShopId, ownerUid: currentUser.uid,
-        customerId: selectedCustomer.id, customerName: selectedCustomer.name,
-        type: txnMode, amount, balanceChange, description,
-        createdAt: serverTimestamp()
+      await updateDoc(doc(db, "credit_accounts", currentAccountId), {
+        name: newName,
+        phone: document.getElementById("editPhone").value.trim(),
+        creditLimit: Number(document.getElementById("editLimit").value) || 0
       });
-      statusEl.textContent = "Saved.";
-      renderDetail();
-      renderTxnHistory();
-      setTimeout(() => document.getElementById("txnFormCard").classList.add("hidden"), 500);
+      document.getElementById("editBlock").classList.add("hidden");
     } catch (err) {
       statusEl.textContent = "Failed: " + err.message;
       statusEl.style.color = "var(--danger)";
     }
   };
 
-  function renderTxnHistory() {
-    const list = allTxns
-      .filter(t => t.customerId === selectedCustomer.id)
-      .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-    const container = document.getElementById("txnList");
-    if (list.length === 0) {
-      container.innerHTML = '<div class="empty">No transactions yet.</div>';
-      return;
+  window.toggleCustomerActive = async function () {
+    const c = allCustomers.find(x => x.id === currentAccountId);
+    if (!c) return;
+    if (c.active !== false && !confirm(`Deactivate ${c.name}? They'll be hidden from the active customer list but their history is kept.`)) return;
+    try {
+      await updateDoc(doc(db, "credit_accounts", c.id), { active: c.active === false ? true : false });
+      document.getElementById("accountCard").classList.add("hidden");
+    } catch (err) {
+      alert("Failed: " + err.message);
     }
-    container.innerHTML = list.map(t => {
-      const dateStr = t.createdAt ? t.createdAt.toDate().toLocaleDateString() : "just now";
-      const sign = t.type === "charge" ? "+" : "−";
-      return `
-        <div class="txn-row">
-          <div>${t.description || (t.type === "charge" ? "Charge" : "Payment")}<br><span style="color:var(--muted); font-size:11px;">${dateStr}</span></div>
-          <div class="txn-amt ${t.type}">${sign}${t.amount.toLocaleString()}</div>
-        </div>`;
-    }).join("");
-  }
+  };
 
   onAuthStateChanged(auth, async (user) => {
     if (!user) { window.location.href = "login.html"; return; }
-    currentUser = user;
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.location.href = "login.html"; return; }
-    currentBusinessId = userSnap.data().businessId;
+    const profile = userSnap.data();
+    currentBusinessId = profile.businessId;
 
-    const custQ = query(collection(db, "credit_accounts"), where("ownerUid", "==", user.uid));
-    onSnapshot(custQ, { includeMetadataChanges: true }, (snap) => {
+    if (profile.role === "owner") {
+      const shopsSnap = await getDocs(query(collection(db, "shops"), where("businessId", "==", currentBusinessId)));
+      const activeId = localStorage.getItem("mc_activeShopId");
+      const foundShop = shopsSnap.docs.find(d => d.id === activeId);
+      const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
+      currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
+      document.getElementById("shopIndicator").textContent = resolvedShopDoc ? `Viewing: ${resolvedShopDoc.data().name}` : "No shop set up yet.";
+    } else {
+      currentShopId = profile.shopId;
+      const shopSnap = await getDoc(doc(db, "shops", currentShopId));
+      document.getElementById("shopIndicator").textContent = shopSnap.exists() ? `Shop: ${shopSnap.data().name}` : "";
+    }
+    if (!currentShopId) return;
+
+    const custQ = query(collection(db, "credit_accounts"), where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId));
+    onSnapshot(custQ, (snap) => {
+      allCustomers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderList();
+    });
+
+    const txnQ = query(collection(db, "credit_transactions"), where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId));
+    onSnapshot(txnQ, { includeMetadataChanges: true }, (snap) => {
       const badge = document.getElementById("netBadge");
       const fromCache = snap.metadata.fromCache;
       badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
       badge.className = "badge " + (fromCache ? "offline" : "online");
-      allCustomers = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
-      if (selectedCustomer) {
-        const updated = allCustomers.find(c => c.id === selectedCustomer.id);
-        if (updated) { selectedCustomer = updated; renderDetail(); }
-      }
-      renderCustList(document.getElementById("searchBox").value);
-    });
-
-    const txnQ = query(collection(db, "credit_transactions"), where("ownerUid", "==", user.uid));
-    onSnapshot(txnQ, (snap) => {
       allTxns = snap.docs.map(d => d.data());
-      renderCustList(document.getElementById("searchBox").value);
-      if (selectedCustomer) { renderDetail(); renderTxnHistory(); }
+      renderList();
+      if (currentAccountId) openAccount(currentAccountId);
     });
   });
 </script>
