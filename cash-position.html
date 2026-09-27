@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStock Cloud — Cash Position</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Multi-Shop Edition · Cash Position</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="location.href='dashboard.html'">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html" class="active">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+
+<div class="card">
+  <h2>Real Cash Available</h2>
+  <div class="big-num" id="realCash">—</div>
+  <div id="breakdown"></div>
+</div>
+
+<div class="card">
+  <h2>Record a Cash Adjustment</h2>
+  <label>Type</label>
+  <select id="ca_type">
+    <option value="owner_deposit">Owner deposit (cash in)</option>
+    <option value="owner_withdrawal">Owner withdrawal (cash out)</option>
+    <option value="other_income">Other income (cash in)</option>
+    <option value="cash_surplus">Cash surplus found (cash in)</option>
+    <option value="cash_shortage">Cash shortage / missing (cash out)</option>
+  </select>
+  <label>Amount</label>
+  <input type="number" id="ca_amount" min="0">
+  <label>Reason (optional)</label>
+  <input type="text" id="ca_reason" placeholder="e.g. Till was short after count">
+  <label>Date</label>
+  <input type="date" id="ca_date">
+  <button class="btn-primary" onclick="addCashAdjustment()">Save Adjustment</button>
+  <div id="adjStatus" style="font-size:13px; margin-top:8px;"></div>
+</div>
+
+<div class="card">
+  <h2>Cash Ledger</h2>
+  <div id="ledger"><div class="empty">Loading…</div></div>
+</div>
+
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import {
+    getFirestore, doc, getDoc, getDocs, addDoc, collection,
+    onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where
+  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {});
+
+  let currentBusinessId = null;
+  let currentShopId = null;
+  let startingCash = 0;
+  let sales = [], creditTxns = [], purchaseReceipts = [], supplierTxns = [], expenses = [], adjustments = [];
+
+  const ADJ_LABELS = {
+    owner_deposit: "Owner deposit", owner_withdrawal: "Owner withdrawal", other_income: "Other income",
+    cash_surplus: "Cash surplus", cash_shortage: "Cash shortage"
+  };
+
+  function fmt(n) { return Math.round(n).toLocaleString(); }
+
+  function computeCashPosition() {
+    const cashSalesTotal = sales.filter(s => s.paymentStatus !== "CREDIT").reduce((a, s) => a + (s.total || 0), 0);
+    const creditPaymentsTotal = creditTxns.filter(t => t.type === "PAYMENT").reduce((a, t) => a + (t.amount || 0), 0);
+
+    let purchasesPaidTotal = 0;
+    purchaseReceipts.forEach(r => {
+      const items = Array.isArray(r.items) ? r.items : [];
+      purchasesPaidTotal += items.length
+        ? items.filter(i => !i.onCredit).reduce((a, i) => a + (i.lineTotalCost || 0), 0)
+        : (r.totalAmount || 0);
+    });
+
+    const supplierPaymentsTotal = supplierTxns.filter(t => t.type === "PAYMENT").reduce((a, t) => a + (t.amount || 0), 0);
+    const expensesTotal = expenses.reduce((a, e) => a + (e.totalAmount || 0), 0);
+
+    let ownerDeposits = 0, ownerWithdrawals = 0, otherIncome = 0, cashSurplus = 0, cashShortage = 0;
+    adjustments.forEach(a => {
+      const amt = Number(a.amount) || 0;
+      if (a.type === "owner_deposit") ownerDeposits += amt;
+      else if (a.type === "owner_withdrawal") ownerWithdrawals += amt;
+      else if (a.type === "other_income") otherIncome += amt;
+      else if (a.type === "cash_surplus") cashSurplus += amt;
+      else if (a.type === "cash_shortage") cashShortage += amt;
+    });
+
+    const realCash = startingCash + cashSalesTotal + creditPaymentsTotal + ownerDeposits + otherIncome + cashSurplus
+      - purchasesPaidTotal - supplierPaymentsTotal - expensesTotal - ownerWithdrawals - cashShortage;
+
+    return { cashSalesTotal, creditPaymentsTotal, purchasesPaidTotal, supplierPaymentsTotal, expensesTotal,
+      ownerDeposits, ownerWithdrawals, otherIncome, cashSurplus, cashShortage, realCash };
+  }
+
+  function renderAll() {
+    const pos = computeCashPosition();
+    document.getElementById("realCash").textContent = fmt(pos.realCash);
+    document.getElementById("breakdown").innerHTML = `
+      <div class="breakdown-line"><span>Starting cash</span><span>${fmt(startingCash)}</span></div>
+      <div class="breakdown-line"><span>Cash sales (all-time)</span><span class="v pos">+${fmt(pos.cashSalesTotal)}</span></div>
+      <div class="breakdown-line"><span>Credit payments collected</span><span class="v pos">+${fmt(pos.creditPaymentsTotal)}</span></div>
+      <div class="breakdown-line"><span>Owner deposits</span><span class="v pos">+${fmt(pos.ownerDeposits)}</span></div>
+      <div class="breakdown-line"><span>Other income</span><span class="v pos">+${fmt(pos.otherIncome)}</span></div>
+      <div class="breakdown-line"><span>Cash surplus adjustments</span><span class="v pos">+${fmt(pos.cashSurplus)}</span></div>
+      <div class="breakdown-line"><span>Stock purchases paid</span><span class="v neg">−${fmt(pos.purchasesPaidTotal)}</span></div>
+      <div class="breakdown-line"><span>Supplier payments made</span><span class="v neg">−${fmt(pos.supplierPaymentsTotal)}</span></div>
+      <div class="breakdown-line"><span>Operating expenses</span><span class="v neg">−${fmt(pos.expensesTotal)}</span></div>
+      <div class="breakdown-line"><span>Owner withdrawals</span><span class="v neg">−${fmt(pos.ownerWithdrawals)}</span></div>
+      <div class="breakdown-line"><span>Cash shortage adjustments</span><span class="v neg">−${fmt(pos.cashShortage)}</span></div>
+      <div class="breakdown-line"><span>Real Cash Available</span><span>${fmt(pos.realCash)}</span></div>
+    `;
+
+    // Unified ledger — every cash-affecting event, oldest to newest, with a running balance
+    const entries = [];
+    sales.filter(s => s.paymentStatus !== "CREDIT").forEach(s =>
+      entries.push({ ts: s.createdAt, desc: `Cash sale — ${s.drugName || "Sale"}`, amount: s.total || 0 }));
+    creditTxns.filter(t => t.type === "PAYMENT").forEach(t =>
+      entries.push({ ts: t.createdAt, desc: `Credit payment — ${t.customerName || "Customer"}`, amount: t.amount || 0 }));
+    purchaseReceipts.forEach(r => {
+      const items = Array.isArray(r.items) ? r.items : [];
+      const cashPortion = items.length ? items.filter(i => !i.onCredit).reduce((a, i) => a + (i.lineTotalCost || 0), 0) : (r.totalAmount || 0);
+      if (cashPortion > 0) entries.push({ ts: r.createdAt, desc: `Stock purchase — Receipt #${r.displayNumber || "?"}${items.some(i => i.onCredit) ? " (cash portion)" : ""}`, amount: -cashPortion });
+    });
+    supplierTxns.filter(t => t.type === "PAYMENT").forEach(t =>
+      entries.push({ ts: t.createdAt, desc: `Supplier payment — ${t.supplierName || "Supplier"}`, amount: -(t.amount || 0) }));
+    expenses.forEach(e => {
+      const label = (e.items && e.items[0]) ? e.items[0].item + (e.items.length > 1 ? ` +${e.items.length - 1} more` : "") : "Expense";
+      entries.push({ ts: e.createdAt, desc: `Expense — ${label}`, amount: -(e.totalAmount || 0) });
+    });
+    adjustments.forEach(a => {
+      const isOut = a.type === "owner_withdrawal" || a.type === "cash_shortage";
+      entries.push({ ts: a.createdAt, desc: `${ADJ_LABELS[a.type] || "Adjustment"}${a.reason ? " — " + a.reason : ""}`, amount: isOut ? -(Number(a.amount) || 0) : (Number(a.amount) || 0) });
+    });
+    entries.sort((a, b) => (a.ts?.toMillis?.() || 0) - (b.ts?.toMillis?.() || 0));
+    let running = startingCash;
+    const withBalance = entries.map(e => { running += e.amount; return { ...e, balance: running }; });
+    withBalance.reverse();
+
+    const ledgerBox = document.getElementById("ledger");
+    const startingLine = `<div class="ledger-row"><b>Starting cash</b><div class="ledger-meta">Balance: ${fmt(startingCash)}</div></div>`;
+    ledgerBox.innerHTML = (withBalance.length
+      ? withBalance.map(e => `
+          <div class="ledger-row">
+            ${e.desc} <b class="${e.amount >= 0 ? "v pos" : "v neg"}">${e.amount >= 0 ? "+" : "−"}${fmt(Math.abs(e.amount))}</b>
+            <div class="ledger-meta">${e.ts?.toDate ? e.ts.toDate().toLocaleString() : ""} · Balance: ${fmt(e.balance)}</div>
+          </div>`).join("")
+      : '<div class="empty">No cash movement recorded yet.</div>') + startingLine;
+  }
+
+  document.getElementById("ca_date").value = new Date().toISOString().slice(0, 10);
+
+  window.addCashAdjustment = async function () {
+    const statusEl = document.getElementById("adjStatus");
+    const type = document.getElementById("ca_type").value;
+    const amount = Number(document.getElementById("ca_amount").value);
+    const reason = document.getElementById("ca_reason").value.trim();
+    const date = document.getElementById("ca_date").value;
+    if (!amount || amount <= 0) { statusEl.textContent = "Enter a valid amount."; statusEl.style.color = "var(--danger)"; return; }
+    try {
+      statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
+      await addDoc(collection(db, "cash_adjustments"), {
+        businessId: currentBusinessId, shopId: currentShopId,
+        type, amount, reason, date, createdAt: serverTimestamp()
+      });
+      document.getElementById("ca_amount").value = "";
+      document.getElementById("ca_reason").value = "";
+      statusEl.textContent = "";
+    } catch (err) {
+      statusEl.textContent = "Failed: " + err.message;
+      statusEl.style.color = "var(--danger)";
+    }
+  };
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+    const userSnap = await getDoc(doc(db, "users", user.uid));
+    if (!userSnap.exists()) { window.location.href = "login.html"; return; }
+    const profile = userSnap.data();
+    currentBusinessId = profile.businessId;
+
+    if (profile.role === "owner") {
+      const shopsSnap = await getDocs(query(collection(db, "shops"), where("businessId", "==", currentBusinessId)));
+      const activeId = localStorage.getItem("mc_activeShopId");
+      const foundShop = shopsSnap.docs.find(d => d.id === activeId);
+      const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
+      currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
+      startingCash = resolvedShopDoc ? Number(resolvedShopDoc.data().startingCash) || 0 : 0;
+      document.getElementById("shopIndicator").textContent = resolvedShopDoc ? `Viewing: ${resolvedShopDoc.data().name}` : "No shop set up yet.";
+    } else {
+      currentShopId = profile.shopId;
+      const shopSnap = await getDoc(doc(db, "shops", currentShopId));
+      startingCash = shopSnap.exists() ? Number(shopSnap.data().startingCash) || 0 : 0;
+      document.getElementById("shopIndicator").textContent = shopSnap.exists() ? `Shop: ${shopSnap.data().name}` : "";
+    }
+    if (!currentShopId) return;
+
+    const filters = [where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId)];
+    const badge = document.getElementById("netBadge");
+    function markSynced(fromCache) {
+      badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
+      badge.className = "badge " + (fromCache ? "offline" : "online");
+    }
+
+    onSnapshot(query(collection(db, "sales"), ...filters), { includeMetadataChanges: true }, (snap) => {
+      sales = snap.docs.map(d => d.data()); markSynced(snap.metadata.fromCache); renderAll();
+    });
+    onSnapshot(query(collection(db, "credit_transactions"), ...filters), (snap) => { creditTxns = snap.docs.map(d => d.data()); renderAll(); });
+    onSnapshot(query(collection(db, "receipts"), ...filters, where("type", "==", "PURCHASE")), (snap) => { purchaseReceipts = snap.docs.map(d => d.data()); renderAll(); });
+    onSnapshot(query(collection(db, "supplier_transactions"), ...filters), (snap) => { supplierTxns = snap.docs.map(d => d.data()); renderAll(); });
+    onSnapshot(query(collection(db, "expenses"), ...filters), (snap) => { expenses = snap.docs.map(d => d.data()); renderAll(); });
+    onSnapshot(query(collection(db, "cash_adjustments"), ...filters), (snap) => { adjustments = snap.docs.map(d => d.data()); renderAll(); });
+  });
+</script>
+</body>
+</html>
