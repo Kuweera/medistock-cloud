@@ -221,8 +221,23 @@
     return Math.max(1, Math.ceil(target - currentStockUnits));
   }
 
-  window.jumpToPurchase = function (drugId, suggestedStockUnitQty) {
-    window.location.href = `purchases.html?drugId=${encodeURIComponent(drugId)}&qtyStock=${suggestedStockUnitQty}`;
+  window.purchaseSelected = function () {
+    const checked = document.querySelectorAll(".restock-check:checked");
+    if (checked.length === 0) { alert("Select at least one item first."); return; }
+    const items = Array.from(checked).map(cb => ({ drugId: cb.dataset.drugId, qtyStock: Number(cb.dataset.qty) }));
+    localStorage.setItem("mc_pendingPurchase", JSON.stringify(items));
+    window.location.href = "purchases.html";
+  };
+  window.updateSelectedCount = function () {
+    const n = document.querySelectorAll(".restock-check:checked").length;
+    const btn = document.getElementById("purchaseSelectedBtn");
+    if (btn) btn.textContent = n > 0 ? `Purchase Selected (${n})` : "Purchase Selected";
+  };
+  window.toggleSelectAll = function () {
+    const boxes = document.querySelectorAll(".restock-check");
+    const allChecked = [...boxes].every(b => b.checked);
+    boxes.forEach(b => b.checked = !allChecked);
+    updateSelectedCount();
   };
   window.goSetReorderLevel = function (drugId) {
     window.location.href = `inventory.html?edit=${encodeURIComponent(drugId)}`;
@@ -245,7 +260,15 @@
     if (needsRestock.length === 0) {
       container.innerHTML = '<div class="card"><div class="empty">Nothing needs restocking right now — every configured medicine is above its reorder level.</div></div>';
     } else {
-      container.innerHTML = needsRestock.map(({ d, thresholdBase, suggestedQty }) => {
+      const selectBar = `
+        <div class="card">
+          <div class="row-top">
+            <button class="btn-toggle" onclick="toggleSelectAll()">Select All / None</button>
+            <button class="btn-primary" id="purchaseSelectedBtn" style="width:auto; margin:0;" onclick="purchaseSelected()">Purchase Selected</button>
+          </div>
+          <div class="meta" style="margin-top:6px;">All items are pre-selected with their suggested quantity — untick anything you don't want, then Purchase Selected to load them all into one Purchase cart at once.</div>
+        </div>`;
+      container.innerHTML = selectBar + needsRestock.map(({ d, thresholdBase, suggestedQty }) => {
         const bd = PackagingEngine.baseToBreakdown(Number(d.currentStockBase) || 0, Number(d.baseUnitsPerStock) || 1, Number(d.basePerIntermediate) || 1);
         const currentLine = d.hasIntermediate
           ? `${bd.stockUnits} ${d.stockUnit}(s) + ${bd.intermediateUnits} ${d.intermediateUnit}(s) + ${bd.looseBase} ${d.baseUnit}(s)`
@@ -254,7 +277,10 @@
         return `
           <div class="card">
             <div class="row-top">
-              <div><h2 style="margin:0;">${d.name}</h2><div class="meta">${d.drugClass || ""}</div></div>
+              <label style="display:flex; align-items:center; gap:10px; flex:1;">
+                <input type="checkbox" class="restock-check" data-drug-id="${d.id}" data-qty="${suggestedQty}" checked onchange="updateSelectedCount()" style="width:18px; height:18px;">
+                <div><h2 style="margin:0;">${d.name}</h2><div class="meta">${d.drugClass || ""}</div></div>
+              </label>
               <span class="badge-status ${outOfStock ? "out" : "low"}">${outOfStock ? "OUT OF STOCK" : "LOW"}</span>
             </div>
             <div class="stock-line">
@@ -263,9 +289,9 @@
               Reorder level: ${Number(d.reorderLevel)} ${d.stockUnit}(s) (${thresholdBase.toLocaleString()} ${d.baseUnit}(s))
             </div>
             <div class="meta"><b>Suggested purchase: ${suggestedQty} ${d.stockUnit}(s)</b>${d.supplier ? " · Supplier: " + d.supplier : " · No supplier on file"}</div>
-            <button class="btn-primary" onclick="jumpToPurchase('${d.id}', ${suggestedQty})">Purchase now</button>
           </div>`;
       }).join("");
+      updateSelectedCount();
     }
 
     const unconfCard = document.getElementById("unconfiguredCard");

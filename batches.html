@@ -150,6 +150,7 @@
     <button id="filter-all" class="active" onclick="setFilter('all')">All</button>
     <button id="filter-expired" onclick="setFilter('expired')">Expired</button>
     <button id="filter-soon" onclick="setFilter('soon')">Expiring ≤30d</button>
+    <button id="filter-writtenoff" onclick="setFilter('writtenoff')">Written off</button>
   </div>
   <div id="batchList"><div class="empty">Loading…</div></div>
 </div>
@@ -211,6 +212,7 @@
   let currentShopId = null;
   let allDrugs = [];
   let allBatches = [];
+  let allWriteOffs = [];
   let filter = "all";
 
   function daysUntil(dateStr) {
@@ -241,7 +243,7 @@
       const txnRef = doc(collection(db, "stock_transactions"));
       wb.set(txnRef, {
         businessId: currentBusinessId, shopId: currentShopId,
-        drugId: b.drugId, type: "WRITE_OFF", baseUnitsChange: -b.quantity,
+        drugId: b.drugId, drugName: b.drugName, type: "WRITE_OFF", baseUnitsChange: -b.quantity,
         note: `Write-off — batch ${b.batchNumber || "—"} (${reason || "no reason given"})`,
         batchId: id, cashier: cashierName, createdAt: serverTimestamp()
       });
@@ -253,7 +255,7 @@
 
   window.setFilter = function (f) {
     filter = f;
-    ["all","expired","soon"].forEach(id => document.getElementById("filter-" + id).classList.toggle("active", id === f));
+    ["all","expired","soon","writtenoff"].forEach(id => document.getElementById("filter-" + id).classList.toggle("active", id === f));
     renderList();
   };
   document.getElementById("searchBox").addEventListener("input", renderList);
@@ -261,6 +263,22 @@
   function renderList() {
     const container = document.getElementById("batchList");
     const q = document.getElementById("searchBox").value.toLowerCase();
+
+    if (filter === "writtenoff") {
+      let offs = allWriteOffs.slice();
+      if (q) offs = offs.filter(t => (t.drugName || "").toLowerCase().includes(q));
+      offs.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+      container.innerHTML = offs.length
+        ? offs.map(t => `
+            <div class="batch-item">
+              <div class="batch-drug">${t.drugName || "(unknown drug)"}<span class="tag expired">WRITTEN OFF</span></div>
+              <div class="batch-meta">${Math.abs(t.baseUnitsChange || 0)} unit(s) · ${t.createdAt?.toDate ? t.createdAt.toDate().toLocaleString() : ""}${t.cashier ? " · " + t.cashier : ""}</div>
+              <div class="batch-meta">${t.note || ""}</div>
+            </div>`).join("")
+        : '<div class="empty">No write-offs recorded yet.</div>';
+      return;
+    }
+
     let list = allBatches.filter(b => b.quantity > 0); // depleted/written-off batches don't clutter this view
     if (q) list = list.filter(b => (b.drugName || "").toLowerCase().includes(q));
     list.sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
@@ -320,6 +338,16 @@
       badge.className = "badge " + (fromCache ? "offline" : "online");
       allBatches = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderList();
+    });
+
+    const writeOffQ = query(
+      collection(db, "stock_transactions"),
+      where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId),
+      where("type", "==", "WRITE_OFF")
+    );
+    onSnapshot(writeOffQ, (snap) => {
+      allWriteOffs = snap.docs.map(d => d.data());
+      if (filter === "writtenoff") renderList();
     });
   });
 </script>

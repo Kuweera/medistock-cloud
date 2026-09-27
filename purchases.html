@@ -744,17 +744,44 @@
       allDrugs = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
       if (document.getElementById("searchBox").value) renderResults(document.getElementById("searchBox").value);
 
-      // Handoff from What to Buy's "Purchase now" — opens straight into the
-      // configure card for that drug, with the suggested quantity prefilled.
+      // Handoff from What to Buy — either a bulk multi-select (localStorage)
+      // or the older single-item URL param, kept as a fallback.
       if (!handoffApplied) {
-        const params = new URLSearchParams(window.location.search);
-        const handoffDrugId = params.get("drugId");
-        if (handoffDrugId && allDrugs.find(d => d.id === handoffDrugId)) {
-          handoffApplied = true;
-          selectDrug(handoffDrugId);
-          const qtyStock = params.get("qtyStock");
-          if (qtyStock) document.getElementById("p_qtyStock").value = qtyStock;
-          updateAddPreview();
+        handoffApplied = true;
+        const pendingRaw = localStorage.getItem("mc_pendingPurchase");
+        if (pendingRaw) {
+          localStorage.removeItem("mc_pendingPurchase");
+          try {
+            const pending = JSON.parse(pendingRaw);
+            pending.forEach(p => {
+              const d = allDrugs.find(x => x.id === p.drugId);
+              if (!d) return;
+              const qtyStock = Number(p.qtyStock) || 0;
+              const addedBase = qtyStock * (d.baseUnitsPerStock || 0);
+              const cost = Number(d.wholesale) || 0;
+              cart.push({
+                drugId: d.id, drugName: d.name, baseUnit: d.baseUnit, stockUnit: d.stockUnit,
+                intermediateUnit: d.intermediateUnit, hasIntermediate: d.hasIntermediate,
+                baseUnitsPerStock: d.baseUnitsPerStock, basePerIntermediate: d.basePerIntermediate,
+                qtyStock, qtyInter: 0, qtyBase: 0,
+                addedBase, costPerStockUnit: cost, quantityInStockUnits: qtyStock, lineTotalCost: cost * qtyStock,
+                supplier: d.supplier || "", batchNumber: "", expiryDate: "", onCredit: false, creditDueDate: ""
+              });
+            });
+            renderCart();
+            if (cart.length > 0) {
+              document.getElementById("cartCard").scrollIntoView({ behavior: "smooth" });
+            }
+          } catch (e) { /* malformed handoff data — ignore, nothing was added */ }
+        } else {
+          const params = new URLSearchParams(window.location.search);
+          const handoffDrugId = params.get("drugId");
+          if (handoffDrugId && allDrugs.find(d => d.id === handoffDrugId)) {
+            selectDrug(handoffDrugId);
+            const qtyStock = params.get("qtyStock");
+            if (qtyStock) document.getElementById("p_qtyStock").value = qtyStock;
+            updateAddPreview();
+          }
         }
       }
     });
