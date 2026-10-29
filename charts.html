@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStock Cloud — Charts</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  /* ===== Charts page ===== */
+  .pill-row{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;}
+  .pill-btn{background:var(--card); color:var(--text); border:1px solid var(--border); padding:7px 12px; border-radius:999px; font-size:13px; font-weight:600;}
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .pill-btn.off{opacity:.45;}
+  .period-note{font-size:11.5px; color:var(--muted);}
+  .hidden{display:none !important;}
+  .sum-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px;}
+  .sum{background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:9px 10px;}
+  .sum .n{font-size:17px; font-weight:700;} .sum .l{font-size:11px; color:var(--muted);}
+  .sum .n.neg{color:var(--danger);}
+  .chart-wrap{margin-top:8px; touch-action:manipulation;}
+  .chart-wrap svg{width:100%; height:auto; display:block;}
+  .gl{stroke:var(--border); stroke-width:1;}
+  .axl{fill:var(--muted); font-size:10px;}
+  .ln{fill:none; stroke-width:2.2; stroke-linejoin:round; stroke-linecap:round;}
+  .ln.sales{stroke:var(--accent);} .ln.profit{stroke:var(--accent2);} .ln.expenses{stroke:var(--warn);}
+  .dot.sales{fill:var(--accent);} .dot.profit{fill:var(--accent2);} .dot.expenses{fill:var(--warn);}
+  .selline{stroke:var(--muted); stroke-dasharray:3 3; stroke-width:1;}
+  .detail{font-size:12.5px; background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:9px 11px; margin-top:6px; min-height:20px;}
+  .detail b{display:block; margin-bottom:3px;}
+  .detail .dr{display:flex; justify-content:space-between; padding:1px 0;}
+  .legend-dot{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px;}
+  .bar-row{margin-bottom:10px;}
+  .bar-top{display:flex; justify-content:space-between; gap:8px; font-size:12.5px; margin-bottom:3px;}
+  .bar-label{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .bar-val{font-weight:700; white-space:nowrap;} .bar-val.neg{color:var(--danger);}
+  .bar-track{height:9px; background:var(--bg); border:1px solid var(--border); border-radius:999px; overflow:hidden;}
+  .bar-fill{height:100%; background:var(--accent); border-radius:999px;}
+  .bar-fill.neg{background:var(--danger);} .bar-fill.exp{background:var(--warn);} .bar-fill.alt{background:var(--accent2);}
+  .seg{display:flex; height:16px; border-radius:999px; overflow:hidden; border:1px solid var(--border); margin:6px 0;}
+  .seg > div{height:100%;}
+  .h-row{display:flex; justify-content:space-between; align-items:center; gap:8px;}
+  .h-row h2{margin:0;}
+  .mini-pills{display:flex; gap:5px;} .mini-pills .pill-btn{padding:4px 10px; font-size:12px;}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Multi-Shop Edition · Charts</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="location.href='dashboard.html'">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html" class="active">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+
+<div class="card">
+  <h2>Trends &amp; Categories</h2>
+  <div id="shopPickWrap" class="hidden">
+    <label>Shop</label>
+    <select id="shopPick"></select>
+  </div>
+  <div class="pill-row" id="periodPills" style="margin-top:10px;">
+    <button type="button" class="pill-btn" data-period="week">Week</button>
+    <button type="button" class="pill-btn selected" data-period="month">Month</button>
+    <button type="button" class="pill-btn" data-period="year">Year</button>
+    <button type="button" class="pill-btn" data-period="custom">Custom</button>
+    <button type="button" class="pill-btn" data-period="all">All time</button>
+  </div>
+  <div id="customRange" class="hidden" style="margin:8px 0;">
+    <div class="row"><input type="date" id="customFrom"><input type="date" id="customTo"></div>
+  </div>
+  <div class="period-note" id="rangeLabel"></div>
+  <div class="sum-grid">
+    <div class="sum"><div class="n" id="sumSales">—</div><div class="l">Sales</div></div>
+    <div class="sum"><div class="n" id="sumGross">—</div><div class="l">Gross profit</div></div>
+    <div class="sum"><div class="n" id="sumExp">—</div><div class="l">Expenses</div></div>
+    <div class="sum"><div class="n" id="sumNet">—</div><div class="l">Net profit</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Trend <span id="grainLabel" style="font-weight:400; color:var(--muted); font-size:12px;"></span></h2>
+  <div class="pill-row" id="seriesPills">
+    <button type="button" class="pill-btn" data-series="sales"><span class="legend-dot" style="background:var(--accent)"></span>Sales</button>
+    <button type="button" class="pill-btn" data-series="profit"><span class="legend-dot" style="background:var(--accent2)"></span>Gross profit</button>
+    <button type="button" class="pill-btn" data-series="expenses"><span class="legend-dot" style="background:var(--warn)"></span>Expenses</button>
+  </div>
+  <div class="chart-wrap" id="trendChart"></div>
+  <div class="detail" id="trendDetail">Tap the chart to see the figures for that point.</div>
+</div>
+
+<div class="card">
+  <div class="h-row"><h2>By Drug Class</h2>
+    <div class="mini-pills" id="classMetric">
+      <button type="button" class="pill-btn selected" data-m="sales">Sales</button>
+      <button type="button" class="pill-btn" data-m="profit">Profit</button>
+    </div>
+  </div>
+  <div id="classBars" style="margin-top:10px;"></div>
+</div>
+
+<div class="card">
+  <div class="h-row"><h2>Top 10 Drugs</h2>
+    <div class="mini-pills" id="drugMetric">
+      <button type="button" class="pill-btn selected" data-m="sales">Sales</button>
+      <button type="button" class="pill-btn" data-m="profit">Profit</button>
+    </div>
+  </div>
+  <div id="drugBars" style="margin-top:10px;"></div>
+</div>
+
+<div class="card">
+  <h2>Expenses by Category</h2>
+  <div id="expBars"></div>
+</div>
+
+<div class="card">
+  <h2>Cash vs Credit Sales</h2>
+  <div id="payBox"></div>
+</div>
+
+<div class="card hidden" id="shopCompareCard">
+  <h2>Sales by Shop</h2>
+  <div id="shopBars"></div>
+</div>
+
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import { getFirestore, doc, getDoc, collection, onSnapshot, enableIndexedDbPersistence, query, where } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {});
+
+  let role = null, businessId = null;
+  let shopsById = {}, sales = [], expenses = [], drugs = [];
+  let shopFilter = "all";
+  let series = { sales: true, profit: true, expenses: true };
+  let classMetric = "sales", drugMetric = "sales";
+  let selectedIdx = null, buckets = [];
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const fmt = n => Math.round(n).toLocaleString();
+  const compact = n => {
+    const a = Math.abs(n);
+    if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M";
+    if (a >= 1e3) return (n / 1e3).toFixed(a >= 1e4 ? 0 : 1).replace(/\.0$/, "") + "k";
+    return String(Math.round(n));
+  };
+
+  // ---------- Period (same behaviour as the Dashboard; preference remembered separately) ----------
+  function loadPref() { try { return JSON.parse(localStorage.getItem("mcChartsPeriod")) || {}; } catch (e) { return {}; } }
+  function savePref() {
+    try { localStorage.setItem("mcChartsPeriod", JSON.stringify({ type: periodType, from: $("customFrom").value || "", to: $("customTo").value || "" })); } catch (e) {}
+  }
+  const pref = loadPref();
+  let periodType = pref.type || "month";
+
+  function startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+  function endOfDay(d) { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; }
+
+  function rawRange() {
+    const now = new Date();
+    if (periodType === "week") { const f = startOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay())); return { from: f, to: endOfDay(new Date(f.getFullYear(), f.getMonth(), f.getDate() + 6)) }; }
+    if (periodType === "month") return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0)) };
+    if (periodType === "year") return { from: new Date(now.getFullYear(), 0, 1), to: endOfDay(new Date(now.getFullYear(), 11, 31)) };
+    if (periodType === "custom") {
+      const f = $("customFrom").value, t = $("customTo").value;
+      return { from: f ? new Date(f + "T00:00:00") : new Date(2000, 0, 1), to: t ? new Date(t + "T23:59:59") : new Date() };
+    }
+    return { from: null, to: new Date() }; // all time: start worked out from the data
+  }
+
+  // ---------- Data helpers ----------
+  const tsDate = t => (t && t.toDate) ? t.toDate() : new Date(); // pending offline writes have no server time yet
+  function expDate(e) {
+    if (e.date) { const d = new Date(e.date + "T12:00:00"); if (!isNaN(d)) return d; }
+    return tsDate(e.createdAt);
+  }
+  function expAmount(e) { return Number(e.totalAmount != null ? e.totalAmount : e.amount) || 0; }
+  // Cost of goods for a sale line: stored value, else estimate from the drug's wholesale price.
+  function saleCost(s) {
+    const stored = Number(s.costOfGoods || 0);
+    if (stored > 0) return stored;
+    const d = drugs.find(x => x.id === s.drugId);
+    if (!d || !d.baseUnitsPerStock) return 0;
+    return ((s.baseQtyDeducted || 0) / d.baseUnitsPerStock) * (d.wholesale || 0);
+  }
+
+  // ---------- Buckets ----------
+  function stepDate(d, mode) {
+    if (mode === "day") return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+    if (mode === "week") return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7);
+    return new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  }
+  function bucketStart(d, mode) {
+    if (mode === "day") return startOfDay(d);
+    if (mode === "week") return startOfDay(new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay()));
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  }
+  function bucketLabel(d, mode) {
+    if (mode === "month") return d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  }
+  function bucketLong(b, mode) {
+    if (mode === "day") return b.start.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+    if (mode === "week") { const e = new Date(b.end.getTime() - 1); return "Week " + bucketLabel(b.start, "day") + " – " + bucketLabel(e, "day"); }
+    return b.start.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  }
+  function findBucket(list, t) {
+    let lo = 0, hi = list.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (t < list[mid].start) hi = mid - 1; else if (t >= list[mid].end) lo = mid + 1; else return mid;
+    }
+    return -1;
+  }
+
+  // ---------- Main render ----------
+  let grain = "day";
+  function renderAll() {
+    const inShop = x => shopFilter === "all" || x.shopId === shopFilter;
+    const allSales = sales.filter(inShop).map(s => ({ ...s, _d: tsDate(s.createdAt) }));
+    const allExp = expenses.filter(inShop).map(e => ({ ...e, _d: expDate(e) }));
+
+    let { from, to } = rawRange();
+    const now = new Date();
+    if (to > now) to = endOfDay(now);
+    if (!from) {
+      const all = allSales.map(s => s._d).concat(allExp.map(e => e._d));
+      from = all.length ? startOfDay(new Date(Math.min.apply(null, all.map(d => d.getTime())))) : startOfDay(new Date(now.getTime() - 29 * 86400000));
+    }
+    if (from > to) { from = startOfDay(to); }
+    $("rangeLabel").textContent = from.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) + " → " + to.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+
+    const S = allSales.filter(s => s._d >= from && s._d <= to);
+    const E = allExp.filter(e => e._d >= from && e._d <= to);
+
+    const totSales = S.reduce((a, s) => a + (s.total || 0), 0);
+    const totCost = S.reduce((a, s) => a + saleCost(s), 0);
+    const totExp = E.reduce((a, e) => a + expAmount(e), 0);
+    const gross = totSales - totCost, net = gross - totExp;
+    $("sumSales").textContent = fmt(totSales);
+    $("sumGross").textContent = fmt(gross);
+    $("sumExp").textContent = fmt(totExp);
+    $("sumNet").textContent = fmt(net);
+    $("sumGross").classList.toggle("neg", gross < 0);
+    $("sumNet").classList.toggle("neg", net < 0);
+
+    // trend buckets
+    const days = Math.round((to - from) / 86400000) + 1;
+    grain = days <= 31 ? "day" : days <= 140 ? "week" : "month";
+    $("grainLabel").textContent = "(per " + grain + ")";
+    buckets = [];
+    for (let c = bucketStart(from, grain); c <= to; c = stepDate(c, grain)) {
+      buckets.push({ start: new Date(c), end: stepDate(c, grain), sales: 0, cost: 0, expenses: 0, profit: 0 });
+    }
+    S.forEach(s => { const i = findBucket(buckets, s._d); if (i >= 0) { buckets[i].sales += (s.total || 0); buckets[i].cost += saleCost(s); } });
+    E.forEach(e => { const i = findBucket(buckets, e._d); if (i >= 0) buckets[i].expenses += expAmount(e); });
+    buckets.forEach(b => { b.profit = b.sales - b.cost; });
+    if (selectedIdx != null && selectedIdx >= buckets.length) selectedIdx = null;
+    renderTrend();
+
+    renderCategories(S, E, allSales);
+  }
+
+  // ---------- Trend chart (SVG) ----------
+  const W = 340, H = 210, PL = 46, PR = 10, PT = 12, PB = 26;
+  function niceScale(min, max, ticks) {
+    const raw = (max - min) / ticks;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const norm = raw / mag;
+    const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag;
+    return { lo: Math.floor(min / step) * step, hi: Math.ceil(max / step) * step, step };
+  }
+  function renderTrend() {
+    const keys = ["sales", "profit", "expenses"].filter(k => series[k]);
+    const box = $("trendChart");
+    const any = buckets.some(b => b.sales || b.expenses || b.cost);
+    if (!buckets.length || !any || !keys.length) {
+      box.innerHTML = '<div class="empty">' + (keys.length ? "No sales or expenses in this period." : "Turn on at least one line above.") + "</div>";
+      $("trendDetail").textContent = "";
+      return;
+    }
+    let max = 0, min = 0;
+    buckets.forEach(b => keys.forEach(k => { max = Math.max(max, b[k]); min = Math.min(min, b[k]); }));
+    if (max === min) max = min + 1;
+    const sc = niceScale(min, max, 4);
+    const n = buckets.length;
+    const y = v => PT + (sc.hi - v) / (sc.hi - sc.lo) * (H - PT - PB);
+    const x = i => n === 1 ? PL + (W - PL - PR) / 2 : PL + i * (W - PL - PR) / (n - 1);
+
+    let svg = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Trend chart">';
+    for (let v = sc.lo; v <= sc.hi + sc.step / 1000; v += sc.step) {
+      svg += '<line class="gl" x1="' + PL + '" x2="' + (W - PR) + '" y1="' + y(v) + '" y2="' + y(v) + '"/>';
+      svg += '<text class="axl" x="' + (PL - 5) + '" y="' + (y(v) + 3) + '" text-anchor="end">' + compact(v) + "</text>";
+    }
+    const labelCount = Math.min(n, 5);
+    const shown = new Set();
+    for (let k = 0; k < labelCount; k++) shown.add(labelCount === 1 ? 0 : Math.round(k * (n - 1) / (labelCount - 1)));
+    shown.forEach(i => {
+      const anchor = i === 0 && n > 1 ? "start" : (i === n - 1 && n > 1 ? "end" : "middle");
+      svg += '<text class="axl" x="' + x(i) + '" y="' + (H - 8) + '" text-anchor="' + anchor + '">' + bucketLabel(buckets[i].start, grain) + "</text>";
+    });
+    if (selectedIdx != null) svg += '<line class="selline" x1="' + x(selectedIdx) + '" x2="' + x(selectedIdx) + '" y1="' + PT + '" y2="' + (H - PB) + '"/>';
+    keys.forEach(k => {
+      if (n === 1) { svg += '<circle class="dot ' + k + '" cx="' + x(0) + '" cy="' + y(buckets[0][k]) + '" r="4"/>'; return; }
+      svg += '<polyline class="ln ' + k + '" points="' + buckets.map((b, i) => x(i).toFixed(1) + "," + y(b[k]).toFixed(1)).join(" ") + '"/>';
+      if (n <= 31) buckets.forEach((b, i) => { svg += '<circle class="dot ' + k + '" cx="' + x(i).toFixed(1) + '" cy="' + y(b[k]).toFixed(1) + '" r="2.4"/>'; });
+    });
+    svg += "</svg>";
+    box.innerHTML = svg;
+    showDetail();
+  }
+  function showDetail() {
+    const el = $("trendDetail");
+    if (selectedIdx == null) { el.textContent = "Tap the chart to see the figures for that point."; return; }
+    const b = buckets[selectedIdx];
+    el.innerHTML = "<b>" + esc(bucketLong(b, grain)) + "</b>" +
+      '<div class="dr"><span>Sales</span><span>' + fmt(b.sales) + "</span></div>" +
+      '<div class="dr"><span>Gross profit</span><span>' + fmt(b.profit) + "</span></div>" +
+      '<div class="dr"><span>Expenses</span><span>' + fmt(b.expenses) + "</span></div>" +
+      '<div class="dr"><span>Net profit</span><span>' + fmt(b.profit - b.expenses) + "</span></div>";
+  }
+  $("trendChart").addEventListener("click", ev => {
+    if (!buckets.length) return;
+    const svg = $("trendChart").querySelector("svg");
+    if (!svg) return;
+    const r = svg.getBoundingClientRect();
+    const vx = (ev.clientX - r.left) / r.width * W;
+    const n = buckets.length;
+    const i = n === 1 ? 0 : Math.round((vx - PL) / (W - PL - PR) * (n - 1));
+    selectedIdx = Math.max(0, Math.min(n - 1, i));
+    renderTrend();
+  });
+
+  // ---------- Category charts ----------
+  function bars(el, rows, cls) {
+    rows = rows.filter(r => Math.round(r.value) !== 0);
+    if (!rows.length) { el.innerHTML = '<div class="empty">No data for this period.</div>'; return; }
+    const total = rows.reduce((a, r) => a + Math.max(r.value, 0), 0) || 1;
+    const max = Math.max.apply(null, rows.map(r => Math.abs(r.value))) || 1;
+    el.innerHTML = rows.map(r => {
+      const neg = r.value < 0;
+      return '<div class="bar-row"><div class="bar-top"><span class="bar-label">' + esc(r.label) + '</span><span class="bar-val ' + (neg ? "neg" : "") + '">' +
+        fmt(r.value) + (neg ? "" : " · " + Math.round(r.value / total * 100) + "%") + "</span></div>" +
+        '<div class="bar-track"><div class="bar-fill ' + (neg ? "neg" : (cls || "")) + '" style="width:' + Math.max(2, Math.abs(r.value) / max * 100).toFixed(1) + '%"></div></div></div>';
+    }).join("");
+  }
+  function group(list, keyFn, valFn) {
+    const m = new Map();
+    list.forEach(item => { const k = keyFn(item); m.set(k, (m.get(k) || 0) + valFn(item)); });
+    return Array.from(m, ([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+  }
+  function renderCategories(S, E, allSalesInShopScope) {
+    const val = (s, metric) => metric === "profit" ? (s.total || 0) - saleCost(s) : (s.total || 0);
+
+    bars($("classBars"), group(S, s => s.drugClass || "Unclassified", s => val(s, classMetric)), classMetric === "profit" ? "alt" : "");
+
+    // top drugs: group by drugId (fall back to name), label with the latest name
+    const names = {};
+    S.forEach(s => { names[s.drugId || s.drugName] = s.drugName || "Unknown drug"; });
+    const topRows = group(S, s => s.drugId || s.drugName, s => val(s, drugMetric)).slice(0, 10).map(r => ({ label: names[r.label] || r.label, value: r.value }));
+    bars($("drugBars"), topRows, drugMetric === "profit" ? "alt" : "");
+
+    // expenses by category (each expense holds several items, each with its own category)
+    const catRows = [];
+    E.forEach(e => {
+      if (Array.isArray(e.items) && e.items.length) e.items.forEach(i => catRows.push({ c: i.category || "Uncategorised", a: Number(i.amount) || 0 }));
+      else catRows.push({ c: "Uncategorised", a: expAmount(e) });
+    });
+    bars($("expBars"), group(catRows, r => r.c, r => r.a), "exp");
+
+    // cash vs credit
+    const credit = S.filter(s => s.paymentStatus === "CREDIT").reduce((a, s) => a + (s.total || 0), 0);
+    const paid = S.reduce((a, s) => a + (s.total || 0), 0) - credit;
+    const tot = paid + credit;
+    $("payBox").innerHTML = tot <= 0 ? '<div class="empty">No sales in this period.</div>' :
+      '<div class="seg"><div style="width:' + (paid / tot * 100) + '%; background:var(--accent2)"></div><div style="width:' + (credit / tot * 100) + '%; background:var(--warn)"></div></div>' +
+      '<div class="bar-top"><span><span class="legend-dot" style="background:var(--accent2)"></span>Paid</span><span class="bar-val">' + fmt(paid) + " · " + Math.round(paid / tot * 100) + "%</span></div>" +
+      '<div class="bar-top"><span><span class="legend-dot" style="background:var(--warn)"></span>On credit</span><span class="bar-val">' + fmt(credit) + " · " + Math.round(credit / tot * 100) + "%</span></div>";
+
+    // shop comparison (owner, all shops, more than one shop)
+    const showShops = role === "owner" && shopFilter === "all" && Object.keys(shopsById).length > 1;
+    $("shopCompareCard").classList.toggle("hidden", !showShops);
+    if (showShops) bars($("shopBars"), group(S, s => shopsById[s.shopId] || "Unknown shop", s => s.total || 0), "");
+  }
+
+  // ---------- Controls ----------
+  function syncControls() {
+    document.querySelectorAll("#periodPills .pill-btn").forEach(b => b.classList.toggle("selected", b.dataset.period === periodType));
+    $("customRange").classList.toggle("hidden", periodType !== "custom");
+    document.querySelectorAll("#seriesPills .pill-btn").forEach(b => b.classList.toggle("off", !series[b.dataset.series]));
+    document.querySelectorAll("#classMetric .pill-btn").forEach(b => b.classList.toggle("selected", b.dataset.m === classMetric));
+    document.querySelectorAll("#drugMetric .pill-btn").forEach(b => b.classList.toggle("selected", b.dataset.m === drugMetric));
+  }
+  document.querySelectorAll("#periodPills .pill-btn").forEach(b => b.addEventListener("click", () => {
+    periodType = b.dataset.period; selectedIdx = null; savePref(); syncControls(); renderAll();
+  }));
+  ["customFrom", "customTo"].forEach(id => $(id).addEventListener("change", () => { selectedIdx = null; savePref(); renderAll(); }));
+  document.querySelectorAll("#seriesPills .pill-btn").forEach(b => b.addEventListener("click", () => {
+    series[b.dataset.series] = !series[b.dataset.series]; syncControls(); renderTrend();
+  }));
+  document.querySelectorAll("#classMetric .pill-btn").forEach(b => b.addEventListener("click", () => { classMetric = b.dataset.m; syncControls(); renderAll(); }));
+  document.querySelectorAll("#drugMetric .pill-btn").forEach(b => b.addEventListener("click", () => { drugMetric = b.dataset.m; syncControls(); renderAll(); }));
+  $("shopPick").addEventListener("change", () => {
+    shopFilter = $("shopPick").value; selectedIdx = null;
+    try { localStorage.setItem("mcChartsShop", shopFilter); } catch (e) {}
+    renderAll();
+  });
+  if (periodType === "custom") { $("customFrom").value = pref.from || ""; $("customTo").value = pref.to || ""; }
+  syncControls();
+
+  function fillShopPick() {
+    const ids = Object.keys(shopsById);
+    $("shopPick").innerHTML = '<option value="all">All shops</option>' + ids.map(id => '<option value="' + esc(id) + '">' + esc(shopsById[id]) + "</option>").join("");
+    if (shopFilter !== "all" && !shopsById[shopFilter]) shopFilter = "all";
+    $("shopPick").value = shopFilter;
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+    const userSnap = await getDoc(doc(db, "users", user.uid));
+    if (!userSnap.exists()) { window.location.href = "login.html"; return; }
+    const profile = userSnap.data();
+    role = profile.role; businessId = profile.businessId;
+
+    const badge = $("netBadge");
+    let filters;
+    if (role === "owner") {
+      try { shopFilter = localStorage.getItem("mcChartsShop") || "all"; } catch (e) {}
+      $("shopPickWrap").classList.remove("hidden");
+      $("shopIndicator").textContent = "Charts for your whole business";
+      filters = [where("businessId", "==", businessId)];
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), snap => {
+        shopsById = {}; snap.docs.forEach(d => { shopsById[d.id] = d.data().name; });
+        fillShopPick(); renderAll();
+      });
+    } else {
+      shopFilter = profile.shopId;
+      $("shopIndicator").textContent = "Charts for your shop";
+      filters = [where("businessId", "==", businessId), where("shopId", "==", profile.shopId)];
+    }
+    onSnapshot(query(collection(db, "sales"), ...filters), { includeMetadataChanges: true }, snap => {
+      sales = snap.docs.map(d => d.data());
+      badge.textContent = snap.metadata.fromCache ? "offline (cached)" : "online (synced)";
+      badge.className = "badge " + (snap.metadata.fromCache ? "offline" : "online");
+      renderAll();
+    });
+    onSnapshot(query(collection(db, "expenses"), ...filters), snap => { expenses = snap.docs.map(d => d.data()); renderAll(); });
+    onSnapshot(query(collection(db, "drugs"), ...filters), snap => { drugs = snap.docs.map(d => ({ id: d.id, ...d.data() })); renderAll(); });
+  });
+</script>
+</body>
+</html>

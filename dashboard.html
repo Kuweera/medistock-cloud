@@ -134,6 +134,7 @@
 <nav class="nav-panel" id="navPanel">
   <div class="nav-panel-title">Menu</div>
   <a href="dashboard.html" class="active">Dashboard</a>
+  <a href="charts.html">Charts</a>
   <a href="sales.html">Sell</a>
   <a href="inventory.html">Inventory</a>
   <a href="purchases.html">Purchases</a>
@@ -182,6 +183,11 @@
     <a class="stat warn" href="credit.html"><div class="num" id="statCreditOwed">—</div><div class="lbl">Credit owed to you <span class="go">›</span></div></a>
   </div>
 </div>
+
+<a href="charts.html" class="card" style="display:block; text-decoration:none; color:inherit;">
+  <h2 style="margin:0;">📈 Trends &amp; Category Charts <span style="color:var(--muted); font-weight:400;">›</span></h2>
+  <div class="period-note" style="margin-top:4px;">Sales, profit and expense trends, top drugs, drug classes and more.</div>
+</a>
 
 <div class="card hidden" id="shopBreakdownCard">
   <h2>Shop Performance <span style="text-transform:none; font-weight:400;">(selected period · tap a shop to open it)</span></h2>
@@ -363,7 +369,7 @@
     const salesThisMonth = sales.filter(s => isInRange(s.createdAt, from, to));
     const expensesThisMonth = expenses.filter(e => isInRange(e.createdAt, from, to));
     const totalSales = salesThisMonth.reduce((sum, s) => sum + (s.total || 0), 0);
-    const totalExpenses = expensesThisMonth.reduce((sum, e) => sum + (e.amount || 0), 0);
+    const totalExpenses = expensesThisMonth.reduce((sum, e) => sum + (Number(e.totalAmount != null ? e.totalAmount : e.amount) || 0), 0);
     const totalCost = salesThisMonth.reduce((sum, s) => sum + saleCost(s), 0);
     const grossProfit = totalSales - totalCost;
     const stockValue = drugs.reduce((sum, d) => {
@@ -398,7 +404,7 @@
       const name = shopsById[id];
       const shopSalesDocs = salesThisMonth.filter(s => s.shopId === id);
       const shopSales = shopSalesDocs.reduce((sum, s) => sum + (s.total || 0), 0);
-      const shopExpenses = expensesThisMonth.filter(e => e.shopId === id).reduce((sum, e) => sum + (e.amount || 0), 0);
+      const shopExpenses = expensesThisMonth.filter(e => e.shopId === id).reduce((sum, e) => sum + (Number(e.totalAmount != null ? e.totalAmount : e.amount) || 0), 0);
       const shopGross = shopSalesDocs.reduce((sum, s) => sum + (s.total || 0) - saleCost(s), 0);
       const net = shopGross - shopExpenses;
       const shopLowStock = drugs.filter(d => d.shopId === id && d.active !== false && d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock)).length;
