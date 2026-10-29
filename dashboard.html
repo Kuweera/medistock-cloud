@@ -326,6 +326,7 @@
   }
 
   function daysUntil(dateStr) {
+    if (!dateStr || isNaN(new Date(dateStr))) return 36500; // no expiry date = never expires
     const today = new Date(); today.setHours(0,0,0,0);
     return Math.round((new Date(dateStr) - today) / 86400000);
   }

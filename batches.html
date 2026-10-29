@@ -217,11 +217,15 @@
   let filter = "all";
 
   function daysUntil(dateStr) {
+    if (!dateStr) return 36500; // no expiry date = never expires
     const today = new Date(); today.setHours(0,0,0,0);
     const target = new Date(dateStr);
+    if (isNaN(target)) return 36500;
     return Math.round((target - today) / 86400000);
   }
+  function expiryMs(dateStr) { return dateStr && !isNaN(new Date(dateStr)) ? new Date(dateStr).getTime() : 8.64e15; }
   function expiryTag(dateStr) {
+    if (!dateStr) return { label: "No expiry", cls: "ok" };
     const d = daysUntil(dateStr);
     if (d < 0) return { label: "EXPIRED", cls: "expired" };
     if (d <= 30) return { label: `${d}d left`, cls: "soon" };
@@ -282,7 +286,7 @@
 
     let list = allBatches.filter(b => b.quantity > 0); // depleted/written-off batches don't clutter this view
     if (q) list = list.filter(b => (b.drugName || "").toLowerCase().includes(q));
-    list.sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
+    list.sort((a, b) => expiryMs(a.expiryDate) - expiryMs(b.expiryDate));
     if (filter === "expired") list = list.filter(b => daysUntil(b.expiryDate) < 0);
     if (filter === "soon") list = list.filter(b => { const d = daysUntil(b.expiryDate); return d >= 0 && d <= 30; });
 
@@ -295,7 +299,7 @@
       return `
         <div class="batch-item">
           <div class="batch-drug">${b.drugName}<span class="tag ${tag.cls}">${tag.label}</span></div>
-          <div class="batch-meta">Batch ${b.batchNumber || "—"} · Qty ${b.quantity} · Exp ${b.expiryDate}${b.supplier ? " · " + b.supplier : ""}</div>
+          <div class="batch-meta">Batch ${b.batchNumber || "—"} · Qty ${b.quantity} · ${b.expiryDate ? "Exp " + b.expiryDate : "No expiry date"}${b.supplier ? " · " + b.supplier : ""}</div>
           <button class="del-btn" onclick="writeOffBatch('${b.id}')">Write off</button>
         </div>`;
     }).join("");

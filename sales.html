@@ -310,10 +310,15 @@
   let lastReceiptData = null;
 
   function daysUntil(dateStr) {
+    // A batch with no expiry date never expires: treat it as ~100 years away
+    // so it stays sellable and sorts after every dated batch (FEFO).
+    if (!dateStr) return 36500;
     const today = new Date(); today.setHours(0,0,0,0);
     const target = new Date(dateStr);
+    if (isNaN(target)) return 36500;
     return Math.round((target - today) / 86400000);
   }
+  function expiryMs(dateStr) { return dateStr && !isNaN(new Date(dateStr)) ? new Date(dateStr).getTime() : 8.64e15; }
 
   const PackagingEngine = {
     baseToBreakdown(baseQty, baseUnitsPerStock, basePerIntermediate) {
@@ -440,7 +445,7 @@
     } else {
       const active = allBatchesForDrug
         .filter(b => daysUntil(b.expiryDate) >= 0 && b.quantity > 0)
-        .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
+        .sort((a, b) => expiryMs(a.expiryDate) - expiryMs(b.expiryDate));
       const expiredQty = allBatchesForDrug
         .filter(b => daysUntil(b.expiryDate) < 0)
         .reduce((sum, b) => sum + b.quantity, 0);
@@ -451,7 +456,7 @@
       let stockText = "Sellable: " + formatSoldQtyLabel(sellableBaseForDrug, selectedDrug);
       if (expiredQty > 0) stockText += ` (+${expiredQty} ${selectedDrug.baseUnit}(s) expired, excluded)`;
       if (reserved > 0) stockText += ` — ${formatSoldQtyLabel(reserved, selectedDrug)} already in cart`;
-      const nextExpiry = active.length ? ` · next batch expires ${active[0].expiryDate}` : "";
+      const nextExpiry = (active.length && active[0].expiryDate) ? ` · next batch expires ${active[0].expiryDate}` : "";
       document.getElementById("configDrugStock").textContent = stockText + nextExpiry;
     }
 
@@ -695,7 +700,7 @@
           ));
           liveBatchesByDrug[item.drugId] = snap.docs.map(d => ({ id: d.id, ...d.data() }))
             .filter(b => daysUntil(b.expiryDate) >= 0 && b.quantity > 0)
-            .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
+            .sort((a, b) => expiryMs(a.expiryDate) - expiryMs(b.expiryDate));
         }
       }
       const liveDrugSnaps = {};
