@@ -30,6 +30,9 @@
   .link{color:var(--accent); font-size:13px; text-decoration:none;}
   .stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
   .stat{background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px;}
+  a.stat, a.shop-card{display:block; text-decoration:none; color:inherit; -webkit-tap-highlight-color:transparent;}
+  a.stat:active, a.shop-card:active{opacity:.7;}
+  .stat .lbl .go, .shop-name .go{color:var(--muted); font-weight:400;}
   .stat .num{font-size:20px; font-weight:700;}
   .stat .lbl{font-size:11px; color:var(--muted); margin-top:2px;}
   .stat.warn .num{color:var(--warn);}
@@ -169,18 +172,19 @@
   </div>
   <div class="period-note" id="periodRangeLabel" style="margin-top:2px;"></div>
   <div class="stat-grid" style="margin-top:10px;">
-    <div class="stat good"><div class="num" id="statSales">—</div><div class="lbl">Sales</div></div>
-    <div class="stat"><div class="num" id="statExpenses">—</div><div class="lbl">Expenses</div></div>
-    <div class="stat good"><div class="num" id="statNet">—</div><div class="lbl">Net (Sales − Expenses)</div></div>
-    <div class="stat"><div class="num" id="statStockValue">—</div><div class="lbl">Stock value (at wholesale)</div></div>
-    <div class="stat warn"><div class="num" id="statLowStock">—</div><div class="lbl">Low stock items</div></div>
-    <div class="stat danger"><div class="num" id="statExpired">—</div><div class="lbl">Expired batches</div></div>
-    <div class="stat warn"><div class="num" id="statCreditOwed">—</div><div class="lbl">Credit owed to you</div></div>
+    <a class="stat good" href="sales.html"><div class="num" id="statSales">—</div><div class="lbl">Sales <span class="go">›</span></div></a>
+    <a class="stat" href="expenses.html"><div class="num" id="statExpenses">—</div><div class="lbl">Expenses <span class="go">›</span></div></a>
+    <a class="stat good" href="sales.html"><div class="num" id="statGross">—</div><div class="lbl">Gross profit (Sales − cost of goods) <span class="go">›</span></div></a>
+    <a class="stat good" href="cash-position.html"><div class="num" id="statNetProfit">—</div><div class="lbl">Net profit (Gross − Expenses) <span class="go">›</span></div></a>
+    <a class="stat" href="inventory.html"><div class="num" id="statStockValue">—</div><div class="lbl">Stock value (at wholesale) <span class="go">›</span></div></a>
+    <a class="stat warn" href="whattobuy.html"><div class="num" id="statLowStock">—</div><div class="lbl">Low stock items <span class="go">›</span></div></a>
+    <a class="stat danger" href="batches.html?filter=expired"><div class="num" id="statExpired">—</div><div class="lbl">Expired batches <span class="go">›</span></div></a>
+    <a class="stat warn" href="credit.html"><div class="num" id="statCreditOwed">—</div><div class="lbl">Credit owed to you <span class="go">›</span></div></a>
   </div>
 </div>
 
 <div class="card hidden" id="shopBreakdownCard">
-  <h2>Shop Performance <span style="text-transform:none; font-weight:400;">(this month)</span></h2>
+  <h2>Shop Performance <span style="text-transform:none; font-weight:400;">(selected period · tap a shop to open it)</span></h2>
   <div id="shopBreakdown"><div class="empty">Loading…</div></div>
 </div>
 
@@ -342,6 +346,17 @@
     badge.className = "badge error";
   }
 
+  // Cost of goods for one sale line. Newer sales store it (taken from the
+  // batches actually sold). If it's missing/0 (e.g. no batch covered the sale),
+  // estimate from the drug's current wholesale price so profit isn't overstated.
+  function saleCost(s) {
+    const stored = Number(s.costOfGoods || 0);
+    if (stored > 0) return stored;
+    const d = drugs.find(x => x.id === s.drugId);
+    if (!d || !d.baseUnitsPerStock) return 0;
+    return ((s.baseQtyDeducted || 0) / d.baseUnitsPerStock) * (d.wholesale || 0);
+  }
+
   function renderAll() {
     const { from, to } = computePeriodRange();
     document.getElementById("periodRangeLabel").textContent = formatRangeLabel(from, to);
@@ -349,6 +364,8 @@
     const expensesThisMonth = expenses.filter(e => isInRange(e.createdAt, from, to));
     const totalSales = salesThisMonth.reduce((sum, s) => sum + (s.total || 0), 0);
     const totalExpenses = expensesThisMonth.reduce((sum, e) => sum + (e.amount || 0), 0);
+    const totalCost = salesThisMonth.reduce((sum, s) => sum + saleCost(s), 0);
+    const grossProfit = totalSales - totalCost;
     const stockValue = drugs.reduce((sum, d) => {
       const stockUnitsWorth = d.baseUnitsPerStock ? (d.currentStockBase / d.baseUnitsPerStock) * (d.wholesale || 0) : 0;
       return sum + stockUnitsWorth;
@@ -361,7 +378,9 @@
 
     document.getElementById("statSales").textContent = fmt(totalSales);
     document.getElementById("statExpenses").textContent = fmt(totalExpenses);
-    document.getElementById("statNet").textContent = fmt(totalSales - totalExpenses);
+    document.getElementById("statGross").textContent = fmt(grossProfit);
+    document.getElementById("statNetProfit").textContent = fmt(grossProfit - totalExpenses);
+    document.getElementById("statNetProfit").style.color = (grossProfit - totalExpenses) < 0 ? "var(--danger)" : "";
     document.getElementById("statStockValue").textContent = fmt(stockValue);
     document.getElementById("statLowStock").textContent = lowStockCount;
     document.getElementById("statExpired").textContent = expiredCount;
@@ -377,20 +396,23 @@
     }
     container.innerHTML = shopIds.map(id => {
       const name = shopsById[id];
-      const shopSales = salesThisMonth.filter(s => s.shopId === id).reduce((sum, s) => sum + (s.total || 0), 0);
+      const shopSalesDocs = salesThisMonth.filter(s => s.shopId === id);
+      const shopSales = shopSalesDocs.reduce((sum, s) => sum + (s.total || 0), 0);
       const shopExpenses = expensesThisMonth.filter(e => e.shopId === id).reduce((sum, e) => sum + (e.amount || 0), 0);
-      const net = shopSales - shopExpenses;
+      const shopGross = shopSalesDocs.reduce((sum, s) => sum + (s.total || 0) - saleCost(s), 0);
+      const net = shopGross - shopExpenses;
       const shopLowStock = drugs.filter(d => d.shopId === id && d.active !== false && d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock)).length;
       const shopExpiring = batches.filter(b => b.shopId === id && daysUntil(b.expiryDate) >= 0 && daysUntil(b.expiryDate) <= 30 && Number(b.quantity || 0) > 0).length;
       return `
-        <div class="shop-card">
-          <div class="shop-name">${name}</div>
+        <a class="shop-card" href="inventory.html" onclick="localStorage.setItem('mc_activeShopId','${id}')">
+          <div class="shop-name">${name} <span class="go">›</span></div>
           <div class="shop-row"><span>Sales</span><span class="v good">${fmt(shopSales)}</span></div>
           <div class="shop-row"><span>Expenses</span><span class="v">${fmt(shopExpenses)}</span></div>
-          <div class="shop-row"><span>Net</span><span class="v ${net >= 0 ? "good" : "bad"}">${fmt(net)}</span></div>
+          <div class="shop-row"><span>Gross profit</span><span class="v ${shopGross >= 0 ? "good" : "bad"}">${fmt(shopGross)}</span></div>
+          <div class="shop-row"><span>Net profit</span><span class="v ${net >= 0 ? "good" : "bad"}">${fmt(net)}</span></div>
           <div class="shop-row"><span>Low stock items</span><span class="v">${shopLowStock}</span></div>
           <div class="shop-row"><span>Expiring ≤30d</span><span class="v">${shopExpiring}</span></div>
-        </div>`;
+        </a>`;
     }).join("");
   }
 
@@ -448,7 +470,7 @@
       (err) => showError("expenses", err)
     );
     onSnapshot(query(collection(db, "drugs"), ...filters),
-      (snap) => { drugs = snap.docs.map(d => d.data()); renderAll(); },
+      (snap) => { drugs = snap.docs.map(d => ({ id: d.id, ...d.data() })); renderAll(); },
       (err) => showError("inventory", err)
     );
     onSnapshot(query(collection(db, "batches"), ...filters),

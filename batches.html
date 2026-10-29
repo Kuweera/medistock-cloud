@@ -264,6 +264,11 @@
     renderList();
   };
   document.getElementById("searchBox").addEventListener("input", renderList);
+  // Dashboard tiles link here with ?filter=expired / ?filter=soon
+  (function () {
+    const f = new URLSearchParams(location.search).get("filter");
+    if (["expired", "soon", "writtenoff"].includes(f)) window.setFilter(f);
+  })();
 
   function renderList() {
     const container = document.getElementById("batchList");

@@ -522,6 +522,7 @@
     const qty = Number(document.getElementById("qty").value) || 0;
     const price = Number(document.getElementById("pricePerUnit").value) || 0;
     if (qty <= 0) { alert("Enter a quantity."); return; }
+    if (price <= 0) { alert("Enter a selling price greater than 0."); return; }
     const baseQtyNeeded = PackagingEngine.unitQuantityToBase(qty, selectedUnitLevel, selectedDrug.baseUnitsPerStock, selectedDrug.basePerIntermediate);
     const reserved = cartReservedBaseFor(selectedDrug.id, editingCartIndex);
     if (baseQtyNeeded + reserved > sellableBaseForDrug) {
@@ -667,6 +668,12 @@
     // Edit/Remove/Clear Cart. Using this frozen copy for everything below
     // means a mid-flight cart change can never corrupt the sale being submitted.
     const saleItems = cart.slice();
+    const zeroPriced = saleItems.find(c => !(Number(c.pricePerUnit) > 0));
+    if (zeroPriced) {
+      statusEl.textContent = `"${zeroPriced.drugName}" has no selling price. Tap Edit and enter a price.`;
+      statusEl.style.color = "var(--danger)";
+      return;
+    }
     const grandTotal = saleItems.reduce((sum, c) => sum + c.total, 0);
 
     let matchedCustomer = onCredit ? creditAccounts.find(c => c.name.toLowerCase() === customerNameInput.toLowerCase()) : null;
