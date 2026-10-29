@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStock Cloud — Users</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  /* ===== Users page ===== */
+  .hidden{display:none !important;}
+  .btn-small{padding:8px 12px; font-size:13px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent);}
+  .btn-danger-outline{background:transparent; color:var(--danger); border:1px solid var(--danger);}
+  .op{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;}
+  .op:last-child{margin-bottom:0;}
+  .op-name{font-weight:700; font-size:14.5px; display:flex; justify-content:space-between; gap:8px; align-items:center;}
+  .op-meta{font-size:12px; color:var(--muted); margin-top:3px; line-height:1.5;}
+  .tag{font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid var(--border);}
+  .tag.on{color:var(--accent2); border-color:var(--accent2);} .tag.off{color:var(--danger); border-color:var(--danger);}
+  .op-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .cred{background:var(--bg); border:1px dashed var(--accent); border-radius:10px; padding:12px; margin:10px 0; font-size:14px; line-height:1.7;}
+  .cred b{font-size:16px; letter-spacing:.5px;}
+  .msg{font-size:13px; margin-top:8px;} .msg.err{color:var(--danger);} .msg.ok{color:var(--accent2);}
+  .pill-row{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;}
+  .pill-btn{background:var(--card); color:var(--text); border:1px solid var(--border); padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:600;}
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .day-h{font-size:11.5px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.4px; margin:12px 0 4px;}
+  .ev{display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ev:last-child{border-bottom:none;}
+  .ev-main{min-width:0;} .ev-text{overflow-wrap:anywhere;}
+  .ev-meta{font-size:11.5px; color:var(--muted);}
+  .ev-amt{font-weight:700; white-space:nowrap;} .ev-amt.out{color:var(--danger);}
+  .hint2{font-size:11.5px; color:var(--muted); line-height:1.5; margin-top:6px;}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Multi-Shop Edition · Users &amp; Activity</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="location.href='dashboard.html'">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="users.html" class="active">Users</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+
+<!-- OWNER: operators -->
+<div class="card hidden" id="opsCard">
+  <h2>Operators</h2>
+  <div id="credBox"></div>
+  <div id="opList"><div class="empty">Loading…</div></div>
+</div>
+
+<div class="card hidden" id="addCard">
+  <h2>Add Operator</h2>
+  <label>Operator name</label>
+  <input type="text" id="newName" placeholder="e.g. Muzaaya">
+  <label>Shop</label>
+  <select id="newShop"></select>
+  <label>6-digit PIN</label>
+  <div class="row">
+    <input type="text" inputmode="numeric" id="newPin" maxlength="6" placeholder="e.g. 483920">
+    <button type="button" class="btn-small btn-secondary" style="flex:0 0 auto;" onclick="genPin('newPin')">Generate</button>
+  </div>
+  <button class="btn-primary" onclick="addOperator()">Create operator</button>
+  <div class="msg" id="addStatus"></div>
+  <div class="hint2">The operator logs in with Shop Code + Operator ID + PIN. The Operator ID is created for you.</div>
+</div>
+
+<!-- OPERATOR: own account -->
+<div class="card hidden" id="meCard">
+  <h2>My Account</h2>
+  <div id="meInfo" class="op-meta" style="font-size:13px;"></div>
+  <label>Current PIN</label>
+  <input type="password" inputmode="numeric" id="curPin" maxlength="6">
+  <label>New 6-digit PIN</label>
+  <input type="password" inputmode="numeric" id="chgPin" maxlength="6">
+  <label>Confirm new PIN</label>
+  <input type="password" inputmode="numeric" id="chgPin2" maxlength="6">
+  <button class="btn-primary" onclick="changeMyPin()">Change my PIN</button>
+  <div class="msg" id="pinStatus"></div>
+</div>
+
+<div class="card">
+  <h2 id="logTitle">Activity Log</h2>
+  <div class="hint2" style="margin-top:0;">Sales, purchases, expenses, write-offs, stock-taking edits, payments and cash adjustments, with who did them. Older credit/supplier payments and cash adjustments were recorded without a name.</div>
+  <div class="pill-row" id="rangePills" style="margin-top:10px;">
+    <button type="button" class="pill-btn" data-r="1">Today</button>
+    <button type="button" class="pill-btn selected" data-r="7">7 days</button>
+    <button type="button" class="pill-btn" data-r="30">30 days</button>
+    <button type="button" class="pill-btn" data-r="0">All</button>
+  </div>
+  <div class="pill-row" id="kindPills">
+    <button type="button" class="pill-btn selected" data-k="all">Everything</button>
+    <button type="button" class="pill-btn" data-k="sale">Sales</button>
+    <button type="button" class="pill-btn" data-k="purchase">Purchases</button>
+    <button type="button" class="pill-btn" data-k="expense">Expenses</button>
+    <button type="button" class="pill-btn" data-k="stock">Stock</button>
+    <button type="button" class="pill-btn" data-k="money">Payments &amp; cash</button>
+  </div>
+  <div class="row" id="logFilters">
+    <div id="whoWrap"><label>Person</label><select id="whoPick"></select></div>
+    <div id="shopWrap"><label>Shop</label><select id="shopPick"></select></div>
+  </div>
+  <div id="logList" style="margin-top:6px;"><div class="empty">Loading…</div></div>
+  <button class="btn-small btn-secondary hidden" id="moreBtn" style="width:100%; margin-top:10px;" onclick="showMore()">Show more</button>
+</div>
+
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+<script type="module">
+  import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {});
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const fmt = n => Math.round(n).toLocaleString();
+
+  let role = null, me = null, businessId = null, myShopId = null;
+  let shopsById = {};          // id -> { name, shopCode }
+  let operators = [];          // users docs (owner only)
+  let receipts = [], expenses = [], stockTx = [], creditTx = [], supplierTx = [], cashAdj = [], drugs = [];
+  let rangeDays = 7, kindFilter = "all", whoFilter = "all", shopFilter = "all", shown = 60;
+
+  const tsDate = t => (t && t.toDate) ? t.toDate() : new Date();
+  const sanitizeCode = c => String(c || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const internalEmail = (shopCode, opId) => "op" + opId + "@" + sanitizeCode(shopCode).toLowerCase() + ".medistock.internal";
+  const validPin = p => /^[0-9]{6}$/.test(p);
+
+  function setMsg(id, text, isErr) { const el = $(id); el.textContent = text || ""; el.className = "msg " + (isErr ? "err" : "ok"); }
+  window.genPin = function (inputId) { $(inputId).value = String(Math.floor(100000 + Math.random() * 900000)); };
+
+  // ================= Activity feed (built from records the app already keeps) =================
+  const CASH_LABELS = { owner_deposit: ["Owner deposit", 1], owner_withdrawal: ["Owner withdrawal", -1], other_income: ["Other income", 1], cash_surplus: ["Cash surplus found", 1], cash_shortage: ["Cash shortage / missing", -1] };
+  function drugName(id) { const d = drugs.find(x => x.id === id); return d ? d.name : "a drug"; }
+
+  function buildFeed() {
+    const ev = [];
+    receipts.forEach(r => {
+      const n = r.itemCount || (r.items ? r.items.length : 0);
+      if (r.type === "SALE") ev.push({ ts: tsDate(r.createdAt), shopId: r.shopId, who: r.cashier || "—", kind: "sale",
+        text: "Sale " + (r.displayNumber || "") + " · " + n + " item" + (n === 1 ? "" : "s") + (r.paymentStatus === "CREDIT" ? " · on credit" + (r.customerName ? " (" + r.customerName + ")" : "") : ""), amount: r.totalAmount || 0 });
+      else if (r.type === "PURCHASE") ev.push({ ts: tsDate(r.createdAt), shopId: r.shopId, who: r.cashier || "—", kind: "purchase",
+        text: "Purchase " + (r.displayNumber || "") + " · " + n + " item" + (n === 1 ? "" : "s"), amount: -(r.totalAmount || 0), out: true });
+    });
+    expenses.forEach(e => {
+      const cats = Array.isArray(e.items) ? Array.from(new Set(e.items.map(i => i.category).filter(Boolean))).join(", ") : "";
+      ev.push({ ts: tsDate(e.createdAt), shopId: e.shopId, who: e.cashier || "—", kind: "expense",
+        text: "Expense" + (cats ? " · " + cats : "") + (e.note ? " · " + e.note : ""), amount: -(Number(e.totalAmount != null ? e.totalAmount : e.amount) || 0), out: true });
+    });
+    stockTx.forEach(t => {
+      if (t.type === "WRITE_OFF") ev.push({ ts: tsDate(t.createdAt), shopId: t.shopId, who: t.cashier || "—", kind: "stock", text: "Write-off · " + (t.drugName || drugName(t.drugId)) + " · " + (t.note || "") });
+      else if (t.type === "EDIT_RESYNC") ev.push({ ts: tsDate(t.createdAt), shopId: t.shopId, who: t.cashier || "—", kind: "stock", text: "Stock taking · " + drugName(t.drugId) + " · " + (t.note || "") });
+    });
+    creditTx.forEach(t => { if (t.type === "PAYMENT") ev.push({ ts: tsDate(t.createdAt), shopId: t.shopId, who: t.cashier || "—", kind: "money", text: "Credit payment received · " + (t.customerName || "customer"), amount: t.amount || 0 }); });
+    supplierTx.forEach(t => { if (t.type === "PAYMENT") ev.push({ ts: tsDate(t.createdAt), shopId: t.shopId, who: t.cashier || "—", kind: "money", text: "Supplier payment · " + (t.supplierName || "supplier"), amount: -(t.amount || 0), out: true }); });
+    cashAdj.forEach(a => {
+      const l = CASH_LABELS[a.type] || ["Cash adjustment", 1];
+      ev.push({ ts: tsDate(a.createdAt), shopId: a.shopId, who: a.cashier || "—", kind: "money", text: l[0] + (a.reason ? " · " + a.reason : ""), amount: l[1] * (Number(a.amount) || 0), out: l[1] < 0 });
+    });
+    return ev.sort((a, b) => b.ts - a.ts);
+  }
+
+  function dayLabel(d) {
+    const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+    const d0 = new Date(d); d0.setHours(0, 0, 0, 0);
+    const diff = Math.round((t0 - d0) / 86400000);
+    if (diff === 0) return "Today";
+    if (diff === 1) return "Yesterday";
+    return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  }
+
+  let feedCache = [];
+  function renderLog() {
+    feedCache = buildFeed();
+    // person filter options
+    const names = Array.from(new Set(feedCache.map(e => e.who).concat(operators.map(o => o.name)))).filter(n => n && n !== "—").sort();
+    if (role === "owner") {
+      const cur = whoFilter;
+      $("whoPick").innerHTML = '<option value="all">Everyone</option>' + names.map(n => '<option value="' + esc(n) + '">' + esc(n) + "</option>").join("") + '<option value="—">Not recorded</option>';
+      $("whoPick").value = names.includes(cur) || cur === "—" ? cur : "all";
+      whoFilter = $("whoPick").value;
+    }
+    const cutoff = rangeDays ? new Date(Date.now() - rangeDays * 86400000) : null;
+    if (rangeDays === 1) { const t = new Date(); t.setHours(0, 0, 0, 0); cutoff.setTime(t.getTime()); }
+    let list = feedCache.filter(e =>
+      (!cutoff || e.ts >= cutoff) &&
+      (kindFilter === "all" || e.kind === kindFilter) &&
+      (role !== "owner" ? e.who === me.name : (whoFilter === "all" || e.who === whoFilter)) &&
+      (shopFilter === "all" || e.shopId === shopFilter));
+    if (!list.length) { $("logList").innerHTML = '<div class="empty">Nothing recorded for these filters.</div>'; $("moreBtn").classList.add("hidden"); return; }
+    const page = list.slice(0, shown);
+    let html = "", lastDay = "";
+    page.forEach(e => {
+      const dl = dayLabel(e.ts);
+      if (dl !== lastDay) { html += '<div class="day-h">' + esc(dl) + "</div>"; lastDay = dl; }
+      const shopTxt = role === "owner" && Object.keys(shopsById).length > 1 ? " · " + esc((shopsById[e.shopId] || {}).name || "") : "";
+      html += '<div class="ev"><div class="ev-main"><div class="ev-text">' + esc(e.text) + '</div><div class="ev-meta">' +
+        e.ts.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) + " · " + esc(e.who) + shopTxt + "</div></div>" +
+        (e.amount ? '<div class="ev-amt ' + (e.out ? "out" : "") + '">' + (e.amount < 0 ? "−" : "+") + fmt(Math.abs(e.amount)) + "</div>" : "") + "</div>";
+    });
+    $("logList").innerHTML = html;
+    $("moreBtn").classList.toggle("hidden", list.length <= shown);
+  }
+  window.showMore = function () { shown += 60; renderLog(); };
+
+  // ================= Owner: operator list =================
+  function fmtDateTime(d) { return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) + ", " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); }
+  function renderOps() {
+    if (role !== "owner") return;
+    const list = $("opList");
+    if (!operators.length) { list.innerHTML = '<div class="empty">No operators yet — add one below.</div>'; return; }
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+    const feed = buildFeed();
+    const sorted = operators.slice().sort((a, b) => (b.active !== false) - (a.active !== false) || String(a.name).localeCompare(String(b.name)));
+    list.innerHTML = sorted.map(o => {
+      const mine = feed.filter(e => e.who === o.name);
+      const last = mine.length ? mine[0].ts : null;
+      const monthSales = mine.filter(e => e.kind === "sale" && e.ts >= monthStart).reduce((a, e) => a + e.amount, 0);
+      const on = o.active !== false;
+      const shop = shopsById[o.shopId];
+      return '<div class="op"><div class="op-name"><span>' + esc(o.name) + '</span><span class="tag ' + (on ? "on" : "off") + '">' + (on ? "ACTIVE" : "DEACTIVATED") + "</span></div>" +
+        '<div class="op-meta">Shop: ' + esc(shop ? shop.name : "—") + " · Shop Code " + esc(shop ? shop.shopCode : "—") + " · Operator ID " + esc(o.operatorId) + "<br>" +
+        "Last activity: " + (last ? esc(fmtDateTime(last)) : "none yet") + " · Sales this month: " + fmt(monthSales) +
+        (o.createdAt && o.createdAt.toDate ? "<br>Added: " + esc(fmtDateTime(o.createdAt.toDate())) : "") +
+        (!on && o.deactivatedAt && o.deactivatedAt.toDate ? "<br>Deactivated: " + esc(fmtDateTime(o.deactivatedAt.toDate())) : "") +
+        (!on && o.replacedBy ? "<br>Replaced by new Operator ID " + esc(o.replacedBy) : "") + "</div>" +
+        '<div class="op-actions">' +
+        (on ? '<button class="btn-small btn-secondary" onclick="newLogin(\'' + o.id + '\')">New login (reset PIN)</button>' +
+              '<button class="btn-small btn-danger-outline" onclick="setActive(\'' + o.id + '\', false)">Deactivate</button>'
+            : (o.replacedBy ? "" : '<button class="btn-small btn-secondary" onclick="setActive(\'' + o.id + '\', true)">Reactivate</button>')) +
+        "</div></div>";
+    }).join("");
+  }
+
+  function rulesHint(err) {
+    return err && err.code === "permission-denied"
+      ? "Firestore blocked this. Your security rules need to let the owner update operator accounts in their own business."
+      : (err && err.message) || "Something went wrong.";
+  }
+
+  window.setActive = async function (uid, makeActive) {
+    const o = operators.find(x => x.id === uid); if (!o) return;
+    const q = makeActive ? `Reactivate ${o.name}? They'll be able to log in again.` : `Deactivate ${o.name}? They'll be logged out and can't log in until you reactivate them. Their past sales stay on record.`;
+    if (!confirm(q)) return;
+    try {
+      await updateDoc(doc(db, "users", uid), makeActive ? { active: true, reactivatedAt: serverTimestamp() } : { active: false, deactivatedAt: serverTimestamp() });
+    } catch (err) { alert(rulesHint(err)); }
+  };
+
+  function showCreds(title, shopCode, opId, pin, name) {
+    const text = "MediStock login for " + name + " — Shop Code: " + shopCode + " · Operator ID: " + opId + " · PIN: " + pin;
+    $("credBox").innerHTML = '<div class="cred"><div><b>' + esc(title) + "</b></div>Shop Code: <b>" + esc(shopCode) + "</b><br>Operator ID: <b>" + esc(opId) + "</b><br>PIN: <b>" + esc(pin) +
+      '</b><div class="hint2">Write these down or send them now — the PIN is not shown again.</div>' +
+      '<div class="op-actions"><button class="btn-small btn-secondary" id="shareCred">Share / Copy</button><button class="btn-small btn-secondary" id="hideCred">Done</button></div></div>';
+    $("shareCred").onclick = async () => {
+      try { if (navigator.share) await navigator.share({ text }); else { await navigator.clipboard.writeText(text); alert("Copied."); } }
+      catch (e) { try { await navigator.clipboard.writeText(text); alert("Copied."); } catch (e2) { prompt("Copy this:", text); } }
+    };
+    $("hideCred").onclick = () => { $("credBox").innerHTML = ""; };
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // Creates the operator's Firebase login on a secondary app so the owner stays signed in.
+  async function createOperatorAccount(name, shopId, pin) {
+    const shop = shopsById[shopId];
+    if (!shop || !shop.shopCode) throw new Error("That shop has no Shop Code — set one on the Shops page first.");
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const operatorId = String(Math.floor(1000 + Math.random() * 9000));
+      if (operators.some(o => o.shopId === shopId && o.operatorId === operatorId)) continue;
+      let secondary;
+      try {
+        secondary = initializeApp(firebaseConfig, "operator-creator-" + Date.now() + "-" + attempt);
+        const sAuth = getAuth(secondary), sDb = getFirestore(secondary);
+        const cred = await createUserWithEmailAndPassword(sAuth, internalEmail(shop.shopCode, operatorId), pin);
+        await setDoc(doc(sDb, "users", cred.user.uid), {
+          businessId, shopId, role: "operator", operatorId, name, active: true, createdAt: serverTimestamp()
+        });
+        await signOut(sAuth);
+        await deleteApp(secondary);
+        return { operatorId, shopCode: shop.shopCode };
+      } catch (err) {
+        if (secondary) { try { await deleteApp(secondary); } catch (e) {} }
+        if (err.code === "auth/email-already-in-use") continue; // ID taken — try another
+        throw err;
+      }
+    }
+    throw new Error("Couldn't find a free Operator ID — try again.");
+  }
+
+  let busy = false;
+  window.addOperator = async function () {
+    if (busy) return;
+    const name = $("newName").value.trim(), shopId = $("newShop").value, pin = $("newPin").value.trim();
+    if (!name) return setMsg("addStatus", "Enter the operator's name.", true);
+    if (!shopId) return setMsg("addStatus", "Choose a shop.", true);
+    if (!validPin(pin)) return setMsg("addStatus", "PIN must be exactly 6 digits.", true);
+    if (operators.some(o => o.active !== false && String(o.name).toLowerCase() === name.toLowerCase()))
+      return setMsg("addStatus", "An active operator called \"" + name + "\" already exists. Use a different name (e.g. add a surname) so the activity log stays clear.", true);
+    busy = true; setMsg("addStatus", "Creating account…");
+    try {
+      const r = await createOperatorAccount(name, shopId, pin);
+      showCreds("Operator created", r.shopCode, r.operatorId, pin, name);
+      $("newName").value = ""; $("newPin").value = ""; setMsg("addStatus", "");
+    } catch (err) { setMsg("addStatus", rulesHint(err), true); }
+    busy = false;
+  };
+
+  window.newLogin = async function (uid) {
+    if (busy) return;
+    const o = operators.find(x => x.id === uid); if (!o) return;
+    if (!confirm(`Give ${o.name} a NEW login?\n\nThey get a new Operator ID and PIN, and the old login stops working. (A PIN can't be changed for someone else, so a new login is how it's reset.)`)) return;
+    const pin = (prompt("Enter a new 6-digit PIN for " + o.name + " (or leave blank to generate one):") || "").trim();
+    if (pin === "" && !confirm("Generate a random PIN?")) return;
+    const usePin = pin === "" ? String(Math.floor(100000 + Math.random() * 900000)) : pin;
+    if (!validPin(usePin)) { alert("PIN must be exactly 6 digits."); return; }
+    busy = true;
+    try {
+      const r = await createOperatorAccount(o.name, o.shopId, usePin);
+      try { await updateDoc(doc(db, "users", uid), { active: false, deactivatedAt: serverTimestamp(), replacedBy: r.operatorId }); }
+      catch (err) { alert("New login created, but the OLD login couldn't be switched off: " + rulesHint(err) + "\nDeactivate it manually."); }
+      showCreds("New login for " + o.name, r.shopCode, r.operatorId, usePin, o.name);
+    } catch (err) { alert(rulesHint(err)); }
+    busy = false;
+  };
+
+  // ================= Operator: change own PIN =================
+  window.changeMyPin = async function () {
+    const cur = $("curPin").value, p1 = $("chgPin").value, p2 = $("chgPin2").value;
+    if (!validPin(cur)) return setMsg("pinStatus", "Enter your current 6-digit PIN.", true);
+    if (!validPin(p1)) return setMsg("pinStatus", "New PIN must be exactly 6 digits.", true);
+    if (p1 !== p2) return setMsg("pinStatus", "The two new PINs don't match.", true);
+    if (p1 === cur) return setMsg("pinStatus", "New PIN must be different from the current one.", true);
+    setMsg("pinStatus", "Updating…");
+    try {
+      const user = auth.currentUser;
+      await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, cur));
+      await updatePassword(user, p1);
+      $("curPin").value = ""; $("chgPin").value = ""; $("chgPin2").value = "";
+      setMsg("pinStatus", "PIN changed. Use the new PIN next time you log in.");
+    } catch (err) {
+      setMsg("pinStatus", (err.code === "auth/invalid-credential" || err.code === "auth/wrong-password") ? "Current PIN is wrong." : (err.message || "Couldn't change PIN."), true);
+    }
+  };
+
+  // ================= Controls =================
+  document.querySelectorAll("#rangePills .pill-btn").forEach(b => b.addEventListener("click", () => {
+    rangeDays = Number(b.dataset.r); shown = 60;
+    document.querySelectorAll("#rangePills .pill-btn").forEach(x => x.classList.toggle("selected", x === b)); renderLog();
+  }));
+  document.querySelectorAll("#kindPills .pill-btn").forEach(b => b.addEventListener("click", () => {
+    kindFilter = b.dataset.k; shown = 60;
+    document.querySelectorAll("#kindPills .pill-btn").forEach(x => x.classList.toggle("selected", x === b)); renderLog();
+  }));
+  $("whoPick").addEventListener("change", () => { whoFilter = $("whoPick").value; shown = 60; renderLog(); });
+  $("shopPick").addEventListener("change", () => { shopFilter = $("shopPick").value; shown = 60; renderLog(); });
+
+  function refresh() { renderOps(); renderLog(); }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+    const snap = await getDoc(doc(db, "users", user.uid));
+    if (!snap.exists()) { window.location.href = "login.html"; return; }
+    me = { id: user.uid, ...snap.data() };
+    if (me.active === false) { await auth.signOut(); window.location.href = "login.html?disabled=1"; return; }
+    role = me.role; businessId = me.businessId; myShopId = me.shopId;
+    const badge = $("netBadge");
+    const mark = s => { badge.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)"; badge.className = "badge " + (s.metadata.fromCache ? "offline" : "online"); };
+
+    let filters;
+    if (role === "owner") {
+      $("opsCard").classList.remove("hidden"); $("addCard").classList.remove("hidden");
+      $("shopIndicator").textContent = "Manage operators and see who did what across your business";
+      $("logTitle").textContent = "Activity Log";
+      filters = [where("businessId", "==", businessId)];
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
+        shopsById = {}; s.docs.forEach(d => { shopsById[d.id] = { name: d.data().name, shopCode: d.data().shopCode }; });
+        const ids = Object.keys(shopsById);
+        $("newShop").innerHTML = ids.map(id => '<option value="' + esc(id) + '">' + esc(shopsById[id].name) + "</option>").join("");
+        const keep = shopFilter;
+        $("shopPick").innerHTML = '<option value="all">All shops</option>' + ids.map(id => '<option value="' + esc(id) + '">' + esc(shopsById[id].name) + "</option>").join("");
+        $("shopPick").value = ids.includes(keep) ? keep : "all"; shopFilter = $("shopPick").value;
+        $("shopWrap").classList.toggle("hidden", ids.length < 2);
+        refresh();
+      });
+      onSnapshot(query(collection(db, "users"), where("businessId", "==", businessId)), s => {
+        operators = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.role === "operator"); refresh();
+      }, err => { $("opList").innerHTML = '<div class="empty">' + esc(rulesHint(err)) + "</div>"; });
+    } else {
+      $("meCard").classList.remove("hidden");
+      $("whoWrap").classList.add("hidden"); $("shopWrap").classList.add("hidden");
+      $("logTitle").textContent = "My Activity";
+      $("meInfo").textContent = me.name + " · Operator ID " + me.operatorId;
+      $("shopIndicator").textContent = "Your account and your own activity";
+      filters = [where("businessId", "==", businessId), where("shopId", "==", myShopId)];
+    }
+    onSnapshot(query(collection(db, "receipts"), ...filters), { includeMetadataChanges: true }, s => { receipts = s.docs.map(d => d.data()); mark(s); refresh(); });
+    onSnapshot(query(collection(db, "expenses"), ...filters), s => { expenses = s.docs.map(d => d.data()); refresh(); });
+    onSnapshot(query(collection(db, "stock_transactions"), ...filters), s => { stockTx = s.docs.map(d => d.data()); refresh(); });
+    onSnapshot(query(collection(db, "credit_transactions"), ...filters), s => { creditTx = s.docs.map(d => d.data()); refresh(); });
+    onSnapshot(query(collection(db, "supplier_transactions"), ...filters), s => { supplierTx = s.docs.map(d => d.data()); refresh(); });
+    onSnapshot(query(collection(db, "cash_adjustments"), ...filters), s => { cashAdj = s.docs.map(d => d.data()); refresh(); });
+    onSnapshot(query(collection(db, "drugs"), ...filters), s => { drugs = s.docs.map(d => ({ id: d.id, ...d.data() })); refresh(); });
+  });
+</script>
+</body>
+</html>

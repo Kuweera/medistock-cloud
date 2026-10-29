@@ -524,6 +524,12 @@
       return false;
     }
     const u = userDocSnap.data();
+    if (u.active === false) {
+      await signOut(auth);
+      setOpLoginStatus("This account has been deactivated. Ask the owner.", true);
+      setStatus("This account has been deactivated. Ask the owner.", true);
+      return false;
+    }
     currentRole = u.role;
     currentBusinessId = u.businessId;
     log(`enterApp: profile loaded — role=${u.role}, businessId=${u.businessId}, shopId=${u.shopId || "(n/a)"}, active=${u.active}`);
