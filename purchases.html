@@ -337,6 +337,13 @@
     return "+" + (parts.length ? parts.join(" + ") : `0 ${drug.baseUnit}(s)`);
   }
 
+  // Show the breakdown once; only add the stock-unit equivalent in brackets when it says something different.
+  function cartQtyLabel(c) {
+    const label = formatAddedQtyLabel(c.addedBase, c);
+    const equiv = `${c.quantityInStockUnits.toLocaleString()} ${c.stockUnit}(s)`;
+    return label === "+" + equiv ? label : `${label} (${equiv})`;
+  }
+
   function renderResults(filterText) {
     const box = document.getElementById("results");
     if (!filterText) { box.innerHTML = ""; return; }
@@ -473,7 +480,7 @@
       <div class="cart-item">
         <div>
           <div class="cart-item-name">${c.drugName}${c.onCredit ? '<span class="pay-tag">CREDIT</span>' : ""}</div>
-          <div class="cart-item-meta">${formatAddedQtyLabel(c.addedBase, c)} (${c.quantityInStockUnits.toLocaleString()} ${c.stockUnit}(s))</div>
+          <div class="cart-item-meta">${cartQtyLabel(c)}</div>
           <div class="cart-item-meta">${c.costPerStockUnit.toLocaleString()} / ${c.stockUnit} → total ${Math.round(c.lineTotalCost).toLocaleString()}</div>
           <div class="cart-item-meta">${c.batchNumber ? "Batch " + c.batchNumber + " · " : ""}${c.expiryDate ? "Exp " + c.expiryDate + " · " : ""}${c.supplier || ""}</div>
         </div>
@@ -673,7 +680,7 @@
           <div class="cart-item">
             <div>
               <div class="cart-item-name">${i.drugName}${i.onCredit ? '<span class="pay-tag">CREDIT</span>' : ""}</div>
-              <div class="cart-item-meta">${formatAddedQtyLabel(i.addedBase, i)} (${i.baseUnitsPerStock ? (i.addedBase / i.baseUnitsPerStock).toLocaleString() : "—"} ${i.stockUnit}(s))</div>
+              <div class="cart-item-meta">${cartQtyLabel({ ...i, quantityInStockUnits: i.baseUnitsPerStock ? (i.addedBase / i.baseUnitsPerStock) : 0 })}</div>
             </div>
             <div class="cart-item-name">${Math.round(i.lineTotalCost || 0).toLocaleString()}</div>
           </div>`).join("");
