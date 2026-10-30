@@ -5,6 +5,7 @@
     ["dashboard.html", "Dashboard"],
     ["charts.html", "Charts"],
     ["reports.html", "Profit & Reports"],
+    ["history.html", "Business History"],
     ["sales.html", "Sell"],
     ["inventory.html", "Inventory"],
     ["purchases.html", "Purchases"],

@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStock Cloud — Business History</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  /* ===== Business History ===== */
+  .hidden{display:none !important;}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .meta{font-size:12.5px; color:var(--muted); line-height:1.55; margin:6px 0;}
+  details.hr{border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin:8px 0; background:var(--card);}
+  details.hr > summary{cursor:pointer; list-style:none; font-size:14px;}
+  details.hr > summary::-webkit-details-marker{display:none;}
+  details.hr .meta{margin:2px 0 0;}
+  .hr .line{display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px dashed var(--border); font-size:13px;}
+  .hr .line:last-of-type{border-bottom:0;}
+  .hr .sub{font-size:11.5px; color:var(--muted);}
+  .hr .tot{text-align:right; margin-top:7px; font-weight:700;}
+  .hr .acts{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;}
+  .hr .acts button{flex:1 1 140px;}
+  .row-simple{padding:10px 0; border-bottom:1px solid var(--border); font-size:14px; display:flex; justify-content:space-between; gap:10px;}
+  .row-simple:last-child{border-bottom:0;}
+  .tagc{font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid var(--warn); color:var(--warn); margin-left:4px;}
+  .btn-small{padding:9px 12px; font-size:13px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent);}
+  .btn-danger-outline{background:transparent; color:var(--danger); border:1px solid var(--danger);}
+  .lineBtn{display:block; width:100%; text-align:left; margin-bottom:6px; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:13.5px;}
+  .lineBtn.sel{border-color:var(--accent); background:rgba(42,191,160,.10);}
+  .sumbox{background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:13.5px; margin-top:10px; line-height:1.5;}
+  .msg{font-size:13px; margin-top:8px;} .msg.err{color:var(--danger);}
+  .results-total{font-size:12.5px; color:var(--muted); margin-bottom:4px;}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Multi-Shop Edition · Business History</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="location.href='dashboard.html'">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="history.html" class="active">Business History</a>
+  <a href="users.html">Users</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+
+<div id="historyView">
+  <div class="card">
+    <h2>Business History</h2>
+    <p class="meta">Records are retained permanently. Filter sales, purchases, expenses, credit, payments, stock and cash adjustments by date — filters apply automatically as you change them.</p>
+    <div id="shopPickWrap" class="hidden" style="margin-bottom:8px;">
+      <label>Shop</label>
+      <select id="shopPick"></select>
+    </div>
+    <div class="grid2">
+      <div><label>Record type</label>
+        <select id="historyType">
+          <option value="SALE">Sales</option>
+          <option value="PURCHASE">Purchases</option>
+          <option value="EXPENSE">Expenses</option>
+          <option value="CREDIT">Credit / Loans</option>
+          <option value="PAYMENT">Credit Payments</option>
+          <option value="STOCK">Stock Adjustments</option>
+          <option value="CASH">Cash Adjustments</option>
+        </select></div>
+      <div><label>Period</label>
+        <select id="historyPeriod">
+          <option value="today">Today</option>
+          <option value="week">This Week</option>
+          <option value="month">This Month</option>
+          <option value="year">This Year</option>
+          <option value="custom">Custom</option>
+          <option value="all">All Time</option>
+        </select></div>
+    </div>
+    <div id="historyCustom" class="hidden"><div class="grid2">
+      <div><label>From</label><input id="historyFrom" type="date"></div>
+      <div><label>To</label><input id="historyTo" type="date"></div>
+    </div></div>
+    <input id="historySearch" placeholder="Search records..." style="margin-top:10px;">
+  </div>
+
+  <div class="card">
+    <h2>Results</h2>
+    <div class="results-total" id="resultsTotal"></div>
+    <div id="historyResults"><div class="empty">Loading…</div></div>
+    <button class="btn-small btn-secondary hidden" id="moreBtn" style="width:100%; margin-top:10px;" onclick="showMore()">Show more</button>
+  </div>
+</div>
+
+<!-- Return / Exchange -->
+<div id="exchangeView" class="hidden">
+  <div class="card">
+    <h2>Return / Exchange</h2>
+    <p class="meta" id="exchangeReceiptInfo">—</p>
+    <label>Which item is being returned?</label>
+    <div id="exchangeLineItems"></div>
+  </div>
+  <div class="card hidden" id="exchangeDetailsCard">
+    <label>Quantity being returned <span id="exchangeUnitLabel"></span></label>
+    <input type="number" id="exchangeReturnQty" min="0" step="any" inputmode="decimal">
+    <p class="meta" id="exchangeReturnValue">—</p>
+    <label style="display:flex; align-items:center; gap:8px; font-weight:normal; margin:12px 0 4px;">
+      <input type="checkbox" id="exchangeWantsReplacement" style="width:auto;"> Customer wants a replacement medicine
+    </label>
+    <div id="exchangeReplacementBlock" class="hidden" style="margin-top:8px; padding-top:10px; border-top:1px dashed var(--border);">
+      <label>Replacement medicine</label>
+      <input type="text" id="exchangeDrugSearch" placeholder="Type a drug name...">
+      <div id="exchangeDrugResults"></div>
+      <div id="exchangeSelectedDrug" class="hidden" style="margin-top:8px;">
+        <p class="meta" id="exchangeSelectedDrugLabel">—</p>
+        <div class="grid2">
+          <div><label>Quantity</label><input type="number" id="exchangeReplQty" min="0" step="any" inputmode="decimal"></div>
+          <div><label>Unit</label><select id="exchangeReplUnitLevel"></select></div>
+        </div>
+        <label>Replacement price (total)</label>
+        <input type="number" id="exchangeReplPrice" min="0" inputmode="decimal">
+      </div>
+    </div>
+    <div class="sumbox" id="exchangeSummary">—</div>
+    <button class="btn-primary" id="completeExchangeBtn" onclick="completeExchange()">Complete return / exchange</button>
+    <div class="msg err" id="exchangeStatus"></div>
+  </div>
+  <button class="btn-secondary btn-small" style="width:100%;" onclick="closeExchange()">← Back to history</button>
+</div>
+
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script><script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import { getFirestore, doc, getDoc, getDocs, collection, onSnapshot, enableIndexedDbPersistence, query, where, writeBatch, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {});
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const fmt = n => Math.round(Number(n) || 0).toLocaleString();
+
+  let role = null, currentUser = null, businessId = null, myShopId = null, cashierName = "";
+  let businessName = "", businessPhone = "";
+  let shopsById = {}, receipts = [], expenses = [], creditTx = [], creditAccounts = [], cashAdj = [], stockAdj = [], stockTx = [], drugs = [];
+  let shopFilter = "all", shown = 40;
+
+  const tsDate = t => (t && t.toDate) ? t.toDate() : new Date();
+  const userDate = (s, ts) => { if (s) { const d = new Date(s + "T12:00:00"); if (!isNaN(d)) return d; } return tsDate(ts); };
+  const startOfDay = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+  const endOfDay = d => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
+  const fmtWhen = d => d.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+  function rangeFor(period) {
+    const now = new Date();
+    if (period === "today") return { from: startOfDay(now), to: endOfDay(now) };
+    if (period === "week") { const f = startOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay())); return { from: f, to: endOfDay(new Date(f.getFullYear(), f.getMonth(), f.getDate() + 6)) }; }
+    if (period === "month") return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0)) };
+    if (period === "year") return { from: new Date(now.getFullYear(), 0, 1), to: endOfDay(new Date(now.getFullYear(), 11, 31)) };
+    if (period === "custom") {
+      const f = $("historyFrom").value, t = $("historyTo").value;
+      return { from: f ? new Date(f + "T00:00:00") : new Date(2000, 0, 1), to: t ? new Date(t + "T23:59:59") : endOfDay(now) };
+    }
+    return { from: new Date(2000, 0, 1), to: endOfDay(new Date(now.getFullYear() + 1, 11, 31)) };
+  }
+
+  // ---------- quantity labels (from the snapshot stored on each receipt line) ----------
+  function breakdown(baseQty, it) {
+    const per = Number(it.baseUnitsPerStock) || 0, inter = Number(it.basePerIntermediate) || 0;
+    let stock = 0, rem = baseQty;
+    if (per > 0) { stock = Math.floor(baseQty / per); rem = baseQty - stock * per; }
+    let mid = 0, loose = rem;
+    if (inter > 0) { mid = Math.floor(rem / inter); loose = rem - mid * inter; }
+    return { stock, mid, loose, hasMid: !!it.intermediateUnit && inter > 0 };
+  }
+  function qtyLabel(baseQty, it, plus) {
+    const b = breakdown(baseQty, it), parts = [];
+    if (b.stock) parts.push(b.stock + " " + it.stockUnit + "(s)");
+    if (b.hasMid && b.mid) parts.push(b.mid + " " + it.intermediateUnit + "(s)");
+    if (b.loose) parts.push(Math.round(b.loose * 1000) / 1000 + " " + it.baseUnit + "(s)");
+    return (plus ? "+" : "") + (parts.length ? parts.join(" + ") : "0 " + (it.baseUnit || "unit") + "(s)");
+  }
+  function saleLine(it) {
+    const converted = qtyLabel(Math.abs(it.baseQtyNeeded || 0), it, false);
+    const raw = it.qty + " " + it.unitLabel + "(s)";
+    return { top: converted + " = " + fmt(it.total), sub: converted === raw ? null : "(sold as " + raw + " × " + fmt(it.pricePerUnit) + ")" };
+  }
+
+  // ---------- receipt text (share / save) ----------
+  function receiptText(r) {
+    const L = [];
+    L.push(businessName || "MediStock Cloud");
+    if (shopsById[r.shopId]) L.push(shopsById[r.shopId]);
+    if (businessPhone) L.push(businessPhone);
+    L.push("");
+    L.push((r.type === "SALE" ? "Receipt: " : "Purchase receipt: ") + (r.displayNumber || ""));
+    L.push("Date: " + tsDate(r.createdAt).toLocaleString());
+    if (r.cashier) L.push((r.type === "SALE" ? "Cashier: " : "Recorded by: ") + r.cashier);
+    L.push("---------------------------");
+    (r.items || []).forEach(i => {
+      L.push(i.drugName);
+      if (r.type === "SALE") { const d = saleLine(i); L.push("  " + d.top); if (d.sub) L.push("  " + d.sub); }
+      else L.push("  " + qtyLabel(i.addedBase || 0, i, true) + " — " + fmt(i.lineTotalCost) + (i.onCredit ? " (CREDIT)" : ""));
+    });
+    L.push("---------------------------");
+    L.push("TOTAL: " + fmt(r.totalAmount));
+    if (r.type === "SALE") L.push("Payment: " + (r.paymentStatus === "CREDIT" ? "ON CREDIT" + (r.customerName ? " - " + r.customerName : "") : "PAID (CASH)"));
+    return L.join("\n");
+  }
+  window.shareReceipt = async function (id) {
+    const r = receipts.find(x => x.id === id); if (!r) return;
+    const text = receiptText(r);
+    try {
+      if (navigator.share) await navigator.share({ title: "Receipt " + r.displayNumber, text });
+      else { await navigator.clipboard.writeText(text); alert("Receipt text copied — paste it into WhatsApp or any app."); }
+    } catch (e) { if (e && e.name !== "AbortError") { try { await navigator.clipboard.writeText(text); alert("Receipt text copied."); } catch (e2) { prompt("Copy this receipt:", text); } } }
+  };
+  window.saveReceipt = function (id) {
+    const r = receipts.find(x => x.id === id); if (!r) return;
+    const blob = new Blob([receiptText(r)], { type: "text/plain" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "Receipt-" + (r.displayNumber || id) + "-" + tsDate(r.createdAt).toISOString().slice(0, 10) + ".txt";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+
+  // ---------- History list ----------
+  const CASH_LABELS = { owner_deposit: ["Owner deposit", 1], owner_withdrawal: ["Owner withdrawal", -1], other_income: ["Other income", 1], cash_surplus: ["Cash surplus found", 1], cash_shortage: ["Cash shortage / missing", -1] };
+  const multiShop = () => role === "owner" && Object.keys(shopsById).length > 1;
+  const shopTag = x => multiShop() && shopsById[x.shopId] ? " · " + esc(shopsById[x.shopId]) : "";
+
+  function entries() {
+    const type = $("historyType").value, period = $("historyPeriod").value, q = ($("historySearch").value || "").trim().toLowerCase();
+    const r = rangeFor(period);
+    const inShop = x => shopFilter === "all" || x.shopId === shopFilter;
+    const within = d => d >= r.from && d <= r.to;
+    const match = (x, extra) => !q || (JSON.stringify(x) + " " + (extra || "")).toLowerCase().includes(q);
+    const out = [];
+
+    if (type === "SALE" || type === "PURCHASE") {
+      receipts.filter(x => x.type === type && inShop(x)).forEach(x => {
+        const ts = tsDate(x.createdAt); if (!within(ts) || !match(x)) return;
+        const lines = Array.isArray(x.items) ? x.items : [];
+        const lineHtml = lines.length ? lines.map(i => {
+          if (type === "SALE") { const d = saleLine(i); return '<div class="line"><span><b>' + esc(i.drugName) + "</b><br>" + esc(d.top.split(" = ")[0]) + (d.sub ? '<div class="sub">' + esc(d.sub) + "</div>" : "") + "</span><strong>" + fmt(i.total) + "</strong></div>"; }
+          return '<div class="line"><span><b>' + esc(i.drugName) + "</b><br>" + esc(qtyLabel(i.addedBase || 0, i, true)) + (i.supplier ? '<div class="sub">' + esc(i.supplier) + "</div>" : "") + (i.batchNumber ? '<div class="sub">Batch ' + esc(i.batchNumber) + (i.expiryDate ? " · exp " + esc(i.expiryDate) : "") + "</div>" : "") + (i.onCredit ? '<div class="sub">ON CREDIT</div>' : "") + "</span><strong>" + fmt(i.lineTotalCost) + "</strong></div>";
+        }).join("") : '<div class="meta">This receipt has no saved line-item snapshot.</div>';
+        const acts = '<button class="btn-small btn-secondary" onclick="shareReceipt(\'' + x.id + '\')">Share</button><button class="btn-small btn-secondary" onclick="saveReceipt(\'' + x.id + '\')">Save to Phone</button>' +
+          (type === "SALE" ? '<button class="btn-small btn-secondary" onclick="reclassify(\'' + x.id + '\')">' + (x.paymentStatus === "CREDIT" ? "Reclassify as Cash" : "Reclassify as Credit") + '</button><button class="btn-small btn-secondary" onclick="openExchange(\'' + x.id + '\')">Return / Exchange Item</button>' : "");
+        out.push({ ts, key: x.id, amount: x.totalAmount || 0, html: '<details class="hr"><summary><b>Receipt #' + esc(x.displayNumber || "") + '</b>' + (x.paymentStatus === "CREDIT" ? '<span class="tagc">CREDIT</span>' : "") + '<br><span class="meta">' + esc(fmtWhen(ts)) + " · " + (x.itemCount || lines.length) + " item(s) · " + fmt(x.totalAmount) + (x.cashier ? " · " + esc(x.cashier) : "") + shopTag(x) + "</span></summary><div style=\"margin-top:8px\">" + lineHtml + '<div class="tot">Total: ' + fmt(x.totalAmount) + '</div><div class="acts">' + acts + "</div></div></details>" });
+      });
+    } else if (type === "EXPENSE") {
+      expenses.filter(inShop).forEach(x => {
+        const ts = userDate(x.date, x.createdAt); if (!within(ts) || !match(x)) return;
+        const amt = Number(x.totalAmount != null ? x.totalAmount : x.amount) || 0;
+        const items = Array.isArray(x.items) ? x.items : [];
+        const cats = Array.from(new Set(items.map(i => i.category).filter(Boolean))).join(", ") || x.category || "Expense";
+        out.push({ ts, key: x.id, amount: amt, html: '<details class="hr"><summary><b>' + esc(cats) + '</b><br><span class="meta">' + esc(fmtWhen(ts)) + " · " + fmt(amt) + (x.note ? " · " + esc(x.note) : "") + (x.cashier ? " · " + esc(x.cashier) : "") + shopTag(x) + "</span></summary><div style=\"margin-top:8px\">" +
+          (items.length ? items.map(i => '<div class="line"><span>' + esc(i.item || i.description || i.category || "Item") + (i.qty != null ? "<br>" + esc(i.qty) + " " + esc(i.unit || "unit") + "(s)" : "") + "</span><strong>" + fmt(i.amount) + "</strong></div>").join("") : '<div class="meta">Single-line expense</div>') +
+          '<div class="tot">Total: ' + fmt(amt) + "</div></div></details>" });
+      });
+    } else if (type === "CREDIT" || type === "PAYMENT") {
+      const acctById = {}; creditAccounts.forEach(c => { acctById[c.id] = c; });
+      creditTx.filter(inShop).forEach(x => {
+        if (!((type === "CREDIT" && x.type === "CREDIT_SALE") || (type === "PAYMENT" && x.type === "PAYMENT"))) return;
+        const ts = tsDate(x.createdAt); if (!within(ts)) return;
+        const acct = acctById[x.customerId];
+        const name = (acct && acct.name) || x.customerName || "Unknown customer";
+        const phone = (acct && acct.phone) || "";
+        if (!match(x, name + " " + phone)) return;
+        if (x.type === "CREDIT_SALE") {
+          const rc = receipts.find(r => r.id === x.receiptId);
+          const lines = rc && Array.isArray(rc.items) ? rc.items : [];
+          out.push({ ts, key: x.id, amount: x.amount || 0, html: '<details class="hr"><summary><b>Credit Sale — Receipt #' + esc(rc ? rc.displayNumber : "—") + '</b><br><span class="meta">' + esc(fmtWhen(ts)) + " · " + fmt(x.amount) + " · " + esc(name) + shopTag(x) + "</span></summary><div style=\"margin-top:8px\"><div class=\"meta\">Customer: <b>" + esc(name) + "</b>" + (phone ? " · " + esc(phone) : "") + (x.dueDate ? " · due " + esc(x.dueDate) : "") + "</div>" +
+            (lines.length ? lines.map(i => { const d = saleLine(i); return '<div class="line"><span><b>' + esc(i.drugName) + "</b><br>" + esc(d.top.split(" = ")[0]) + "</span><strong>" + fmt(i.total) + "</strong></div>"; }).join("") : '<div class="meta">No saved item snapshot for this credit sale.</div>') +
+            '<div class="tot">Amount: ' + fmt(x.amount) + "</div></div></details>" });
+        } else {
+          out.push({ ts, key: x.id, amount: x.amount || 0, html: '<details class="hr"><summary><b>Credit Payment</b><br><span class="meta">' + esc(fmtWhen(ts)) + " · " + fmt(x.amount) + " · " + esc(name) + shopTag(x) + "</span></summary><div style=\"margin-top:8px\"><div class=\"meta\">Customer: <b>" + esc(name) + "</b>" + (phone ? " · " + esc(phone) : "") + (x.cashier ? " · received by " + esc(x.cashier) : "") + "</div>" + (x.description ? '<div class="meta">' + esc(x.description) + "</div>" : "") + '<div class="tot">Paid: ' + fmt(x.amount) + "</div></div></details>" });
+        }
+      });
+    } else if (type === "CASH") {
+      cashAdj.filter(inShop).forEach(x => {
+        const ts = userDate(x.date, x.createdAt); if (!within(ts) || !match(x)) return;
+        const l = CASH_LABELS[x.type] || ["Adjustment", 1];
+        out.push({ ts, amount: l[1] * (Number(x.amount) || 0), html: '<div class="row-simple"><span><b>' + esc(l[0]) + "</b><br><span class=\"meta\">" + esc(fmtWhen(ts)) + (x.reason ? " · " + esc(x.reason) : "") + (x.cashier ? " · " + esc(x.cashier) : "") + shopTag(x) + "</span></span><b>" + (l[1] < 0 ? "−" : "+") + fmt(x.amount) + "</b></div>" });
+      });
+    } else { // STOCK
+      stockAdj.filter(inShop).forEach(x => {
+        const ts = tsDate(x.createdAt); if (!within(ts) || !match(x)) return;
+        const diff = Number(x.differenceBase) || 0;
+        out.push({ ts, html: '<div class="row-simple"><span><b>' + esc(x.drugName || "Stock") + " — " + (diff > 0 ? "+" : "") + diff + " " + esc(x.baseUnit || "") + '</b><br><span class="meta">' + esc(fmtWhen(ts)) + " · Stock taking" + (x.reason ? " · " + esc(x.reason) : "") + shopTag(x) + "</span></span></div>" });
+      });
+      stockTx.filter(inShop).forEach(x => {
+        if (x.type !== "WRITE_OFF" && x.type !== "RETURN") return;
+        const ts = tsDate(x.createdAt); if (!within(ts) || !match(x)) return;
+        const dn = x.drugName || (drugs.find(d => d.id === x.drugId) || {}).name || "Stock";
+        out.push({ ts, html: '<div class="row-simple"><span><b>' + esc(dn) + " — " + (x.baseUnitsChange > 0 ? "+" : "") + (x.baseUnitsChange || 0) + '</b><br><span class="meta">' + esc(fmtWhen(ts)) + " · " + (x.type === "RETURN" ? "Customer return" : "Write-off") + (x.note ? " · " + esc(x.note) : "") + (x.cashier ? " · " + esc(x.cashier) : "") + shopTag(x) + "</span></span></div>" });
+      });
+    }
+    return out.sort((a, b) => b.ts - a.ts);
+  }
+
+  function render() {
+    if (!role) return;
+    const list = entries();
+    const type = $("historyType").value;
+    const moneyTypes = ["SALE", "PURCHASE", "EXPENSE", "CREDIT", "PAYMENT"];
+    $("resultsTotal").textContent = list.length ? list.length + " record(s)" + (moneyTypes.includes(type) ? " · total " + fmt(list.reduce((a, e) => a + (e.amount || 0), 0)) : "") : "";
+    if (!list.length) { $("historyResults").innerHTML = '<div class="empty">No records in this period.</div>'; $("moreBtn").classList.add("hidden"); return; }
+    // keep any receipt the person has open from collapsing on a live refresh
+    const open = new Set(Array.from(document.querySelectorAll("#historyResults details[open]")).map(d => d.dataset.k).filter(Boolean));
+    $("historyResults").innerHTML = list.slice(0, shown).map(e => e.key ? e.html.replace('<details class="hr">', '<details class="hr" data-k="' + e.key + '"' + (open.has(e.key) ? " open" : "") + ">") : e.html).join("");
+    $("moreBtn").classList.toggle("hidden", list.length <= shown);
+  }
+  window.showMore = function () { shown += 40; render(); };
+
+  // ================= Reclassify cash <-> credit =================
+  let busy = false;
+  const friendlyErr = err => err && err.code === "permission-denied" ? "Firestore blocked this change — your security rules need to allow updating receipts, sales and credit records." : (err && err.message) || "Something went wrong.";
+
+  async function receiptSales(r) {
+    const snap = await getDocs(query(collection(db, "sales"), where("businessId", "==", businessId), where("shopId", "==", r.shopId), where("receiptId", "==", r.id)));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }
+
+  window.reclassify = async function (id) {
+    if (busy) return;
+    const r = receipts.find(x => x.id === id); if (!r || r.type !== "SALE") return;
+    const label = r.displayNumber;
+    busy = true;
+    try {
+      const sales = await receiptSales(r);
+      const wb = writeBatch(db);
+      if (r.paymentStatus === "CREDIT") {
+        if (!confirm("Reclassify receipt " + label + " (" + fmt(r.totalAmount) + ") as a CASH sale instead of credit?\n\nThis removes it from " + (r.customerName || "the customer") + "'s outstanding balance.")) { busy = false; return; }
+        wb.update(doc(db, "receipts", id), { paymentStatus: "PAID", customerId: null, customerName: "" });
+        sales.forEach(s => wb.update(doc(db, "sales", s.id), { paymentStatus: "PAID", customerId: null }));
+        if (r.customerId) wb.set(doc(collection(db, "credit_transactions")), {
+          businessId, shopId: r.shopId, customerId: r.customerId, customerName: r.customerName || "", type: "CORRECTION",
+          amount: r.totalAmount, paidAmount: 0, balanceChange: -(r.totalAmount || 0), receiptId: id,
+          description: "Correction: receipt " + label + " was recorded on credit by mistake — now a cash sale", cashier: cashierName, createdAt: serverTimestamp()
+        });
+        await wb.commit();
+        alert("Sale reclassified as cash.");
+      } else {
+        const name = (prompt("This was actually a credit sale — enter the customer name:") || "").trim();
+        if (!name) { busy = false; return; }
+        if (!confirm("Reclassify receipt " + label + " (" + fmt(r.totalAmount) + ") as a CREDIT sale for " + name + "?")) { busy = false; return; }
+        let acct = creditAccounts.find(c => c.shopId === r.shopId && String(c.name).toLowerCase() === name.toLowerCase());
+        let customerId;
+        if (acct) customerId = acct.id;
+        else {
+          const ref = doc(collection(db, "credit_accounts"));
+          wb.set(ref, { businessId, shopId: r.shopId, name, phone: null, creditLimit: 0, createdAt: serverTimestamp() });
+          customerId = ref.id;
+        }
+        wb.update(doc(db, "receipts", id), { paymentStatus: "CREDIT", customerId, customerName: name });
+        sales.forEach(s => wb.update(doc(db, "sales", s.id), { paymentStatus: "CREDIT", customerId }));
+        wb.set(doc(collection(db, "credit_transactions")), {
+          businessId, shopId: r.shopId, customerId, customerName: name, type: "CREDIT_SALE",
+          amount: r.totalAmount, paidAmount: 0, balanceChange: r.totalAmount || 0, dueDate: null, receiptId: id,
+          description: "Credit sale receipt " + label + " (corrected from cash)", cashier: cashierName, createdAt: serverTimestamp()
+        });
+        await wb.commit();
+        alert("Sale reclassified as credit — added to " + name + "'s balance.");
+      }
+    } catch (err) { alert(friendlyErr(err)); }
+    busy = false;
+  };
+
+  // ================= Return / Exchange =================
+  let exReceipt = null, exSales = [], exLine = null, exLineIdx = null, exMaxQty = 0, exReplDrug = null;
+  const hasDate = s => !!s && !isNaN(new Date(s));
+  const daysUntil = s => { if (!hasDate(s)) return 36500; const t = new Date(); t.setHours(0, 0, 0, 0); return Math.round((new Date(s) - t) / 86400000); };
+  const expiryMs = s => hasDate(s) ? new Date(s).getTime() : 8.64e15;
+  const priceFor = (lvl, d) => Number(lvl === "stock" ? d.retailStock : lvl === "intermediate" ? d.retailIntermediate : d.retailBase) || 0;
+  const toBase = (qty, lvl, d) => lvl === "stock" ? qty * (Number(d.baseUnitsPerStock) || 0) : lvl === "intermediate" ? qty * (Number(d.basePerIntermediate) || 0) : qty;
+  const round4 = n => Math.round(n * 10000) / 10000;
+
+  window.openExchange = async function (id) {
+    const r = receipts.find(x => x.id === id); if (!r || r.type !== "SALE") return;
+    if (!Array.isArray(r.items) || !r.items.length) { alert("This receipt has no saved line items to return."); return; }
+    try { exSales = await receiptSales(r); } catch (err) { alert(friendlyErr(err)); return; }
+    exReceipt = r; exLine = null; exLineIdx = null; exReplDrug = null;
+    $("exchangeReceiptInfo").textContent = "Receipt " + r.displayNumber + " — " + fmtWhen(tsDate(r.createdAt)) + " — " + fmt(r.totalAmount) + (r.paymentStatus === "CREDIT" ? " (Credit sale — " + (r.customerName || "customer") + ")" : "");
+    $("exchangeLineItems").innerHTML = r.items.map((i, idx) => {
+      const left = maxReturnQty(i);
+      return '<button type="button" class="lineBtn" ' + (left <= 0 ? "disabled style=\"opacity:.5\"" : "") + ' onclick="selectExchangeLine(' + idx + ')">' + esc(i.drugName) + " — " + esc(i.qty) + " " + esc(i.unitLabel) + "(s) — " + fmt(i.total) + (left <= 0 ? " · already returned" : (left < i.qty ? " · " + left + " left to return" : "")) + "</button>";
+    }).join("");
+    $("exchangeDetailsCard").classList.add("hidden");
+    $("exchangeWantsReplacement").checked = false;
+    $("exchangeReplacementBlock").classList.add("hidden");
+    $("exchangeSelectedDrug").classList.add("hidden");
+    $("exchangeDrugSearch").value = ""; $("exchangeDrugResults").innerHTML = ""; $("exchangeStatus").textContent = "";
+    $("historyView").classList.add("hidden"); $("exchangeView").classList.remove("hidden");
+    window.scrollTo({ top: 0 });
+  };
+  window.closeExchange = function () { $("exchangeView").classList.add("hidden"); $("historyView").classList.remove("hidden"); };
+
+  // How much of this receipt line can still be returned (earlier returns are stored as negative sale records).
+  function maxReturnQty(line) {
+    const soldBase = (exReceipt.items || []).filter(i => i.drugId === line.drugId).reduce((a, i) => a + (i.baseQtyNeeded || 0), 0);
+    const returnedBase = exSales.filter(s => s.drugId === line.drugId && (s.total || 0) < 0).reduce((a, s) => a + Math.abs(s.baseQtyDeducted || 0), 0);
+    const remainingBase = Math.max(0, soldBase - returnedBase);
+    const lineBase = line.baseQtyNeeded || 0;
+    if (lineBase <= 0) return 0;
+    return round4(line.qty * Math.min(1, remainingBase / lineBase));
+  }
+  window.selectExchangeLine = function (idx) {
+    exLineIdx = idx; exLine = exReceipt.items[idx]; exMaxQty = maxReturnQty(exLine);
+    document.querySelectorAll("#exchangeLineItems .lineBtn").forEach((b, i) => b.classList.toggle("sel", i === idx));
+    $("exchangeDetailsCard").classList.remove("hidden");
+    $("exchangeUnitLabel").textContent = "(" + exLine.unitLabel + "s, up to " + exMaxQty + ")";
+    $("exchangeReturnQty").value = exMaxQty; $("exchangeReturnQty").max = exMaxQty;
+    updateSummary();
+    $("exchangeDetailsCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const returnQtyVal = () => Math.min(Number($("exchangeReturnQty").value) || 0, exMaxQty);
+  const returnValue = () => exLine && exLine.qty > 0 ? (exLine.total || 0) * (returnQtyVal() / exLine.qty) : 0;
+  function updateSummary() {
+    if (!exLine) return;
+    const rv = returnValue(), credit = exReceipt.paymentStatus === "CREDIT";
+    $("exchangeReturnValue").textContent = "Value of returned item: " + fmt(rv);
+    const wants = $("exchangeWantsReplacement").checked;
+    let s;
+    if (!wants) s = rv > 0 ? (credit ? "Reduce " + fmt(rv) + " from the customer's balance." : "Refund " + fmt(rv) + " to the customer.") : "Enter a quantity to see the refund amount.";
+    else if (exReplDrug) {
+      const diff = (Number($("exchangeReplPrice").value) || 0) - rv;
+      s = diff > 0 ? "Replacement costs " + fmt(diff) + " more — " + (credit ? "add this to the customer's balance." : "collect this from the customer.")
+        : diff < 0 ? "Replacement costs " + fmt(-diff) + " less — " + (credit ? "reduce the customer's balance by this." : "refund this to the customer.") : "Even exchange — no money owed either way.";
+    } else s = "Pick a replacement medicine below.";
+    $("exchangeSummary").textContent = s;
+  }
+  $("exchangeReturnQty").addEventListener("input", updateSummary);
+  $("exchangeWantsReplacement").addEventListener("change", () => { $("exchangeReplacementBlock").classList.toggle("hidden", !$("exchangeWantsReplacement").checked); updateSummary(); });
+  $("exchangeDrugSearch").addEventListener("input", () => {
+    const q = $("exchangeDrugSearch").value.trim().toLowerCase(), box = $("exchangeDrugResults");
+    if (!q || !exReceipt) { box.innerHTML = ""; return; }
+    const list = drugs.filter(d => d.shopId === exReceipt.shopId && d.active !== false && ((d.name || "").toLowerCase().includes(q) || (d.generic || "").toLowerCase().includes(q))).slice(0, 8);
+    box.innerHTML = list.map(d => '<button type="button" class="lineBtn" onclick="pickReplacement(\'' + d.id + '\')">' + esc(d.name) + "</button>").join("") || '<div class="empty">No medicine found.</div>';
+  });
+  window.pickReplacement = function (id) {
+    const d = drugs.find(x => x.id === id); if (!d) return;
+    exReplDrug = d;
+    $("exchangeDrugSearch").value = ""; $("exchangeDrugResults").innerHTML = "";
+    $("exchangeSelectedDrug").classList.remove("hidden");
+    $("exchangeSelectedDrugLabel").textContent = d.name + " — available: " + (d.currentStockBase || 0).toLocaleString() + " " + d.baseUnit + "(s)";
+    const opts = [["stock", d.stockUnit]]; if (d.hasIntermediate) opts.push(["intermediate", d.intermediateUnit]); opts.push(["base", d.baseUnit]);
+    $("exchangeReplUnitLevel").innerHTML = opts.map(o => '<option value="' + o[0] + '">' + esc(o[1]) + "</option>").join("");
+    $("exchangeReplUnitLevel").value = "base"; $("exchangeReplQty").value = 1;
+    $("exchangeReplPrice").value = priceFor("base", d);
+    updateSummary();
+  };
+  function repriceReplacement() {
+    if (!exReplDrug) return;
+    $("exchangeReplPrice").value = priceFor($("exchangeReplUnitLevel").value, exReplDrug) * (Number($("exchangeReplQty").value) || 0);
+    updateSummary();
+  }
+  $("exchangeReplUnitLevel").addEventListener("change", repriceReplacement);
+  $("exchangeReplQty").addEventListener("input", repriceReplacement);
+  $("exchangeReplPrice").addEventListener("input", updateSummary);
+
+  async function nextReceiptNumber(shopId) {
+    const ref = doc(db, "counters", shopId + "_sales");
+    return await runTransaction(db, async tx => {
+      const snap = await tx.get(ref);
+      const next = snap.exists() ? (snap.data().next || 1) : 1;
+      tx.set(ref, { businessId, shopId, next: next + 1 }, { merge: true });
+      return next;
+    });
+  }
+
+  window.completeExchange = async function () {
+    if (busy) return;
+    const st = $("exchangeStatus"); st.textContent = "";
+    if (!exLine) { st.textContent = "Select which item was returned."; return; }
+    const returnQty = returnQtyVal();
+    if (returnQty <= 0) { st.textContent = "Enter a quantity greater than zero."; return; }
+    const wants = $("exchangeWantsReplacement").checked;
+    if (wants && !exReplDrug) { st.textContent = "Pick a replacement medicine."; return; }
+    let replQty = 0, replPrice = 0, replLevel = "base";
+    if (wants) {
+      replQty = Number($("exchangeReplQty").value) || 0; replPrice = Number($("exchangeReplPrice").value) || 0; replLevel = $("exchangeReplUnitLevel").value;
+      if (replQty <= 0) { st.textContent = "Enter a replacement quantity greater than zero."; return; }
+      if (replPrice <= 0) { st.textContent = "Enter a replacement price greater than zero."; return; }
+    }
+    const rc = exReceipt, line = exLine, shopId = rc.shopId, credit = rc.paymentStatus === "CREDIT" && !!rc.customerId;
+    const ratio = line.qty > 0 ? returnQty / line.qty : 0;
+    const returnBase = (line.baseQtyNeeded || 0) * ratio;
+    const retValue = (line.total || 0) * ratio;
+    const origSale = exSales.find(s => s.drugId === line.drugId && (s.total || 0) > 0 && s.qty === line.qty && s.total === line.total) || exSales.find(s => s.drugId === line.drugId && (s.total || 0) > 0);
+    const retCOGS = origSale ? (origSale.costOfGoods || 0) * (origSale.baseQtyDeducted > 0 ? Math.min(1, returnBase / origSale.baseQtyDeducted) : ratio) : 0;
+    const replLabel = wants ? $("exchangeReplUnitLevel").selectedOptions[0].textContent : "";
+    const diff = wants ? replPrice - retValue : -retValue;
+    const msg = wants
+      ? "Return " + returnQty + " " + line.unitLabel + "(s) of " + line.drugName + " (" + fmt(retValue) + ") for " + replQty + " " + replLabel + "(s) of " + exReplDrug.name + " (" + fmt(replPrice) + ").\n\n" + (diff > 0 ? "Customer owes " + fmt(diff) + " more." : diff < 0 ? "Refund the customer " + fmt(-diff) + "." : "Even exchange.")
+      : "Return " + returnQty + " " + line.unitLabel + "(s) of " + line.drugName + " — " + (credit ? "reduce " + rc.customerName + "'s balance by " : "refund the customer ") + fmt(retValue) + ".";
+    if (!confirm(msg + "\n\nProceed?")) return;
+
+    busy = true; $("completeExchangeBtn").disabled = true; st.style.color = "var(--muted)"; st.textContent = "Saving…";
+    try {
+      const retSnap = await getDoc(doc(db, "drugs", line.drugId));
+      if (!retSnap.exists()) throw new Error("The returned medicine no longer exists in inventory.");
+      const retDrug = { id: retSnap.id, ...retSnap.data() };
+      const stockNow = {}; stockNow[retDrug.id] = retDrug.currentStockBase || 0;
+      const delta = {}; delta[retDrug.id] = returnBase;
+
+      // replacement: fresh stock check + FEFO from live batches
+      let replBase = 0, replDrug = null, replCOGS = 0, replBatchUpdates = [], replNo = null;
+      if (wants) {
+        const rs = await getDoc(doc(db, "drugs", exReplDrug.id));
+        if (!rs.exists()) throw new Error("The replacement medicine no longer exists.");
+        replDrug = { id: rs.id, ...rs.data() };
+        replBase = toBase(replQty, replLevel, replDrug);
+        if (replBase > (replDrug.currentStockBase || 0)) throw new Error("Not enough stock of " + replDrug.name + " for the replacement.");
+        stockNow[replDrug.id] = replDrug.currentStockBase || 0;
+        delta[replDrug.id] = (delta[replDrug.id] || 0) - replBase;
+        const bs = await getDocs(query(collection(db, "batches"), where("businessId", "==", businessId), where("shopId", "==", shopId), where("drugId", "==", replDrug.id)));
+        const live = bs.docs.map(d => ({ id: d.id, ...d.data() })).filter(b => daysUntil(b.expiryDate) >= 0 && b.quantity > 0).sort((a, b) => expiryMs(a.expiryDate) - expiryMs(b.expiryDate));
+        let remaining = replBase;
+        for (const b of live) {
+          if (remaining <= 0) break;
+          const take = Math.min(remaining, b.quantity); if (take <= 0) continue;
+          replBatchUpdates.push({ id: b.id, quantity: b.quantity - take });
+          replCOGS += (take / (replDrug.baseUnitsPerStock || 1)) * (b.purchasePricePerStockUnit || b.costPerStockUnit || 0);
+          remaining -= take;
+        }
+        replNo = await nextReceiptNumber(shopId);
+      }
+
+      const wb = writeBatch(db);
+      Object.keys(delta).forEach(did => wb.update(doc(db, "drugs", did), { currentStockBase: stockNow[did] + delta[did] }));
+
+      // 1) returned stock goes back as its own batch, valued at the ORIGINAL cost
+      const restoredCost = returnBase > 0 && retDrug.baseUnitsPerStock > 0 ? (retCOGS / returnBase) * retDrug.baseUnitsPerStock : 0;
+      const retBatchRef = doc(collection(db, "batches"));
+      wb.set(retBatchRef, {
+        businessId, shopId, drugId: retDrug.id, drugName: retDrug.name, batchNumber: "RET-" + rc.displayNumber,
+        expiryDate: "", quantity: returnBase, purchasePricePerStockUnit: restoredCost, supplier: "Customer return",
+        purchaseDate: serverTimestamp(), createdAt: serverTimestamp()
+      });
+      wb.set(doc(collection(db, "stock_transactions")), {
+        businessId, shopId, drugId: retDrug.id, drugName: retDrug.name, type: "RETURN", baseUnitsChange: returnBase,
+        note: "Customer return — " + returnQty + " " + line.unitLabel + "(s) from receipt " + rc.displayNumber, batchId: retBatchRef.id, cashier: cashierName, createdAt: serverTimestamp()
+      });
+      // offsetting negative sale: every report just sums sales, so revenue/profit correct themselves
+      wb.set(doc(collection(db, "sales")), {
+        businessId, shopId, ownerUid: currentUser.uid, drugId: line.drugId, drugName: line.drugName, drugClass: retDrug.drugClass || "",
+        unitLevel: line.unitLevel, qty: -returnQty, baseQtyDeducted: -returnBase, pricePerUnit: line.pricePerUnit, total: -retValue, costOfGoods: -retCOGS,
+        receiptId: rc.id, cashier: cashierName, paymentStatus: rc.paymentStatus, customerId: rc.customerId || null,
+        note: "Return against receipt " + rc.displayNumber, createdAt: serverTimestamp()
+      });
+      if (credit) wb.set(doc(collection(db, "credit_transactions")), {
+        businessId, shopId, customerId: rc.customerId, customerName: rc.customerName || "", type: "CORRECTION", amount: retValue, paidAmount: 0, balanceChange: -retValue,
+        receiptId: rc.id, description: "Return: " + returnQty + " " + line.unitLabel + "(s) of " + line.drugName + " from receipt " + rc.displayNumber, cashier: cashierName, createdAt: serverTimestamp()
+      });
+
+      // 2) replacement = a normal one-item sale
+      if (wants) {
+        replBatchUpdates.forEach(u => wb.update(doc(db, "batches", u.id), { quantity: u.quantity }));
+        const label = "S-" + replNo, rRef = doc(collection(db, "receipts"));
+        wb.set(rRef, {
+          businessId, shopId, type: "SALE", displayNumber: label, createdAt: serverTimestamp(), cashier: cashierName,
+          itemCount: 1, totalAmount: replPrice, paymentStatus: rc.paymentStatus, customerId: rc.customerId || null,
+          customerName: rc.paymentStatus === "CREDIT" ? (rc.customerName || "") : "", note: "Exchange for receipt " + rc.displayNumber,
+          items: [{ drugId: replDrug.id, drugName: replDrug.name, qty: replQty, unitLabel: replLabel, unitLevel: replLevel, pricePerUnit: replPrice / replQty, total: replPrice,
+            baseQtyNeeded: replBase, stockUnit: replDrug.stockUnit, intermediateUnit: replDrug.intermediateUnit || "", baseUnit: replDrug.baseUnit,
+            baseUnitsPerStock: replDrug.baseUnitsPerStock, basePerIntermediate: replDrug.basePerIntermediate || 0 }]
+        });
+        wb.set(doc(collection(db, "sales")), {
+          businessId, shopId, ownerUid: currentUser.uid, drugId: replDrug.id, drugName: replDrug.name, drugClass: replDrug.drugClass || "",
+          unitLevel: replLevel, qty: replQty, baseQtyDeducted: replBase, pricePerUnit: replPrice / replQty, total: replPrice, costOfGoods: replCOGS,
+          receiptId: rRef.id, cashier: cashierName, paymentStatus: rc.paymentStatus, customerId: rc.customerId || null, note: "Exchange for receipt " + rc.displayNumber, createdAt: serverTimestamp()
+        });
+        if (credit) wb.set(doc(collection(db, "credit_transactions")), {
+          businessId, shopId, customerId: rc.customerId, customerName: rc.customerName || "", type: "CREDIT_SALE", amount: replPrice, paidAmount: 0, balanceChange: replPrice,
+          dueDate: null, receiptId: rRef.id, description: "Exchange: " + replQty + " " + replLabel + "(s) of " + replDrug.name + " (receipt " + label + ")", cashier: cashierName, createdAt: serverTimestamp()
+        });
+      }
+      await wb.commit();
+      busy = false; $("completeExchangeBtn").disabled = false; st.textContent = "";
+      closeExchange();
+      alert(wants ? "Exchange recorded." : "Return recorded.");
+    } catch (err) {
+      busy = false; $("completeExchangeBtn").disabled = false;
+      st.style.color = "var(--danger)"; st.textContent = friendlyErr(err);
+    }
+  };
+
+  // ================= Controls =================
+  $("historyType").addEventListener("change", () => { shown = 40; render(); });
+  $("historyPeriod").addEventListener("change", () => { $("historyCustom").classList.toggle("hidden", $("historyPeriod").value !== "custom"); shown = 40; render(); });
+  ["historyFrom", "historyTo", "historySearch"].forEach(id => $(id).addEventListener("input", () => { shown = 40; render(); }));
+  $("shopPick").addEventListener("change", () => { shopFilter = $("shopPick").value; shown = 40; render(); });
+  (function () { // dashboard / other pages can deep-link: history.html?type=SALE&period=today
+    const p = new URLSearchParams(location.search), t = p.get("type"), pe = p.get("period");
+    if (["SALE", "PURCHASE", "EXPENSE", "CREDIT", "PAYMENT", "STOCK", "CASH"].includes(t)) $("historyType").value = t;
+    if (["today", "week", "month", "year", "all"].includes(pe)) $("historyPeriod").value = pe;
+  })();
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+    const snap = await getDoc(doc(db, "users", user.uid));
+    if (!snap.exists()) { window.location.href = "login.html"; return; }
+    const profile = snap.data();
+    if (profile.active === false) { await auth.signOut(); window.location.href = "login.html?disabled=1"; return; }
+    currentUser = user; role = profile.role; businessId = profile.businessId; myShopId = profile.shopId;
+    cashierName = role === "owner" ? user.email : profile.name;
+    getDoc(doc(db, "businesses", businessId)).then(b => { if (b.exists()) { businessName = b.data().name || ""; businessPhone = b.data().phone || ""; } }).catch(() => {});
+
+    let filters;
+    if (role === "owner") {
+      $("shopIndicator").textContent = "Every record across your business";
+      filters = [where("businessId", "==", businessId)];
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
+        shopsById = {}; s.docs.forEach(d => { shopsById[d.id] = d.data().name; });
+        const ids = Object.keys(shopsById);
+        $("shopPick").innerHTML = '<option value="all">All shops</option>' + ids.map(id => '<option value="' + esc(id) + '">' + esc(shopsById[id]) + "</option>").join("");
+        if (!ids.includes(shopFilter)) shopFilter = "all";
+        $("shopPick").value = shopFilter;
+        $("shopPickWrap").classList.toggle("hidden", ids.length < 2);
+        render();
+      });
+    } else {
+      shopFilter = myShopId;
+      $("shopIndicator").textContent = "Records for your shop";
+      filters = [where("businessId", "==", businessId), where("shopId", "==", myShopId)];
+      getDoc(doc(db, "shops", myShopId)).then(s => { if (s.exists()) { shopsById[myShopId] = s.data().name; render(); } }).catch(() => {});
+    }
+    const watch = (name, setter) => onSnapshot(query(collection(db, name), ...filters), s => { setter(s.docs.map(d => ({ id: d.id, ...d.data() }))); render(); });
+    onSnapshot(query(collection(db, "receipts"), ...filters), { includeMetadataChanges: true }, s => {
+      receipts = s.docs.map(d => ({ id: d.id, ...d.data() }));
+      const badge = $("netBadge");
+      badge.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)";
+      badge.className = "badge " + (s.metadata.fromCache ? "offline" : "online");
+      render();
+    });
+    watch("expenses", v => expenses = v);
+    watch("credit_transactions", v => creditTx = v);
+    watch("credit_accounts", v => creditAccounts = v);
+    watch("cash_adjustments", v => cashAdj = v);
+    watch("stock_adjustments", v => stockAdj = v);
+    watch("stock_transactions", v => stockTx = v);
+    watch("drugs", v => drugs = v);
+  });
+</script>
+</body>
+</html>

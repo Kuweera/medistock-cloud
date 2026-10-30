@@ -315,6 +315,7 @@
     });
     stockTx.forEach(t => {
       if (t.type === "WRITE_OFF") ev.push({ ts: tsDate(t.createdAt), shopId: t.shopId, who: t.cashier || "—", kind: "stock", text: "Write-off · " + (t.drugName || drugName(t.drugId)) + " · " + (t.note || "") });
+      else if (t.type === "RETURN") ev.push({ ts: tsDate(t.createdAt), shopId: t.shopId, who: t.cashier || "—", kind: "stock", text: "Customer return · " + (t.drugName || drugName(t.drugId)) + " · " + (t.note || "") });
       else if (t.type === "EDIT_RESYNC") ev.push({ ts: tsDate(t.createdAt), shopId: t.shopId, who: t.cashier || "—", kind: "stock", text: "Stock taking · " + drugName(t.drugId) + " · " + (t.note || "") });
     });
     creditTx.forEach(t => { if (t.type === "PAYMENT") ev.push({ ts: tsDate(t.createdAt), shopId: t.shopId, who: t.cashier || "—", kind: "money", text: "Credit payment received · " + (t.customerName || "customer"), amount: t.amount || 0 }); });
