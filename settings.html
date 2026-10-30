@@ -120,6 +120,7 @@
 <nav class="nav-panel" id="navPanel">
   <div class="nav-panel-title">Menu</div>
   <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
   <a href="sales.html">Sell</a>
   <a href="inventory.html">Inventory</a>
   <a href="purchases.html">Purchases</a>
@@ -130,10 +131,12 @@
   <a href="credit.html">Credit / Loans</a>
   <a href="cash-position.html">Cash Position</a>
   <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
   <a href="shops.html">Shops</a>
   <a href="settings.html" class="active">Settings</a>
   <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
 </nav>
+<script src="nav.js"></script>
 
 <div class="card" id="ownerGateCard" style="display:none;">
   <div id="ownerGate">Settings is owner-only. Redirecting…</div>
@@ -285,6 +288,7 @@
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.location.href = "login.html"; return; }
     const profile = userSnap.data();
+    if (profile.active === false) { await auth.signOut(); window.location.href = "login.html?disabled=1"; return; }
     currentBusinessId = profile.businessId;
 
     if (profile.role !== "owner") {

@@ -119,6 +119,7 @@
 <nav class="nav-panel" id="navPanel">
   <div class="nav-panel-title">Menu</div>
   <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
   <a href="sales.html">Sell</a>
   <a href="inventory.html">Inventory</a>
   <a href="purchases.html">Purchases</a>
@@ -129,9 +130,11 @@
   <a href="credit.html">Credit / Loans</a>
   <a href="cash-position.html">Cash Position</a>
   <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
   <a href="shops.html">Shops</a>
   <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
 </nav>
+<script src="nav.js"></script>
 <div class="card">
   <h2>What to Buy</h2>
   <p class="meta">Generated automatically from each medicine's reorder level — nothing here is added by hand. Suggested quantities target each drug's Target Stock Level, so they grow the further stock has fallen. A drug drops off this list the moment it's restocked above its threshold.</p>
@@ -315,6 +318,7 @@
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.location.href = "login.html"; return; }
     const profile = userSnap.data();
+    if (profile.active === false) { await auth.signOut(); window.location.href = "login.html?disabled=1"; return; }
     const currentBusinessId = profile.businessId;
 
     let currentShopId;

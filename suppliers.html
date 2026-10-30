@@ -129,6 +129,7 @@
 <nav class="nav-panel" id="navPanel">
   <div class="nav-panel-title">Menu</div>
   <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
   <a href="sales.html">Sell</a>
   <a href="inventory.html">Inventory</a>
   <a href="purchases.html">Purchases</a>
@@ -139,10 +140,12 @@
   <a href="credit.html">Credit / Loans</a>
   <a href="cash-position.html">Cash Position</a>
   <a href="suppliers.html" class="active">Suppliers</a>
+  <a href="users.html">Users</a>
   <a href="shops.html">Shops</a>
   <a href="settings.html">Settings</a>
   <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
 </nav>
+<script src="nav.js"></script>
 <div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
 
 <div class="card">
@@ -308,7 +311,7 @@
       await addDoc(collection(db, "supplier_transactions"), {
         businessId: currentBusinessId, shopId: currentShopId,
         supplierName: name, type: "PAYMENT", amount,
-        description: "Payment to supplier", createdAt: serverTimestamp()
+        description: "Payment to supplier", cashier: cashierName, createdAt: serverTimestamp()
       });
       openAccount(name);
     } catch (err) {
@@ -393,11 +396,14 @@
     }
   };
 
+  let cashierName = "";
   onAuthStateChanged(auth, async (user) => {
     if (!user) { window.location.href = "login.html"; return; }
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.location.href = "login.html"; return; }
     const profile = userSnap.data();
+    if (profile.active === false) { await auth.signOut(); window.location.href = "login.html?disabled=1"; return; }
+    cashierName = profile.role === "owner" ? user.email : profile.name;
     currentBusinessId = profile.businessId;
 
     if (profile.role === "owner") {

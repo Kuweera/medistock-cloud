@@ -168,10 +168,12 @@
   <a href="credit.html">Credit / Loans</a>
   <a href="cash-position.html">Cash Position</a>
   <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
   <a href="shops.html">Shops</a>
   <a href="settings.html">Settings</a>
   <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
 </nav>
+<script src="nav.js"></script>
 
 <div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
 
@@ -585,6 +587,7 @@
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.location.href = "login.html"; return; }
     const profile = userSnap.data();
+    if (profile.active === false) { await auth.signOut(); window.location.href = "login.html?disabled=1"; return; }
     role = profile.role; businessId = profile.businessId;
 
     const badge = $("netBadge");
