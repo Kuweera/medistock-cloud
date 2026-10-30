@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStock Cloud — Expiring Drugs</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  /* ===== Expiring page ===== */
+  .hidden{display:none !important;}
+  .pill-row{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;}
+  .pill-btn{background:var(--card); color:var(--text); border:1px solid var(--border); padding:7px 12px; border-radius:999px; font-size:13px; font-weight:600;}
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .sum-grid{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:8px;}
+  .sum{background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:9px 8px; text-align:center;}
+  .sum .n{font-size:19px; font-weight:700;} .sum .l{font-size:11px; color:var(--muted);} .sum .v{font-size:11px; color:var(--muted); margin-top:2px;}
+  .sum.red .n{color:var(--danger);} .sum.amber .n{color:var(--warn);}
+  .grp-h{display:flex; justify-content:space-between; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; margin:16px 0 6px; color:var(--muted);}
+  .grp-h.red{color:var(--danger);} .grp-h.amber{color:var(--warn);}
+  .bt{border:1px solid var(--border); border-radius:10px; padding:11px 12px; margin-bottom:8px;}
+  .bt-top{display:flex; justify-content:space-between; gap:8px; align-items:flex-start;}
+  .bt-name{font-weight:700; font-size:14px; overflow-wrap:anywhere;}
+  .tag{font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid var(--border); white-space:nowrap;}
+  .tag.red{color:var(--danger); border-color:var(--danger);} .tag.amber{color:var(--warn); border-color:var(--warn);} .tag.ok{color:var(--accent2); border-color:var(--accent2);}
+  .bt-meta{font-size:12px; color:var(--muted); margin-top:4px; line-height:1.55;}
+  .btn-small{padding:8px 12px; font-size:13px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent);}
+  .btn-danger-outline{background:transparent; color:var(--danger); border:1px solid var(--danger); margin-top:8px; width:100%;}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Multi-Shop Edition · Expiring Drugs</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="location.href='dashboard.html'">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="expiring.html" class="active">Expiring Drugs</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+
+<div class="card">
+  <h2>Expiring Drugs</h2>
+  <div id="shopPickWrap" class="hidden">
+    <label>Shop</label>
+    <select id="shopPick"></select>
+  </div>
+  <div class="sum-grid">
+    <div class="sum red"><div class="n" id="sumExpired">—</div><div class="l">Expired</div><div class="v" id="valExpired"></div></div>
+    <div class="sum amber"><div class="n" id="sum30">—</div><div class="l">Within 30 days</div><div class="v" id="val30"></div></div>
+    <div class="sum"><div class="n" id="sum90">—</div><div class="l">Within 90 days</div><div class="v" id="val90"></div></div>
+  </div>
+  <div class="hint2" style="font-size:11px; color:var(--muted); margin-top:6px;">Values are at cost price, for the stock still on the shelf.</div>
+</div>
+
+<div class="card">
+  <div class="pill-row" id="winPills">
+    <button type="button" class="pill-btn" data-w="expired">Expired</button>
+    <button type="button" class="pill-btn" data-w="30">30 days</button>
+    <button type="button" class="pill-btn" data-w="60">60 days</button>
+    <button type="button" class="pill-btn selected" data-w="90">90 days</button>
+    <button type="button" class="pill-btn" data-w="180">6 months</button>
+    <button type="button" class="pill-btn" data-w="nodate">No date</button>
+  </div>
+  <input type="text" id="searchBox" placeholder="Search drug…" style="margin-top:8px;">
+  <div id="list" style="margin-top:6px;"><div class="empty">Loading…</div></div>
+  <button class="btn-small btn-secondary" id="shareBtn" style="width:100%; margin-top:10px;" onclick="shareList()">Share this list</button>
+</div>
+
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import { getFirestore, doc, getDoc, collection, onSnapshot, enableIndexedDbPersistence, writeBatch, serverTimestamp, query, where } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {});
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const fmt = n => Math.round(n).toLocaleString();
+
+  let role = null, businessId = null, cashierName = "";
+  let shopsById = {}, drugs = [], batches = [];
+  let win = "90", shopFilter = "all", lastShown = [];
+
+  // ----- dates: a blank expiry means "never expires" (not in the expiry lists, but listed under "No date") -----
+  const hasDate = s => !!s && !isNaN(new Date(s));
+  function daysUntil(s) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return Math.round((new Date(s) - today) / 86400000);
+  }
+  const fmtDate = s => new Date(s).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+
+  // ----- quantity + value, using the drug's packaging -----
+  function breakdown(baseQty, d) {
+    const per = Number(d.baseUnitsPerStock) || 0, inter = Number(d.basePerIntermediate) || 0;
+    let stock = 0, rem = baseQty;
+    if (per > 0) { stock = Math.floor(baseQty / per); rem = baseQty - stock * per; }
+    let mid = 0, loose = rem;
+    if (inter > 0) { mid = Math.floor(rem / inter); loose = rem - mid * inter; }
+    return { stock, mid, loose };
+  }
+  function qtyLabel(b, d) {
+    if (!d) return b.quantity + " unit(s)";
+    const x = breakdown(b.quantity, d), parts = [];
+    if (x.stock) parts.push(x.stock + " " + d.stockUnit + "(s)");
+    if (d.hasIntermediate && x.mid) parts.push(x.mid + " " + d.intermediateUnit + "(s)");
+    if (x.loose) parts.push(x.loose + " " + d.baseUnit + "(s)");
+    return parts.length ? parts.join(" + ") : "0 " + d.baseUnit + "(s)";
+  }
+  function costValue(b, d) {
+    const per = d ? (Number(d.baseUnitsPerStock) || 0) : 0;
+    const unitCost = Number(b.purchasePricePerStockUnit || b.costPerStockUnit || (d && d.wholesale) || 0);
+    return per > 0 ? (b.quantity / per) * unitCost : 0;
+  }
+
+  // ----- build the working list -----
+  function items() {
+    const q = $("searchBox").value.trim().toLowerCase();
+    return batches
+      .filter(b => b.quantity > 0 && (shopFilter === "all" || b.shopId === shopFilter) && (!q || (b.drugName || "").toLowerCase().includes(q)))
+      .map(b => {
+        const d = drugs.find(x => x.id === b.drugId);
+        const dated = hasDate(b.expiryDate);
+        return { b, d, dated, days: dated ? daysUntil(b.expiryDate) : null, value: costValue(b, d) };
+      });
+  }
+  const sumOf = list => list.reduce((a, i) => a + i.value, 0);
+
+  function group(i) {
+    if (!i.dated) return null;
+    if (i.days < 0) return "expired";
+    if (i.days <= 30) return "d30";
+    if (i.days <= 60) return "d60";
+    if (i.days <= 90) return "d90";
+    if (i.days <= 180) return "d180";
+    return null;
+  }
+  const GROUPS = [
+    ["expired", "Already expired", "red"],
+    ["d30", "Within 30 days", "amber"],
+    ["d60", "31 – 60 days", ""],
+    ["d90", "61 – 90 days", ""],
+    ["d180", "91 days – 6 months", ""]
+  ];
+
+  function visible(all) {
+    if (win === "nodate") return all.filter(i => !i.dated);
+    if (win === "expired") return all.filter(i => group(i) === "expired");
+    const max = Number(win);
+    return all.filter(i => i.dated && i.days <= max);
+  }
+
+  function render() {
+    const all = items();
+    // summary tiles (not affected by the window pills)
+    const ex = all.filter(i => group(i) === "expired");
+    const w30 = all.filter(i => i.dated && i.days >= 0 && i.days <= 30);
+    const w90 = all.filter(i => i.dated && i.days >= 0 && i.days <= 90);
+    $("sumExpired").textContent = ex.length; $("valExpired").textContent = fmt(sumOf(ex));
+    $("sum30").textContent = w30.length; $("val30").textContent = fmt(sumOf(w30));
+    $("sum90").textContent = w90.length; $("val90").textContent = fmt(sumOf(w90));
+
+    const list = visible(all);
+    lastShown = list;
+    $("shareBtn").classList.toggle("hidden", !list.length);
+    if (!list.length) {
+      $("list").innerHTML = '<div class="empty">' + (win === "nodate" ? "Every batch has an expiry date." : win === "expired" ? "No expired stock — good." : "Nothing expiring in this window.") + "</div>";
+      return;
+    }
+    const multiShop = role === "owner" && Object.keys(shopsById).length > 1 && shopFilter === "all";
+    const card = i => {
+      const b = i.b, g = group(i);
+      const tag = !i.dated ? ["No expiry date", "ok"] : g === "expired" ? ["EXPIRED " + Math.abs(i.days) + "d ago", "red"] : [i.days === 0 ? "expires today" : i.days + "d left", g === "d30" ? "amber" : "ok"];
+      return '<div class="bt"><div class="bt-top"><div class="bt-name">' + esc(b.drugName) + '</div><span class="tag ' + tag[1] + '">' + esc(tag[0]) + "</span></div>" +
+        '<div class="bt-meta">' + esc(qtyLabel(b, i.d)) + " · Batch " + esc(b.batchNumber || "—") + "<br>" +
+        (i.dated ? "Expires " + esc(fmtDate(b.expiryDate)) : "No expiry date recorded") + " · At cost: " + fmt(i.value) +
+        (b.supplier ? "<br>Supplier: " + esc(b.supplier) : "") +
+        (multiShop ? "<br>Shop: " + esc((shopsById[b.shopId] || {}).name || "") : "") + "</div>" +
+        (g === "expired" ? '<button class="btn-small btn-danger-outline" onclick="writeOff(\'' + b.id + '\')">Write off</button>' : "") + "</div>";
+    };
+    if (win === "nodate") { $("list").innerHTML = list.map(card).join(""); return; }
+    let html = "";
+    GROUPS.forEach(([key, title, cls]) => {
+      const rows = list.filter(i => group(i) === key).sort((a, b) => a.days - b.days);
+      if (!rows.length) return;
+      html += '<div class="grp-h ' + cls + '"><span>' + title + " (" + rows.length + ")</span><span>" + fmt(sumOf(rows)) + "</span></div>" + rows.map(card).join("");
+    });
+    $("list").innerHTML = html;
+  }
+
+  // ----- write off an expired batch (same effect as the Batches page) -----
+  window.writeOff = async function (id) {
+    const b = batches.find(x => x.id === id);
+    if (!b || b.quantity <= 0) return;
+    const d = drugs.find(x => x.id === b.drugId);
+    const reason = prompt("Write off " + qtyLabel(b, d) + " of " + b.drugName + " (batch " + (b.batchNumber || "—") + ")?\n\nThis removes it from sellable stock permanently. Reason:", "Expired");
+    if (reason === null) return;
+    try {
+      const wb = writeBatch(db);
+      wb.update(doc(db, "batches", id), { quantity: 0 });
+      if (d) wb.update(doc(db, "drugs", b.drugId), { currentStockBase: Math.max(0, (d.currentStockBase || 0) - b.quantity) });
+      wb.set(doc(collection(db, "stock_transactions")), {
+        businessId, shopId: b.shopId, drugId: b.drugId, drugName: b.drugName, type: "WRITE_OFF", baseUnitsChange: -b.quantity,
+        note: "Write-off — batch " + (b.batchNumber || "—") + " (" + (reason || "no reason given") + ")",
+        batchId: id, cashier: cashierName, createdAt: serverTimestamp()
+      });
+      await wb.commit();
+    } catch (err) {
+      alert(err.code === "permission-denied" ? "Not allowed to write off stock." : "Couldn't write off: " + err.message);
+    }
+  };
+
+  // ----- share / copy a plain-text list (handy for supplier returns or discounting) -----
+  window.shareList = async function () {
+    if (!lastShown.length) return;
+    const shopName = shopFilter !== "all" ? (shopsById[shopFilter] || {}).name : (Object.keys(shopsById).length === 1 ? Object.values(shopsById)[0].name : "All shops");
+    let text = "EXPIRING DRUGS" + (shopName ? " — " + shopName : "") + "\n" + new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) + "\n";
+    const line = i => "• " + i.b.drugName + " — " + qtyLabel(i.b, i.d) + " — batch " + (i.b.batchNumber || "—") + (i.dated ? " — exp " + fmtDate(i.b.expiryDate) : "");
+    if (win === "nodate") text += "\nNO EXPIRY DATE RECORDED\n" + lastShown.map(line).join("\n");
+    else GROUPS.forEach(([key, title]) => {
+      const rows = lastShown.filter(i => group(i) === key).sort((a, b) => a.days - b.days);
+      if (rows.length) text += "\n" + title.toUpperCase() + "\n" + rows.map(line).join("\n") + "\n";
+    });
+    try {
+      if (navigator.share) await navigator.share({ text });
+      else { await navigator.clipboard.writeText(text); alert("List copied."); }
+    } catch (e) { if (e && e.name !== "AbortError") { try { await navigator.clipboard.writeText(text); alert("List copied."); } catch (e2) { prompt("Copy this list:", text); } } }
+  };
+
+  // ----- controls -----
+  document.querySelectorAll("#winPills .pill-btn").forEach(b => b.addEventListener("click", () => {
+    win = b.dataset.w;
+    document.querySelectorAll("#winPills .pill-btn").forEach(x => x.classList.toggle("selected", x === b));
+    render();
+  }));
+  $("searchBox").addEventListener("input", render);
+  $("shopPick").addEventListener("change", () => { shopFilter = $("shopPick").value; render(); });
+  // Dashboard tile can open this page on a specific window: expiring.html?w=expired
+  (function () {
+    const w = new URLSearchParams(location.search).get("w");
+    if (["expired", "30", "60", "90", "180", "nodate"].includes(w)) {
+      win = w;
+      document.querySelectorAll("#winPills .pill-btn").forEach(x => x.classList.toggle("selected", x.dataset.w === w));
+    }
+  })();
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+    const snap = await getDoc(doc(db, "users", user.uid));
+    if (!snap.exists()) { window.location.href = "login.html"; return; }
+    const profile = snap.data();
+    if (profile.active === false) { await auth.signOut(); window.location.href = "login.html?disabled=1"; return; }
+    role = profile.role; businessId = profile.businessId;
+    cashierName = role === "owner" ? user.email : profile.name;
+
+    let filters;
+    if (role === "owner") {
+      $("shopIndicator").textContent = "Expiry watch across your business";
+      filters = [where("businessId", "==", businessId)];
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
+        shopsById = {}; s.docs.forEach(d => { shopsById[d.id] = { name: d.data().name }; });
+        const ids = Object.keys(shopsById);
+        $("shopPick").innerHTML = '<option value="all">All shops</option>' + ids.map(id => '<option value="' + esc(id) + '">' + esc(shopsById[id].name) + "</option>").join("");
+        if (!ids.includes(shopFilter)) shopFilter = "all";
+        $("shopPick").value = shopFilter;
+        $("shopPickWrap").classList.toggle("hidden", ids.length < 2);
+        render();
+      });
+    } else {
+      shopFilter = profile.shopId;
+      $("shopIndicator").textContent = "Expiry watch for your shop";
+      filters = [where("businessId", "==", businessId), where("shopId", "==", profile.shopId)];
+    }
+    onSnapshot(query(collection(db, "drugs"), ...filters), s => { drugs = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); });
+    onSnapshot(query(collection(db, "batches"), ...filters), { includeMetadataChanges: true }, s => {
+      const badge = $("netBadge");
+      badge.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)";
+      badge.className = "badge " + (s.metadata.fromCache ? "offline" : "online");
+      batches = s.docs.map(d => ({ id: d.id, ...d.data() })); render();
+    });
+  });
+</script>
+</body>
+</html>

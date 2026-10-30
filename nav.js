@@ -8,6 +8,7 @@
     ["inventory.html", "Inventory"],
     ["purchases.html", "Purchases"],
     ["batches.html", "Batches"],
+    ["expiring.html", "Expiring Drugs"],
     ["stocktake.html", "Stock Taking"],
     ["whattobuy.html", "What to Buy"],
     ["expenses.html", "Expenses"],
