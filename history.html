@@ -120,6 +120,11 @@
   .lineBtn.sel{border-color:var(--accent); background:rgba(42,191,160,.10);}
   .sumbox{background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:13.5px; margin-top:10px; line-height:1.5;}
   .msg{font-size:13px; margin-top:8px;} .msg.err{color:var(--danger);}
+  .exLine{border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:8px;}
+  .exLine.on{border-color:var(--accent); background:rgba(42,191,160,.08);}
+  .exHead{display:flex; gap:10px; align-items:flex-start; font-weight:normal; margin:0;}
+  .exHead input{width:auto; margin-top:3px;}
+  .replItem{display:flex; justify-content:space-between; gap:10px; align-items:center; padding:8px 0; border-bottom:1px dashed var(--border); font-size:13.5px;}
   .results-total{font-size:12.5px; color:var(--muted); margin-bottom:4px;}
 </style>
 <script>
@@ -217,29 +222,32 @@
   <div class="card">
     <h2>Return / Exchange</h2>
     <p class="meta" id="exchangeReceiptInfo">—</p>
-    <label>Which item is being returned?</label>
+    <label>Tick every item being returned</label>
     <div id="exchangeLineItems"></div>
   </div>
-  <div class="card hidden" id="exchangeDetailsCard">
-    <label>Quantity being returned <span id="exchangeUnitLabel"></span></label>
-    <input type="number" id="exchangeReturnQty" min="0" step="any" inputmode="decimal">
-    <p class="meta" id="exchangeReturnValue">—</p>
-    <label style="display:flex; align-items:center; gap:8px; font-weight:normal; margin:12px 0 4px;">
-      <input type="checkbox" id="exchangeWantsReplacement" style="width:auto;"> Customer wants a replacement medicine
+
+  <div class="card">
+    <p class="meta" id="exchangeReturnValue">Nothing selected yet.</p>
+    <label style="display:flex; align-items:center; gap:8px; font-weight:normal; margin:8px 0 4px;">
+      <input type="checkbox" id="exchangeWantsReplacement" style="width:auto;"> Customer wants replacement medicine(s)
     </label>
     <div id="exchangeReplacementBlock" class="hidden" style="margin-top:8px; padding-top:10px; border-top:1px dashed var(--border);">
-      <label>Replacement medicine</label>
+      <label>Find a replacement medicine</label>
       <input type="text" id="exchangeDrugSearch" placeholder="Type a drug name...">
       <div id="exchangeDrugResults"></div>
       <div id="exchangeSelectedDrug" class="hidden" style="margin-top:8px;">
         <p class="meta" id="exchangeSelectedDrugLabel">—</p>
+        <p class="meta" id="exchangeInvPrices">—</p>
         <div class="grid2">
           <div><label>Quantity</label><input type="number" id="exchangeReplQty" min="0" step="any" inputmode="decimal"></div>
           <div><label>Unit</label><select id="exchangeReplUnitLevel"></select></div>
         </div>
-        <label>Replacement price (total)</label>
+        <p class="meta" id="exchangeUnitPriceNote">—</p>
+        <label>Price for this quantity (total)</label>
         <input type="number" id="exchangeReplPrice" min="0" inputmode="decimal">
+        <button type="button" class="btn-small btn-secondary" style="width:100%; margin-top:10px;" onclick="addReplacement()">+ Add to replacement list</button>
       </div>
+      <div id="exchangeReplList" style="margin-top:12px;"></div>
     </div>
     <div class="sumbox" id="exchangeSummary">—</div>
     <button class="btn-primary" id="completeExchangeBtn" onclick="completeExchange()">Complete return / exchange</button>
@@ -527,71 +535,108 @@
     busy = false;
   };
 
-  // ================= Return / Exchange =================
-  let exReceipt = null, exSales = [], exLine = null, exLineIdx = null, exMaxQty = 0, exReplDrug = null;
+  // ================= Return / Exchange (many items in, many items out) =================
+  let exReceipt = null, exSales = [], exMax = {}, exReplDrug = null, exReplItems = [];
   const hasDate = s => !!s && !isNaN(new Date(s));
   const daysUntil = s => { if (!hasDate(s)) return 36500; const t = new Date(); t.setHours(0, 0, 0, 0); return Math.round((new Date(s) - t) / 86400000); };
   const expiryMs = s => hasDate(s) ? new Date(s).getTime() : 8.64e15;
-  const priceFor = (lvl, d) => Number(lvl === "stock" ? d.retailStock : lvl === "intermediate" ? d.retailIntermediate : d.retailBase) || 0;
-  const toBase = (qty, lvl, d) => lvl === "stock" ? qty * (Number(d.baseUnitsPerStock) || 0) : lvl === "intermediate" ? qty * (Number(d.basePerIntermediate) || 0) : qty;
   const round4 = n => Math.round(n * 10000) / 10000;
+  const round2 = n => Math.round(n * 100) / 100;
+  const midOn = d => !!d.hasIntermediate && (Number(d.basePerIntermediate) || 0) > 0;
+  const levelsOf = d => midOn(d) ? ["stock", "intermediate", "base"] : ["stock", "base"];
+  const unitName = (lvl, d) => lvl === "stock" ? d.stockUnit : lvl === "intermediate" ? d.intermediateUnit : d.baseUnit;
+  const baseOfLevel = (lvl, d) => lvl === "stock" ? (Number(d.baseUnitsPerStock) || 0) : lvl === "intermediate" ? (Number(d.basePerIntermediate) || 0) : 1;
+  const toBase = (qty, lvl, d) => qty * baseOfLevel(lvl, d);
+  const directPrice = (lvl, d) => Number(lvl === "stock" ? d.retailStock : lvl === "intermediate" ? d.retailIntermediate : d.retailBase) || 0;
+
+  // Price of ONE unit at this level, exactly as set in Inventory. If that unit has no price set,
+  // work it out from the nearest unit that does (e.g. Capsule price = Strip price ÷ capsules per strip).
+  function unitPrice(lvl, d) {
+    const direct = directPrice(lvl, d);
+    if (direct > 0) return { price: direct, from: null };
+    const lv = levelsOf(d), i = lv.indexOf(lvl);
+    const others = lv.filter(x => x !== lvl).sort((x, y) => Math.abs(lv.indexOf(x) - i) - Math.abs(lv.indexOf(y) - i));
+    for (const o of others) {
+      const p = directPrice(o, d), bo = baseOfLevel(o, d);
+      if (p > 0 && bo > 0) return { price: round2(p / bo * baseOfLevel(lvl, d)), from: o };
+    }
+    return { price: 0, from: null };
+  }
 
   window.openExchange = async function (id) {
     const r = receipts.find(x => x.id === id); if (!r || r.type !== "SALE") return;
     if (!Array.isArray(r.items) || !r.items.length) { alert("This receipt has no saved line items to return."); return; }
     try { exSales = await receiptSales(r); } catch (err) { alert(friendlyErr(err)); return; }
-    exReceipt = r; exLine = null; exLineIdx = null; exReplDrug = null;
+    exReceipt = r; exReplDrug = null; exReplItems = []; exMax = {};
     $("exchangeReceiptInfo").textContent = "Receipt " + r.displayNumber + " — " + fmtWhen(tsDate(r.createdAt)) + " — " + fmt(r.totalAmount) + (r.paymentStatus === "CREDIT" ? " (Credit sale — " + (r.customerName || "customer") + ")" : "");
     $("exchangeLineItems").innerHTML = r.items.map((i, idx) => {
-      const left = maxReturnQty(i);
-      return '<button type="button" class="lineBtn" ' + (left <= 0 ? "disabled style=\"opacity:.5\"" : "") + ' onclick="selectExchangeLine(' + idx + ')">' + esc(i.drugName) + " — " + esc(i.qty) + " " + esc(i.unitLabel) + "(s) — " + fmt(i.total) + (left <= 0 ? " · already returned" : (left < i.qty ? " · " + left + " left to return" : "")) + "</button>";
+      const left = maxReturnQty(i); exMax[idx] = left;
+      return '<div class="exLine" id="exl-' + idx + '"><label class="exHead"><input type="checkbox" id="exchk-' + idx + '" ' + (left <= 0 ? "disabled" : "") + ' onchange="toggleExLine(' + idx + ')"><span>' + esc(i.drugName) + " — " + esc(i.qty) + " " + esc(i.unitLabel) + "(s) — " + fmt(i.total) + (left <= 0 ? " · already returned" : (left < i.qty ? " · " + left + " left to return" : "")) + "</span></label>" +
+        '<div class="hidden" id="exqwrap-' + idx + '" style="margin-top:8px;"><label>Quantity returned (' + esc(i.unitLabel) + "s, up to " + left + ')</label><input type="number" id="exq-' + idx + '" min="0" max="' + left + '" step="any" inputmode="decimal" oninput="updateSummary()"></div></div>';
     }).join("");
-    $("exchangeDetailsCard").classList.add("hidden");
     $("exchangeWantsReplacement").checked = false;
     $("exchangeReplacementBlock").classList.add("hidden");
     $("exchangeSelectedDrug").classList.add("hidden");
     $("exchangeDrugSearch").value = ""; $("exchangeDrugResults").innerHTML = ""; $("exchangeStatus").textContent = "";
+    renderReplList(); updateSummary();
     $("historyView").classList.add("hidden"); $("exchangeView").classList.remove("hidden");
     window.scrollTo({ top: 0 });
   };
   window.closeExchange = function () { $("exchangeView").classList.add("hidden"); $("historyView").classList.remove("hidden"); };
 
-  // How much of this receipt line can still be returned (earlier returns are stored as negative sale records).
+  // How much of a receipt line can still be returned (earlier returns are stored as negative sale records).
+  function remainingBaseForDrug(drugId) {
+    const soldBase = (exReceipt.items || []).filter(i => i.drugId === drugId).reduce((a, i) => a + (i.baseQtyNeeded || 0), 0);
+    const returnedBase = exSales.filter(s => s.drugId === drugId && (s.total || 0) < 0).reduce((a, s) => a + Math.abs(s.baseQtyDeducted || 0), 0);
+    return Math.max(0, soldBase - returnedBase);
+  }
   function maxReturnQty(line) {
-    const soldBase = (exReceipt.items || []).filter(i => i.drugId === line.drugId).reduce((a, i) => a + (i.baseQtyNeeded || 0), 0);
-    const returnedBase = exSales.filter(s => s.drugId === line.drugId && (s.total || 0) < 0).reduce((a, s) => a + Math.abs(s.baseQtyDeducted || 0), 0);
-    const remainingBase = Math.max(0, soldBase - returnedBase);
     const lineBase = line.baseQtyNeeded || 0;
     if (lineBase <= 0) return 0;
-    return round4(line.qty * Math.min(1, remainingBase / lineBase));
+    return round4(line.qty * Math.min(1, remainingBaseForDrug(line.drugId) / lineBase));
   }
-  window.selectExchangeLine = function (idx) {
-    exLineIdx = idx; exLine = exReceipt.items[idx]; exMaxQty = maxReturnQty(exLine);
-    document.querySelectorAll("#exchangeLineItems .lineBtn").forEach((b, i) => b.classList.toggle("sel", i === idx));
-    $("exchangeDetailsCard").classList.remove("hidden");
-    $("exchangeUnitLabel").textContent = "(" + exLine.unitLabel + "s, up to " + exMaxQty + ")";
-    $("exchangeReturnQty").value = exMaxQty; $("exchangeReturnQty").max = exMaxQty;
+  window.toggleExLine = function (idx) {
+    const on = $("exchk-" + idx).checked;
+    $("exl-" + idx).classList.toggle("on", on);
+    $("exqwrap-" + idx).classList.toggle("hidden", !on);
+    if (on) $("exq-" + idx).value = exMax[idx];
     updateSummary();
-    $("exchangeDetailsCard").scrollIntoView({ behavior: "smooth", block: "start" });
   };
-  const returnQtyVal = () => Math.min(Number($("exchangeReturnQty").value) || 0, exMaxQty);
-  const returnValue = () => exLine && exLine.qty > 0 ? (exLine.total || 0) * (returnQtyVal() / exLine.qty) : 0;
-  function updateSummary() {
-    if (!exLine) return;
-    const rv = returnValue(), credit = exReceipt.paymentStatus === "CREDIT";
-    $("exchangeReturnValue").textContent = "Value of returned item: " + fmt(rv);
-    const wants = $("exchangeWantsReplacement").checked;
-    let s;
-    if (!wants) s = rv > 0 ? (credit ? "Reduce " + fmt(rv) + " from the customer's balance." : "Refund " + fmt(rv) + " to the customer.") : "Enter a quantity to see the refund amount.";
-    else if (exReplDrug) {
-      const diff = (Number($("exchangeReplPrice").value) || 0) - rv;
-      s = diff > 0 ? "Replacement costs " + fmt(diff) + " more — " + (credit ? "add this to the customer's balance." : "collect this from the customer.")
-        : diff < 0 ? "Replacement costs " + fmt(-diff) + " less — " + (credit ? "reduce the customer's balance by this." : "refund this to the customer.") : "Even exchange — no money owed either way.";
-    } else s = "Pick a replacement medicine below.";
-    $("exchangeSummary").textContent = s;
+
+  function returnPlan() {
+    const plan = [];
+    (exReceipt ? exReceipt.items : []).forEach((line, idx) => {
+      const chk = $("exchk-" + idx); if (!chk || !chk.checked) return;
+      const qty = Math.min(Number($("exq-" + idx).value) || 0, exMax[idx]);
+      if (qty <= 0) return;
+      const ratio = line.qty > 0 ? qty / line.qty : 0;
+      plan.push({ idx, line, qty, base: (line.baseQtyNeeded || 0) * ratio, value: (line.total || 0) * ratio });
+    });
+    return plan;
   }
-  $("exchangeReturnQty").addEventListener("input", updateSummary);
+
+  window.updateSummary = function () {
+    if (!exReceipt) return;
+    const plan = returnPlan(), credit = exReceipt.paymentStatus === "CREDIT";
+    const rv = plan.reduce((a, p) => a + p.value, 0);
+    $("exchangeReturnValue").textContent = plan.length ? plan.length + " item(s) being returned — value " + fmt(rv) : "Nothing selected yet — tick the item(s) above.";
+    const wants = $("exchangeWantsReplacement").checked;
+    const rp = wants ? exReplItems.reduce((a, x) => a + x.price, 0) : 0;
+    let s;
+    if (!plan.length) s = "Select what is being returned.";
+    else if (!wants) s = credit ? "Reduce " + fmt(rv) + " from the customer's balance." : "Refund " + fmt(rv) + " to the customer.";
+    else if (!exReplItems.length) s = "Pick a replacement medicine, set the quantity, then tap “Add to replacement list”.";
+    else {
+      const diff = rp - rv;
+      s = "Returned: " + fmt(rv) + " · Replacement: " + fmt(rp) + "\n" + (diff > 0 ? "Customer owes " + fmt(diff) + " more — " + (credit ? "added to their balance." : "collect it.")
+        : diff < 0 ? "Replacement costs " + fmt(-diff) + " less — " + (credit ? "their balance is reduced by this." : "refund this to the customer.") : "Even exchange — no money owed either way.");
+    }
+    $("exchangeSummary").style.whiteSpace = "pre-line";
+    $("exchangeSummary").textContent = s;
+  };
   $("exchangeWantsReplacement").addEventListener("change", () => { $("exchangeReplacementBlock").classList.toggle("hidden", !$("exchangeWantsReplacement").checked); updateSummary(); });
+
+  // ----- replacement picker -----
   $("exchangeDrugSearch").addEventListener("input", () => {
     const q = $("exchangeDrugSearch").value.trim().toLowerCase(), box = $("exchangeDrugResults");
     if (!q || !exReceipt) { box.innerHTML = ""; return; }
@@ -603,21 +648,45 @@
     exReplDrug = d;
     $("exchangeDrugSearch").value = ""; $("exchangeDrugResults").innerHTML = "";
     $("exchangeSelectedDrug").classList.remove("hidden");
-    $("exchangeSelectedDrugLabel").textContent = d.name + " — available: " + (d.currentStockBase || 0).toLocaleString() + " " + d.baseUnit + "(s)";
-    const opts = [["stock", d.stockUnit]]; if (d.hasIntermediate) opts.push(["intermediate", d.intermediateUnit]); opts.push(["base", d.baseUnit]);
-    $("exchangeReplUnitLevel").innerHTML = opts.map(o => '<option value="' + o[0] + '">' + esc(o[1]) + "</option>").join("");
-    $("exchangeReplUnitLevel").value = "base"; $("exchangeReplQty").value = 1;
-    $("exchangeReplPrice").value = priceFor("base", d);
-    updateSummary();
+    $("exchangeSelectedDrugLabel").innerHTML = "<b>" + esc(d.name) + "</b> — in stock: " + (d.currentStockBase || 0).toLocaleString() + " " + esc(d.baseUnit) + "(s)";
+    $("exchangeInvPrices").textContent = "Inventory prices — " + levelsOf(d).map(l => unitName(l, d) + ": " + (directPrice(l, d) > 0 ? fmt(directPrice(l, d)) : "not set")).join(" · ");
+    $("exchangeReplUnitLevel").innerHTML = levelsOf(d).map(l => '<option value="' + l + '">' + esc(unitName(l, d)) + "</option>").join("");
+    // start on the biggest unit that has a price, like the Sell page would offer
+    const first = levelsOf(d).find(l => directPrice(l, d) > 0) || "base";
+    $("exchangeReplUnitLevel").value = first; $("exchangeReplQty").value = 1;
+    repriceReplacement();
   };
   function repriceReplacement() {
     if (!exReplDrug) return;
-    $("exchangeReplPrice").value = priceFor($("exchangeReplUnitLevel").value, exReplDrug) * (Number($("exchangeReplQty").value) || 0);
-    updateSummary();
+    const lvl = $("exchangeReplUnitLevel").value, up = unitPrice(lvl, exReplDrug), qty = Number($("exchangeReplQty").value) || 0;
+    $("exchangeUnitPriceNote").textContent = up.price > 0
+      ? "Price per " + unitName(lvl, exReplDrug) + ": " + fmt(up.price) + (up.from ? " (worked out from the " + unitName(up.from, exReplDrug) + " price — no " + unitName(lvl, exReplDrug) + " price in Inventory)" : " (from Inventory)")
+      : "No price for " + unitName(lvl, exReplDrug) + " in Inventory — type the total below.";
+    $("exchangeReplPrice").value = up.price > 0 ? round2(up.price * qty) : "";
   }
   $("exchangeReplUnitLevel").addEventListener("change", repriceReplacement);
   $("exchangeReplQty").addEventListener("input", repriceReplacement);
-  $("exchangeReplPrice").addEventListener("input", updateSummary);
+
+  window.addReplacement = function () {
+    const st = $("exchangeStatus"); st.textContent = "";
+    if (!exReplDrug) return;
+    const d = exReplDrug, lvl = $("exchangeReplUnitLevel").value, qty = Number($("exchangeReplQty").value) || 0, price = Number($("exchangeReplPrice").value) || 0;
+    if (qty <= 0) { st.style.color = "var(--danger)"; st.textContent = "Enter a replacement quantity greater than zero."; return; }
+    if (price <= 0) { st.style.color = "var(--danger)"; st.textContent = "Enter a price greater than zero."; return; }
+    const base = toBase(qty, lvl, d);
+    const already = exReplItems.filter(x => x.drug.id === d.id).reduce((a, x) => a + x.base, 0);
+    if (already + base > (d.currentStockBase || 0)) { st.style.color = "var(--danger)"; st.textContent = "Not enough " + d.name + " in stock (" + (d.currentStockBase || 0) + " " + d.baseUnit + "(s) available)."; return; }
+    exReplItems.push({ drug: d, level: lvl, label: unitName(lvl, d), qty, base, price });
+    exReplDrug = null;
+    $("exchangeSelectedDrug").classList.add("hidden");
+    renderReplList(); updateSummary();
+  };
+  window.removeReplacement = function (i) { exReplItems.splice(i, 1); renderReplList(); updateSummary(); };
+  function renderReplList() {
+    $("exchangeReplList").innerHTML = exReplItems.length
+      ? '<label>Replacement list</label>' + exReplItems.map((x, i) => '<div class="replItem"><span>' + esc(x.drug.name) + " — " + esc(x.qty) + " " + esc(x.label) + "(s) — <b>" + fmt(x.price) + '</b></span><button type="button" class="btn-small btn-danger-outline" onclick="removeReplacement(' + i + ')">Remove</button></div>').join("")
+      : "";
+  }
 
   async function nextReceiptNumber(shopId) {
     const ref = doc(db, "counters", shopId + "_sales");
@@ -631,109 +700,119 @@
 
   window.completeExchange = async function () {
     if (busy) return;
-    const st = $("exchangeStatus"); st.textContent = "";
-    if (!exLine) { st.textContent = "Select which item was returned."; return; }
-    const returnQty = returnQtyVal();
-    if (returnQty <= 0) { st.textContent = "Enter a quantity greater than zero."; return; }
+    const st = $("exchangeStatus"); st.style.color = "var(--danger)"; st.textContent = "";
+    const plan = returnPlan();
+    if (!plan.length) { st.textContent = "Tick at least one item being returned and enter a quantity."; return; }
     const wants = $("exchangeWantsReplacement").checked;
-    if (wants && !exReplDrug) { st.textContent = "Pick a replacement medicine."; return; }
-    let replQty = 0, replPrice = 0, replLevel = "base";
-    if (wants) {
-      replQty = Number($("exchangeReplQty").value) || 0; replPrice = Number($("exchangeReplPrice").value) || 0; replLevel = $("exchangeReplUnitLevel").value;
-      if (replQty <= 0) { st.textContent = "Enter a replacement quantity greater than zero."; return; }
-      if (replPrice <= 0) { st.textContent = "Enter a replacement price greater than zero."; return; }
-    }
-    const rc = exReceipt, line = exLine, shopId = rc.shopId, credit = rc.paymentStatus === "CREDIT" && !!rc.customerId;
-    const ratio = line.qty > 0 ? returnQty / line.qty : 0;
-    const returnBase = (line.baseQtyNeeded || 0) * ratio;
-    const retValue = (line.total || 0) * ratio;
-    const origSale = exSales.find(s => s.drugId === line.drugId && (s.total || 0) > 0 && s.qty === line.qty && s.total === line.total) || exSales.find(s => s.drugId === line.drugId && (s.total || 0) > 0);
-    const retCOGS = origSale ? (origSale.costOfGoods || 0) * (origSale.baseQtyDeducted > 0 ? Math.min(1, returnBase / origSale.baseQtyDeducted) : ratio) : 0;
-    const replLabel = wants ? $("exchangeReplUnitLevel").selectedOptions[0].textContent : "";
-    const diff = wants ? replPrice - retValue : -retValue;
-    const msg = wants
-      ? "Return " + returnQty + " " + line.unitLabel + "(s) of " + line.drugName + " (" + fmt(retValue) + ") for " + replQty + " " + replLabel + "(s) of " + exReplDrug.name + " (" + fmt(replPrice) + ").\n\n" + (diff > 0 ? "Customer owes " + fmt(diff) + " more." : diff < 0 ? "Refund the customer " + fmt(-diff) + "." : "Even exchange.")
-      : "Return " + returnQty + " " + line.unitLabel + "(s) of " + line.drugName + " — " + (credit ? "reduce " + rc.customerName + "'s balance by " : "refund the customer ") + fmt(retValue) + ".";
+    if (wants && !exReplItems.length) { st.textContent = exReplDrug ? "Tap “Add to replacement list” first." : "Add at least one replacement medicine, or untick the replacement box."; return; }
+    // the same drug can't be returned beyond what was sold on this receipt
+    const perDrug = {};
+    plan.forEach(p => { perDrug[p.line.drugId] = (perDrug[p.line.drugId] || 0) + p.base; });
+    for (const did of Object.keys(perDrug)) if (perDrug[did] > remainingBaseForDrug(did) + 1e-9) { st.textContent = "You're returning more of a medicine than was sold on this receipt."; return; }
+
+    const rc = exReceipt, shopId = rc.shopId, credit = rc.paymentStatus === "CREDIT" && !!rc.customerId;
+    const retTotal = plan.reduce((a, p) => a + p.value, 0);
+    const replTotal = wants ? exReplItems.reduce((a, x) => a + x.price, 0) : 0;
+    const diff = replTotal - retTotal;
+    const msg = "Return: " + plan.map(p => p.qty + " " + p.line.unitLabel + "(s) " + p.line.drugName).join(", ") + " (" + fmt(retTotal) + ")" +
+      (wants ? "\nReplace with: " + exReplItems.map(x => x.qty + " " + x.label + "(s) " + x.drug.name).join(", ") + " (" + fmt(replTotal) + ")\n\n" + (diff > 0 ? "Customer owes " + fmt(diff) + " more." : diff < 0 ? "Refund the customer " + fmt(-diff) + "." : "Even exchange.")
+        : "\n\n" + (credit ? "Reduce " + rc.customerName + "'s balance by " : "Refund the customer ") + fmt(retTotal) + ".");
     if (!confirm(msg + "\n\nProceed?")) return;
 
     busy = true; $("completeExchangeBtn").disabled = true; st.style.color = "var(--muted)"; st.textContent = "Saving…";
     try {
-      const retSnap = await getDoc(doc(db, "drugs", line.drugId));
-      if (!retSnap.exists()) throw new Error("The returned medicine no longer exists in inventory.");
-      const retDrug = { id: retSnap.id, ...retSnap.data() };
-      const stockNow = {}; stockNow[retDrug.id] = retDrug.currentStockBase || 0;
-      const delta = {}; delta[retDrug.id] = returnBase;
+      // fresh stock for every drug involved
+      const drugIds = Array.from(new Set(plan.map(p => p.line.drugId).concat(wants ? exReplItems.map(x => x.drug.id) : [])));
+      const fresh = {};
+      for (const did of drugIds) {
+        const sn = await getDoc(doc(db, "drugs", did));
+        if (!sn.exists()) throw new Error("A medicine in this exchange no longer exists in inventory.");
+        fresh[did] = { id: sn.id, ...sn.data() };
+      }
+      const delta = {};
+      plan.forEach(p => { delta[p.line.drugId] = (delta[p.line.drugId] || 0) + p.base; });
 
-      // replacement: fresh stock check + FEFO from live batches
-      let replBase = 0, replDrug = null, replCOGS = 0, replBatchUpdates = [], replNo = null;
+      // replacements: fresh stock check, then oldest-expiry-first from live batches (shared across lines of the same drug)
+      const liveBatches = {}, touched = new Set(), replLines = [];
+      let replNo = null;
       if (wants) {
-        const rs = await getDoc(doc(db, "drugs", exReplDrug.id));
-        if (!rs.exists()) throw new Error("The replacement medicine no longer exists.");
-        replDrug = { id: rs.id, ...rs.data() };
-        replBase = toBase(replQty, replLevel, replDrug);
-        if (replBase > (replDrug.currentStockBase || 0)) throw new Error("Not enough stock of " + replDrug.name + " for the replacement.");
-        stockNow[replDrug.id] = replDrug.currentStockBase || 0;
-        delta[replDrug.id] = (delta[replDrug.id] || 0) - replBase;
-        const bs = await getDocs(query(collection(db, "batches"), where("businessId", "==", businessId), where("shopId", "==", shopId), where("drugId", "==", replDrug.id)));
-        const live = bs.docs.map(d => ({ id: d.id, ...d.data() })).filter(b => daysUntil(b.expiryDate) >= 0 && b.quantity > 0).sort((a, b) => expiryMs(a.expiryDate) - expiryMs(b.expiryDate));
-        let remaining = replBase;
-        for (const b of live) {
-          if (remaining <= 0) break;
-          const take = Math.min(remaining, b.quantity); if (take <= 0) continue;
-          replBatchUpdates.push({ id: b.id, quantity: b.quantity - take });
-          replCOGS += (take / (replDrug.baseUnitsPerStock || 1)) * (b.purchasePricePerStockUnit || b.costPerStockUnit || 0);
-          remaining -= take;
+        const need = {};
+        exReplItems.forEach(x => { need[x.drug.id] = (need[x.drug.id] || 0) + x.base; });
+        for (const did of Object.keys(need)) if (need[did] > (fresh[did].currentStockBase || 0)) throw new Error("Not enough stock of " + fresh[did].name + " for the replacement.");
+        for (const did of Object.keys(need)) {
+          const bs = await getDocs(query(collection(db, "batches"), where("businessId", "==", businessId), where("shopId", "==", shopId), where("drugId", "==", did)));
+          liveBatches[did] = bs.docs.map(d => ({ id: d.id, ...d.data() })).filter(b => daysUntil(b.expiryDate) >= 0 && b.quantity > 0).sort((a, b) => expiryMs(a.expiryDate) - expiryMs(b.expiryDate));
         }
+        exReplItems.forEach(x => {
+          const d = fresh[x.drug.id]; let remaining = x.base, cogs = 0;
+          for (const b of liveBatches[d.id]) {
+            if (remaining <= 0) break;
+            const take = Math.min(remaining, b.quantity); if (take <= 0) continue;
+            b.quantity -= take; touched.add(b.id);
+            cogs += (take / (d.baseUnitsPerStock || 1)) * (b.purchasePricePerStockUnit || b.costPerStockUnit || 0);
+            remaining -= take;
+          }
+          delta[d.id] = (delta[d.id] || 0) - x.base;
+          replLines.push({ x, d, cogs });
+        });
         replNo = await nextReceiptNumber(shopId);
       }
 
       const wb = writeBatch(db);
-      Object.keys(delta).forEach(did => wb.update(doc(db, "drugs", did), { currentStockBase: stockNow[did] + delta[did] }));
+      Object.keys(delta).forEach(did => wb.update(doc(db, "drugs", did), { currentStockBase: (fresh[did].currentStockBase || 0) + delta[did] }));
 
-      // 1) returned stock goes back as its own batch, valued at the ORIGINAL cost
-      const restoredCost = returnBase > 0 && retDrug.baseUnitsPerStock > 0 ? (retCOGS / returnBase) * retDrug.baseUnitsPerStock : 0;
-      const retBatchRef = doc(collection(db, "batches"));
-      wb.set(retBatchRef, {
-        businessId, shopId, drugId: retDrug.id, drugName: retDrug.name, batchNumber: "RET-" + rc.displayNumber,
-        expiryDate: "", quantity: returnBase, purchasePricePerStockUnit: restoredCost, supplier: "Customer return",
-        purchaseDate: serverTimestamp(), createdAt: serverTimestamp()
-      });
-      wb.set(doc(collection(db, "stock_transactions")), {
-        businessId, shopId, drugId: retDrug.id, drugName: retDrug.name, type: "RETURN", baseUnitsChange: returnBase,
-        note: "Customer return — " + returnQty + " " + line.unitLabel + "(s) from receipt " + rc.displayNumber, batchId: retBatchRef.id, cashier: cashierName, createdAt: serverTimestamp()
-      });
-      // offsetting negative sale: every report just sums sales, so revenue/profit correct themselves
-      wb.set(doc(collection(db, "sales")), {
-        businessId, shopId, ownerUid: currentUser.uid, drugId: line.drugId, drugName: line.drugName, drugClass: retDrug.drugClass || "",
-        unitLevel: line.unitLevel, qty: -returnQty, baseQtyDeducted: -returnBase, pricePerUnit: line.pricePerUnit, total: -retValue, costOfGoods: -retCOGS,
-        receiptId: rc.id, cashier: cashierName, paymentStatus: rc.paymentStatus, customerId: rc.customerId || null,
-        note: "Return against receipt " + rc.displayNumber, createdAt: serverTimestamp()
-      });
-      if (credit) wb.set(doc(collection(db, "credit_transactions")), {
-        businessId, shopId, customerId: rc.customerId, customerName: rc.customerName || "", type: "CORRECTION", amount: retValue, paidAmount: 0, balanceChange: -retValue,
-        receiptId: rc.id, description: "Return: " + returnQty + " " + line.unitLabel + "(s) of " + line.drugName + " from receipt " + rc.displayNumber, cashier: cashierName, createdAt: serverTimestamp()
-      });
-
-      // 2) replacement = a normal one-item sale
-      if (wants) {
-        replBatchUpdates.forEach(u => wb.update(doc(db, "batches", u.id), { quantity: u.quantity }));
-        const label = "S-" + replNo, rRef = doc(collection(db, "receipts"));
-        wb.set(rRef, {
-          businessId, shopId, type: "SALE", displayNumber: label, createdAt: serverTimestamp(), cashier: cashierName,
-          itemCount: 1, totalAmount: replPrice, paymentStatus: rc.paymentStatus, customerId: rc.customerId || null,
-          customerName: rc.paymentStatus === "CREDIT" ? (rc.customerName || "") : "", note: "Exchange for receipt " + rc.displayNumber,
-          items: [{ drugId: replDrug.id, drugName: replDrug.name, qty: replQty, unitLabel: replLabel, unitLevel: replLevel, pricePerUnit: replPrice / replQty, total: replPrice,
-            baseQtyNeeded: replBase, stockUnit: replDrug.stockUnit, intermediateUnit: replDrug.intermediateUnit || "", baseUnit: replDrug.baseUnit,
-            baseUnitsPerStock: replDrug.baseUnitsPerStock, basePerIntermediate: replDrug.basePerIntermediate || 0 }]
+      // 1) every returned line: back into stock as its own batch at the ORIGINAL cost + an offsetting negative sale
+      const usedSales = new Set();
+      plan.forEach(p => {
+        const line = p.line, rd = fresh[line.drugId];
+        const orig = exSales.find(s => !usedSales.has(s.id) && s.drugId === line.drugId && (s.total || 0) > 0 && s.qty === line.qty && s.total === line.total) || exSales.find(s => !usedSales.has(s.id) && s.drugId === line.drugId && (s.total || 0) > 0);
+        if (orig) usedSales.add(orig.id);
+        const retCOGS = orig ? (orig.costOfGoods || 0) * (orig.baseQtyDeducted > 0 ? Math.min(1, p.base / orig.baseQtyDeducted) : (line.qty > 0 ? p.qty / line.qty : 0)) : 0;
+        const restoredCost = p.base > 0 && rd.baseUnitsPerStock > 0 ? (retCOGS / p.base) * rd.baseUnitsPerStock : 0;
+        const batchRef = doc(collection(db, "batches"));
+        wb.set(batchRef, {
+          businessId, shopId, drugId: rd.id, drugName: rd.name, batchNumber: "RET-" + rc.displayNumber,
+          expiryDate: "", quantity: p.base, purchasePricePerStockUnit: restoredCost, supplier: "Customer return",
+          purchaseDate: serverTimestamp(), createdAt: serverTimestamp()
+        });
+        wb.set(doc(collection(db, "stock_transactions")), {
+          businessId, shopId, drugId: rd.id, drugName: rd.name, type: "RETURN", baseUnitsChange: p.base,
+          note: "Customer return — " + p.qty + " " + line.unitLabel + "(s) from receipt " + rc.displayNumber, batchId: batchRef.id, cashier: cashierName, createdAt: serverTimestamp()
         });
         wb.set(doc(collection(db, "sales")), {
-          businessId, shopId, ownerUid: currentUser.uid, drugId: replDrug.id, drugName: replDrug.name, drugClass: replDrug.drugClass || "",
-          unitLevel: replLevel, qty: replQty, baseQtyDeducted: replBase, pricePerUnit: replPrice / replQty, total: replPrice, costOfGoods: replCOGS,
-          receiptId: rRef.id, cashier: cashierName, paymentStatus: rc.paymentStatus, customerId: rc.customerId || null, note: "Exchange for receipt " + rc.displayNumber, createdAt: serverTimestamp()
+          businessId, shopId, ownerUid: currentUser.uid, drugId: line.drugId, drugName: line.drugName, drugClass: rd.drugClass || "",
+          unitLevel: line.unitLevel, qty: -p.qty, baseQtyDeducted: -p.base, pricePerUnit: line.pricePerUnit, total: -p.value, costOfGoods: -retCOGS,
+          receiptId: rc.id, cashier: cashierName, paymentStatus: rc.paymentStatus, customerId: rc.customerId || null,
+          note: "Return against receipt " + rc.displayNumber, createdAt: serverTimestamp()
         });
+      });
+      if (credit) wb.set(doc(collection(db, "credit_transactions")), {
+        businessId, shopId, customerId: rc.customerId, customerName: rc.customerName || "", type: "CORRECTION", amount: retTotal, paidAmount: 0, balanceChange: -retTotal,
+        receiptId: rc.id, description: "Return from receipt " + rc.displayNumber + ": " + plan.map(p => p.qty + " " + p.line.unitLabel + "(s) " + p.line.drugName).join(", "), cashier: cashierName, createdAt: serverTimestamp()
+      });
+
+      // 2) replacement(s) = ONE normal sale receipt with all the replacement items
+      if (wants) {
+        const label = "S-" + replNo, rRef = doc(collection(db, "receipts"));
+        const finalQty = {}; Object.keys(liveBatches).forEach(did => liveBatches[did].forEach(b => { if (touched.has(b.id)) finalQty[b.id] = b.quantity; }));
+        Object.keys(finalQty).forEach(bid => wb.update(doc(db, "batches", bid), { quantity: finalQty[bid] }));
+        wb.set(rRef, {
+          businessId, shopId, type: "SALE", displayNumber: label, createdAt: serverTimestamp(), cashier: cashierName,
+          itemCount: replLines.length, totalAmount: replTotal, paymentStatus: rc.paymentStatus, customerId: rc.customerId || null,
+          customerName: rc.paymentStatus === "CREDIT" ? (rc.customerName || "") : "", note: "Exchange for receipt " + rc.displayNumber,
+          items: replLines.map(({ x, d }) => ({ drugId: d.id, drugName: d.name, qty: x.qty, unitLabel: x.label, unitLevel: x.level, pricePerUnit: x.price / x.qty, total: x.price,
+            baseQtyNeeded: x.base, stockUnit: d.stockUnit, intermediateUnit: d.intermediateUnit || "", baseUnit: d.baseUnit,
+            baseUnitsPerStock: d.baseUnitsPerStock, basePerIntermediate: d.basePerIntermediate || 0 }))
+        });
+        replLines.forEach(({ x, d, cogs }) => wb.set(doc(collection(db, "sales")), {
+          businessId, shopId, ownerUid: currentUser.uid, drugId: d.id, drugName: d.name, drugClass: d.drugClass || "",
+          unitLevel: x.level, qty: x.qty, baseQtyDeducted: x.base, pricePerUnit: x.price / x.qty, total: x.price, costOfGoods: cogs,
+          receiptId: rRef.id, cashier: cashierName, paymentStatus: rc.paymentStatus, customerId: rc.customerId || null,
+          note: "Exchange for receipt " + rc.displayNumber, createdAt: serverTimestamp()
+        }));
         if (credit) wb.set(doc(collection(db, "credit_transactions")), {
-          businessId, shopId, customerId: rc.customerId, customerName: rc.customerName || "", type: "CREDIT_SALE", amount: replPrice, paidAmount: 0, balanceChange: replPrice,
-          dueDate: null, receiptId: rRef.id, description: "Exchange: " + replQty + " " + replLabel + "(s) of " + replDrug.name + " (receipt " + label + ")", cashier: cashierName, createdAt: serverTimestamp()
+          businessId, shopId, customerId: rc.customerId, customerName: rc.customerName || "", type: "CREDIT_SALE", amount: replTotal, paidAmount: 0, balanceChange: replTotal,
+          dueDate: null, receiptId: rRef.id, description: "Exchange for receipt " + rc.displayNumber + " (new receipt " + label + ")", cashier: cashierName, createdAt: serverTimestamp()
         });
       }
       await wb.commit();
