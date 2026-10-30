@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStock Cloud — Dashboard</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);} .badge.error{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  .link{color:var(--accent); font-size:13px; text-decoration:none;}
+  .stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .stat{background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px;}
+  a.stat, a.shop-card{display:block; text-decoration:none; color:inherit; -webkit-tap-highlight-color:transparent;}
+  a.stat:active, a.shop-card:active{opacity:.7;}
+  .stat .lbl .go, .shop-name .go{color:var(--muted); font-weight:400;}
+  .stat .num{font-size:20px; font-weight:700;}
+  .stat .lbl{font-size:11px; color:var(--muted); margin-top:2px;}
+  .stat.warn .num{color:var(--warn);}
+  .stat.danger .num{color:var(--danger);}
+  .stat.good .num{color:var(--accent2);}
+  .shop-card{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;}
+  .shop-card:last-child{margin-bottom:0;}
+  .shop-name{font-size:15px; font-weight:700; margin-bottom:8px;}
+  .shop-row{display:flex; justify-content:space-between; font-size:13px; padding:3px 0;}
+  .shop-row .v{font-weight:600;}
+  .v.good{color:var(--accent2);} .v.bad{color:var(--danger);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+  .period-note{font-size:11px; color:var(--muted); margin-bottom:10px;}
+  .error-note{font-size:12.5px; color:var(--danger); margin-bottom:10px;}
+  .hidden{display:none !important;}
+  .pill-row{display:flex; gap:6px; flex-wrap:wrap;}
+  .pill-btn{
+    background:transparent; color:var(--muted); border:1px solid var(--border);
+    padding:6px 12px; font-size:12.5px; border-radius:999px; cursor:pointer;
+  }
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .row-inline{display:flex; gap:8px;}
+  .row-inline input{flex:1; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:13px;}
+
+  /* ===== Shared MediStock Cloud navigation (matches MediStock Pro) ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Multi-Shop Edition · Dashboard</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="location.href='dashboard.html'">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html" class="active">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+
+<div class="card" id="errorCard" style="display:none;">
+  <div class="error-note" id="errorNote"></div>
+</div>
+
+<div class="card">
+  <h2 id="overviewTitle">Business Overview</h2>
+  <div class="period-note" id="overviewNote">Sales/Expenses figures are for the period below, across all your shops. Stock and expiry figures are always current right now, whatever period you pick.</div>
+  <div class="pill-row" id="periodPills">
+    <button type="button" class="pill-btn" data-period="today">Day</button>
+    <button type="button" class="pill-btn" data-period="week">Week</button>
+    <button type="button" class="pill-btn selected" data-period="month">Month</button>
+    <button type="button" class="pill-btn" data-period="year">Year</button>
+    <button type="button" class="pill-btn" data-period="custom">Custom</button>
+    <button type="button" class="pill-btn" data-period="all">All time</button>
+  </div>
+  <div id="customRange" class="hidden" style="margin:8px 0;">
+    <div class="row-inline">
+      <input type="date" id="customFrom">
+      <input type="date" id="customTo">
+    </div>
+  </div>
+  <div class="period-note" id="periodRangeLabel" style="margin-top:2px;"></div>
+  <div class="stat-grid" style="margin-top:10px;">
+    <a class="stat good" href="sales.html"><div class="num" id="statSales">—</div><div class="lbl">Sales <span class="go">›</span></div></a>
+    <a class="stat" href="expenses.html"><div class="num" id="statExpenses">—</div><div class="lbl">Expenses <span class="go">›</span></div></a>
+    <a class="stat good" href="sales.html"><div class="num" id="statGross">—</div><div class="lbl">Gross profit (Sales − cost of goods) <span class="go">›</span></div></a>
+    <a class="stat good" href="cash-position.html"><div class="num" id="statNetProfit">—</div><div class="lbl">Net profit (Gross − Expenses) <span class="go">›</span></div></a>
+    <a class="stat" href="inventory.html"><div class="num" id="statStockValue">—</div><div class="lbl">Stock value (at wholesale) <span class="go">›</span></div></a>
+    <a class="stat warn" href="whattobuy.html"><div class="num" id="statLowStock">—</div><div class="lbl">Low stock items <span class="go">›</span></div></a>
+    <a class="stat danger" href="batches.html?filter=expired"><div class="num" id="statExpired">—</div><div class="lbl">Expired batches <span class="go">›</span></div></a>
+    <a class="stat warn" href="credit.html"><div class="num" id="statCreditOwed">—</div><div class="lbl">Credit owed to you <span class="go">›</span></div></a>
+  </div>
+</div>
+
+<a href="charts.html" class="card" style="display:block; text-decoration:none; color:inherit;">
+  <h2 style="margin:0;">📈 Trends &amp; Category Charts <span style="color:var(--muted); font-weight:400;">›</span></h2>
+  <div class="period-note" style="margin-top:4px;">Sales, profit and expense trends, top drugs, drug classes and more.</div>
+</a>
+
+<div class="card hidden" id="shopBreakdownCard">
+  <h2>Shop Performance <span style="text-transform:none; font-weight:400;">(selected period · tap a shop to open it)</span></h2>
+  <div id="shopBreakdown"><div class="empty">Loading…</div></div>
+</div>
+
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import {
+    getFirestore, doc, getDoc, collection, onSnapshot,
+    enableIndexedDbPersistence, query, where
+  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {});
+
+  let currentRole = null;
+  let currentBusinessId = null;
+  let currentShopId = null; // operator only
+  let shopsById = {};   // owner only: id -> name
+  let sales = [];
+  let expenses = [];
+  let drugs = [];
+  let batches = [];
+  let creditTxns = [];
+
+  // ---- Period engine (ported from Pro's Dashboard: Day/Week/Month/Year/
+  // Custom/All-time. Only the TYPE is remembered as a preference — the
+  // actual range always resolves against today's real date on reopen,
+  // it never resumes some stale range from last time.) ----
+  function getPeriodPref() {
+    try { const raw = localStorage.getItem("mcDashPeriod"); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+  }
+  function savePeriodPref() {
+    try {
+      localStorage.setItem("mcDashPeriod", JSON.stringify({
+        type: periodType,
+        from: document.getElementById("customFrom").value || "",
+        to: document.getElementById("customTo").value || ""
+      }));
+    } catch (e) {}
+  }
+  const periodPref = getPeriodPref();
+  let periodType = periodPref?.type || "month";
+
+  function computePeriodRange() {
+    const now = new Date();
+    let from, to;
+    if (periodType === "all") {
+      from = new Date(2000, 0, 1);
+      to = new Date(2099, 11, 31, 23, 59, 59, 999);
+    } else if (periodType === "today") {
+      from = new Date(now); from.setHours(0, 0, 0, 0);
+      to = new Date(now); to.setHours(23, 59, 59, 999);
+    } else if (periodType === "week") {
+      from = new Date(now); from.setDate(now.getDate() - now.getDay()); from.setHours(0, 0, 0, 0);
+      to = new Date(from); to.setDate(from.getDate() + 6); to.setHours(23, 59, 59, 999);
+    } else if (periodType === "month") {
+      from = new Date(now.getFullYear(), now.getMonth(), 1);
+      to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else if (periodType === "year") {
+      from = new Date(now.getFullYear(), 0, 1);
+      to = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+    } else {
+      const fromStr = document.getElementById("customFrom").value;
+      const toStr = document.getElementById("customTo").value;
+      from = fromStr ? new Date(fromStr + "T00:00:00") : new Date(2000, 0, 1);
+      to = toStr ? new Date(toStr + "T23:59:59") : new Date();
+    }
+    return { from, to };
+  }
+  function isInRange(ts, from, to) {
+    if (!ts) return false;
+    const d = ts.toDate();
+    return d >= from && d <= to;
+  }
+  function formatRangeLabel(from, to) {
+    const f = d => d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    return `${f(from)} → ${f(to)}`;
+  }
+
+  document.querySelectorAll("#periodPills .pill-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#periodPills .pill-btn").forEach(b => b.classList.remove("selected"));
+      btn.classList.add("selected");
+      periodType = btn.dataset.period;
+      document.getElementById("customRange").classList.toggle("hidden", periodType !== "custom");
+      savePeriodPref();
+      renderAll();
+    });
+  });
+  document.getElementById("customFrom").addEventListener("change", () => { savePeriodPref(); renderAll(); });
+  document.getElementById("customTo").addEventListener("change", () => { savePeriodPref(); renderAll(); });
+
+  // Reflect the restored preference in the UI (markup hard-codes "Month" as selected).
+  if (periodPref?.type && periodPref.type !== "month") {
+    document.querySelectorAll("#periodPills .pill-btn").forEach(b => {
+      b.classList.toggle("selected", b.dataset.period === periodType);
+    });
+  }
+  if (periodType === "custom") {
+    document.getElementById("customFrom").value = periodPref?.from || "";
+    document.getElementById("customTo").value = periodPref?.to || "";
+    document.getElementById("customRange").classList.remove("hidden");
+  }
+
+  function daysUntil(dateStr) {
+    if (!dateStr || isNaN(new Date(dateStr))) return 36500; // no expiry date = never expires
+    const today = new Date(); today.setHours(0,0,0,0);
+    return Math.round((new Date(dateStr) - today) / 86400000);
+  }
+  function fmt(n) { return Math.round(n).toLocaleString(); }
+
+  function showError(label, err) {
+    const card = document.getElementById("errorCard");
+    const note = document.getElementById("errorNote");
+    card.style.display = "block";
+    note.textContent = `Couldn't load ${label}: ${err.message}. Some figures below may be incomplete — try reloading.`;
+    const badge = document.getElementById("netBadge");
+    badge.textContent = "error";
+    badge.className = "badge error";
+  }
+
+  // Cost of goods for one sale line. Newer sales store it (taken from the
+  // batches actually sold). If it's missing/0 (e.g. no batch covered the sale),
+  // estimate from the drug's current wholesale price so profit isn't overstated.
+  function saleCost(s) {
+    const stored = Number(s.costOfGoods || 0);
+    if (stored > 0) return stored;
+    const d = drugs.find(x => x.id === s.drugId);
+    if (!d || !d.baseUnitsPerStock) return 0;
+    return ((s.baseQtyDeducted || 0) / d.baseUnitsPerStock) * (d.wholesale || 0);
+  }
+
+  function renderAll() {
+    const { from, to } = computePeriodRange();
+    document.getElementById("periodRangeLabel").textContent = formatRangeLabel(from, to);
+    const salesThisMonth = sales.filter(s => isInRange(s.createdAt, from, to));
+    const expensesThisMonth = expenses.filter(e => isInRange(e.createdAt, from, to));
+    const totalSales = salesThisMonth.reduce((sum, s) => sum + (s.total || 0), 0);
+    const totalExpenses = expensesThisMonth.reduce((sum, e) => sum + (Number(e.totalAmount != null ? e.totalAmount : e.amount) || 0), 0);
+    const totalCost = salesThisMonth.reduce((sum, s) => sum + saleCost(s), 0);
+    const grossProfit = totalSales - totalCost;
+    const stockValue = drugs.reduce((sum, d) => {
+      const stockUnitsWorth = d.baseUnitsPerStock ? (d.currentStockBase / d.baseUnitsPerStock) * (d.wholesale || 0) : 0;
+      return sum + stockUnitsWorth;
+    }, 0);
+    const lowStockCount = drugs.filter(d => d.active !== false && d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock)).length;
+    const expiredCount = batches.filter(b => daysUntil(b.expiryDate) < 0 && Number(b.quantity || 0) > 0).length;
+    const balancesById = {};
+    creditTxns.forEach(t => { balancesById[t.customerId] = (balancesById[t.customerId] || 0) + (t.balanceChange || 0); });
+    const totalCreditOwed = Object.values(balancesById).filter(b => b > 0).reduce((sum, b) => sum + b, 0);
+
+    document.getElementById("statSales").textContent = fmt(totalSales);
+    document.getElementById("statExpenses").textContent = fmt(totalExpenses);
+    document.getElementById("statGross").textContent = fmt(grossProfit);
+    document.getElementById("statNetProfit").textContent = fmt(grossProfit - totalExpenses);
+    document.getElementById("statNetProfit").style.color = (grossProfit - totalExpenses) < 0 ? "var(--danger)" : "";
+    document.getElementById("statStockValue").textContent = fmt(stockValue);
+    document.getElementById("statLowStock").textContent = lowStockCount;
+    document.getElementById("statExpired").textContent = expiredCount;
+    document.getElementById("statCreditOwed").textContent = fmt(totalCreditOwed);
+
+    if (currentRole !== "owner") return; // operator has no per-shop breakdown
+
+    const shopIds = Object.keys(shopsById);
+    const container = document.getElementById("shopBreakdown");
+    if (shopIds.length === 0) {
+      container.innerHTML = '<div class="empty">No shops yet — add one on the Shops page.</div>';
+      return;
+    }
+    container.innerHTML = shopIds.map(id => {
+      const name = shopsById[id];
+      const shopSalesDocs = salesThisMonth.filter(s => s.shopId === id);
+      const shopSales = shopSalesDocs.reduce((sum, s) => sum + (s.total || 0), 0);
+      const shopExpenses = expensesThisMonth.filter(e => e.shopId === id).reduce((sum, e) => sum + (Number(e.totalAmount != null ? e.totalAmount : e.amount) || 0), 0);
+      const shopGross = shopSalesDocs.reduce((sum, s) => sum + (s.total || 0) - saleCost(s), 0);
+      const net = shopGross - shopExpenses;
+      const shopLowStock = drugs.filter(d => d.shopId === id && d.active !== false && d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock)).length;
+      const shopExpiring = batches.filter(b => b.shopId === id && daysUntil(b.expiryDate) >= 0 && daysUntil(b.expiryDate) <= 30 && Number(b.quantity || 0) > 0).length;
+      return `
+        <a class="shop-card" href="inventory.html" onclick="localStorage.setItem('mc_activeShopId','${id}')">
+          <div class="shop-name">${name} <span class="go">›</span></div>
+          <div class="shop-row"><span>Sales</span><span class="v good">${fmt(shopSales)}</span></div>
+          <div class="shop-row"><span>Expenses</span><span class="v">${fmt(shopExpenses)}</span></div>
+          <div class="shop-row"><span>Gross profit</span><span class="v ${shopGross >= 0 ? "good" : "bad"}">${fmt(shopGross)}</span></div>
+          <div class="shop-row"><span>Net profit</span><span class="v ${net >= 0 ? "good" : "bad"}">${fmt(net)}</span></div>
+          <div class="shop-row"><span>Low stock items</span><span class="v">${shopLowStock}</span></div>
+          <div class="shop-row"><span>Expiring ≤30d</span><span class="v">${shopExpiring}</span></div>
+        </a>`;
+    }).join("");
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+
+    let profile;
+    try {
+      const userSnap = await getDoc(doc(db, "users", user.uid));
+      if (!userSnap.exists()) { window.location.href = "login.html"; return; }
+      profile = userSnap.data();
+    } catch (err) {
+      showError("your profile", err);
+      return;
+    }
+    currentRole = profile.role;
+    currentBusinessId = profile.businessId;
+
+    const badge = document.getElementById("netBadge");
+    function markLoaded(fromCache) {
+      badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
+      badge.className = "badge " + (fromCache ? "offline" : "online");
+    }
+
+    // ---- Build the query filters for each collection based on role.
+    // Owner: businessId only (sees every shop in the business).
+    // Operator: businessId + shopId (their one assigned shop, per the rules
+    // — they structurally can't read any other shop's data). ----
+    let filters;
+    if (currentRole === "owner") {
+      document.getElementById("shopBreakdownCard").classList.remove("hidden");
+      filters = [where("businessId", "==", currentBusinessId)];
+
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", currentBusinessId)),
+        (snap) => {
+          shopsById = {};
+          snap.docs.forEach(d => { shopsById[d.id] = d.data().name; });
+          renderAll();
+        },
+        (err) => showError("your shops", err)
+      );
+    } else {
+      currentShopId = profile.shopId;
+      document.getElementById("overviewTitle").textContent = "Your Shop";
+      document.getElementById("overviewNote").textContent = "Sales/Expenses figures are for the period below, for your shop. Stock and expiry figures are always current right now, whatever period you pick.";
+      filters = [where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId)];
+    }
+
+    onSnapshot(query(collection(db, "sales"), ...filters), { includeMetadataChanges: true },
+      (snap) => { sales = snap.docs.map(d => d.data()); markLoaded(snap.metadata.fromCache); renderAll(); },
+      (err) => showError("sales", err)
+    );
+    onSnapshot(query(collection(db, "expenses"), ...filters),
+      (snap) => { expenses = snap.docs.map(d => d.data()); renderAll(); },
+      (err) => showError("expenses", err)
+    );
+    onSnapshot(query(collection(db, "drugs"), ...filters),
+      (snap) => { drugs = snap.docs.map(d => ({ id: d.id, ...d.data() })); renderAll(); },
+      (err) => showError("inventory", err)
+    );
+    onSnapshot(query(collection(db, "batches"), ...filters),
+      (snap) => { batches = snap.docs.map(d => d.data()); renderAll(); },
+      (err) => showError("batches", err)
+    );
+    onSnapshot(query(collection(db, "credit_transactions"), ...filters),
+      (snap) => { creditTxns = snap.docs.map(d => d.data()); renderAll(); },
+      (err) => showError("credit records", err)
+    );
+  });
+</script>
+</body>
+</html>
