@@ -4,6 +4,7 @@
   var ITEMS = [
     ["dashboard.html", "Dashboard"],
     ["charts.html", "Charts"],
+    ["reports.html", "Profit & Reports"],
     ["sales.html", "Sell"],
     ["inventory.html", "Inventory"],
     ["purchases.html", "Purchases"],
@@ -31,4 +32,22 @@
     if (it[0] === current) a.className = "active";
     panel.insertBefore(a, before);
   });
+
+  // Log out (works on every page)
+  var out = document.createElement("button");
+  out.type = "button";
+  out.className = "theme-toggle";
+  out.id = "logoutBtn";
+  out.textContent = "\ud83d\udeaa Log out";
+  out.addEventListener("click", async function () {
+    if (!confirm("Log out of MediStock?")) return;
+    try {
+      var m = await import("https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js");
+      await m.getAuth().signOut();
+      location.href = "login.html";
+    } catch (e) {
+      alert("Couldn't log out: " + (e && e.message ? e.message : e));
+    }
+  });
+  panel.appendChild(out);
 })();

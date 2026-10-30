@@ -71,7 +71,7 @@
 <body>
 
 <h1>MediStock Cloud</h1>
-<div class="sub">Step 1 — Accounts, shops, and role-based security</div>
+<div class="sub">Drug shop management — sign in to continue</div>
 
 <!-- LOGIN-TYPE TABS -->
 <div class="tabs" id="authTabs">
@@ -145,6 +145,8 @@
   <button class="btn-danger btn-small" style="margin-top:10px;" onclick="doLogout()">Log out</button>
 </div>
 
+<!-- Developer tools: hidden unless the page is opened as login.html?debug=1 -->
+<div id="devTools" style="display:none;">
 <!-- ADD OPERATOR CARD (owner only) -->
 <div class="card hidden" id="addOperatorCard">
   <h2>Add Operator (test)</h2>
@@ -179,6 +181,8 @@
 <div class="card" style="max-width:420px;">
   <h2>Debug Log</h2>
   <div id="debugLog" style="font-family:monospace; font-size:11px; color:var(--muted); max-height:180px; overflow-y:auto; white-space:pre-wrap; line-height:1.5;"></div>
+</div>
+
 </div>
 
 <script type="module">
@@ -245,6 +249,8 @@
     el.appendChild(line);
     el.scrollTop = el.scrollHeight;
   }
+
+  if (new URLSearchParams(location.search).get("debug") === "1") document.getElementById("devTools").style.display = "block";
 
   window.addEventListener("unhandledrejection", (e) => {
     log("Unhandled error: " + (e.reason?.message || e.reason), true);
@@ -515,8 +521,8 @@
       userDocSnap = await getDoc(doc(db, "users", user.uid));
     } catch (err) {
       log(`✗ enterApp: reading your own profile (users/${user.uid}) failed — ${err.message} (${err.code})`, true);
-      setOpLoginStatus("Signed in, but couldn't load your profile — see debug log.", true);
-      setStatus("Signed in, but couldn't load your profile — see debug log.", true);
+      setOpLoginStatus("Signed in, but couldn't load your profile — please try again.", true);
+      setStatus("Signed in, but couldn't load your profile — please try again.", true);
       return false;
     }
     if (!userDocSnap.exists()) {
@@ -656,6 +662,11 @@
     document.getElementById("drugName").value = "";
     document.getElementById("drugQty").value = "";
   };
+
+  if (new URLSearchParams(location.search).get("disabled") === "1") {
+    window.setAuthTab("operator");
+    setOpLoginStatus("This account has been deactivated. Ask the owner.", true);
+  }
 </script>
 </body>
 </html>

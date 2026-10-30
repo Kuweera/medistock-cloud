@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStock Cloud — Profit &amp; Reports</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  /* ===== Reports page ===== */
+  .hidden{display:none !important;}
+  .pill-row{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;}
+  .pill-btn{background:var(--card); color:var(--text); border:1px solid var(--border); padding:7px 12px; border-radius:999px; font-size:13px; font-weight:600;}
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .period-note{font-size:11.5px; color:var(--muted);}
+  .rl{display:flex; justify-content:space-between; gap:10px; padding:6px 0; font-size:14px; border-bottom:1px solid var(--border);}
+  .rl:last-child{border-bottom:none;}
+  .rl.total{font-weight:700; font-size:15px;}
+  .rl .pos{color:var(--accent2);} .rl .neg{color:var(--danger);}
+  .meta{font-size:12.5px; color:var(--muted); line-height:1.55; margin:6px 0;}
+  .item{padding:9px 0; border-bottom:1px solid var(--border); font-size:13.5px;}
+  .item:last-child{border-bottom:none;}
+  .item .sub{font-size:12px; color:var(--muted); margin-top:2px;}
+  .btn-row{display:flex; gap:8px; margin-bottom:12px;}
+  .btn-row button{flex:1;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent); padding:10px 12px; font-size:14px;}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Multi-Shop Edition · Profit &amp; Reports</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="location.href='dashboard.html'">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="reports.html" class="active">Profit &amp; Reports</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+
+<div class="card">
+  <h2>Period</h2>
+  <div id="shopPickWrap" class="hidden">
+    <label>Shop</label>
+    <select id="shopPick"></select>
+  </div>
+  <div class="pill-row" id="periodPills" style="margin-top:8px;">
+    <button type="button" class="pill-btn" data-period="today">Today</button>
+    <button type="button" class="pill-btn" data-period="week">Week</button>
+    <button type="button" class="pill-btn selected" data-period="month">Month</button>
+    <button type="button" class="pill-btn" data-period="year">Year</button>
+    <button type="button" class="pill-btn" data-period="custom">Custom</button>
+    <button type="button" class="pill-btn" data-period="all">All time</button>
+  </div>
+  <div id="customRange" class="hidden" style="margin:8px 0;">
+    <div class="row"><input type="date" id="customFrom"><input type="date" id="customTo"></div>
+  </div>
+  <div class="period-note" id="rangeLabel"></div>
+</div>
+
+<div class="btn-row">
+  <button type="button" class="btn-secondary" onclick="shareSummary()">Share Summary</button>
+  <button type="button" class="btn-secondary" onclick="saveSummary()">Save to Phone</button>
+</div>
+
+<div class="card">
+  <h2>💰 Profit Summary</h2>
+  <p class="meta">What you <b>earned</b> — counts every sale made in this period, whether it was paid in cash or given on credit.</p>
+  <div id="profitSummary"></div>
+  <p class="meta hidden" id="estNote">Some sales have no recorded cost, so their cost is estimated from the drug's current wholesale price.</p>
+</div>
+
+<div class="card">
+  <h2>🧾 Cash &amp; Inventory Movement</h2>
+  <p class="meta">What actually <b>moved in or out of your hand</b> — includes old credit payments collected in this period, and new stock bought (even if it hasn't sold yet).</p>
+  <div id="cashMovement"></div>
+</div>
+
+<div class="card">
+  <h2>Why don't these two match?</h2>
+  <p class="meta">Net Profit and Net Cash Movement rarely match exactly — that's normal, not an error. Common reasons:</p>
+  <p class="meta">① <b>Sold on credit:</b> counted as profit the moment you sell it, even though the cash hasn't arrived yet.</p>
+  <p class="meta">② <b>Old credit paid off:</b> cash arrives now, but the profit was already counted on the day of the original sale.</p>
+  <p class="meta">③ <b>New stock bought:</b> cash goes out now, but it doesn't reduce profit until that stock is actually sold.</p>
+  <p class="meta">④ <b>Owner deposits/withdrawals, other income, cash surplus/shortage:</b> these move real cash but aren't part of profit.</p>
+  <div id="reconciliation" style="margin-top:8px;"></div>
+</div>
+
+<div class="card"><h2>Best Selling (by quantity)</h2><div id="bestSelling"></div></div>
+<div class="card"><h2>Highest Profit (by medicine)</h2><div id="highestProfit"></div></div>
+<div class="card"><h2>Profit by Class</h2><div id="profitByClass"></div></div>
+
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import { getFirestore, doc, getDoc, collection, onSnapshot, enableIndexedDbPersistence, query, where } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {});
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const money = n => "UGX " + Math.round(n || 0).toLocaleString();
+
+  let role = null, businessId = null;
+  let shopsById = {}, sales = [], expenses = [], drugs = [], creditTx = [], supplierTx = [], purchases = [], adjustments = [];
+  let shopFilter = "all", last = null;
+
+  function loadPref() { try { return JSON.parse(localStorage.getItem("mcReportsPeriod")) || {}; } catch (e) { return {}; } }
+  const pref = loadPref();
+  let periodType = pref.type || "month";
+  function savePref() { try { localStorage.setItem("mcReportsPeriod", JSON.stringify({ type: periodType, from: $("customFrom").value || "", to: $("customTo").value || "" })); } catch (e) {} }
+
+  const startOfDay = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+  const endOfDay = d => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
+  function rawRange() {
+    const now = new Date();
+    if (periodType === "today") return { from: startOfDay(now), to: endOfDay(now) };
+    if (periodType === "week") { const f = startOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay())); return { from: f, to: endOfDay(new Date(f.getFullYear(), f.getMonth(), f.getDate() + 6)) }; }
+    if (periodType === "month") return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0)) };
+    if (periodType === "year") return { from: new Date(now.getFullYear(), 0, 1), to: endOfDay(new Date(now.getFullYear(), 11, 31)) };
+    if (periodType === "custom") {
+      const f = $("customFrom").value, t = $("customTo").value;
+      return { from: f ? new Date(f + "T00:00:00") : new Date(2000, 0, 1), to: t ? new Date(t + "T23:59:59") : endOfDay(now) };
+    }
+    return { from: new Date(2000, 0, 1), to: endOfDay(now) }; // all time
+  }
+  const periodLabel = () => ({ today: "Today", week: "This week", month: "This month", year: "This year", custom: "Custom range", all: "All time" }[periodType]);
+
+  const tsDate = t => (t && t.toDate) ? t.toDate() : new Date();
+  const userDate = (dateStr, ts) => { if (dateStr) { const d = new Date(dateStr + "T12:00:00"); if (!isNaN(d)) return d; } return tsDate(ts); };
+  const expAmount = e => Number(e.totalAmount != null ? e.totalAmount : e.amount) || 0;
+
+  // stored cost, else estimate from the drug's wholesale price
+  function saleCost(s) {
+    const stored = Number(s.costOfGoods || 0);
+    if (stored > 0) return { cost: stored, estimated: false };
+    const d = drugs.find(x => x.id === s.drugId);
+    if (!d || !d.baseUnitsPerStock) return { cost: 0, estimated: true };
+    return { cost: ((s.baseQtyDeducted || 0) / d.baseUnitsPerStock) * (d.wholesale || 0), estimated: true };
+  }
+
+  function qtyLabel(baseQty, drugId, fallbackUnit) {
+    const d = drugs.find(x => x.id === drugId);
+    if (!d) return Math.round(baseQty).toLocaleString() + " " + (fallbackUnit || "unit") + "(s)";
+    const per = Number(d.baseUnitsPerStock) || 0, inter = Number(d.basePerIntermediate) || 0;
+    let stock = 0, rem = baseQty;
+    if (per > 0) { stock = Math.floor(baseQty / per); rem = baseQty - stock * per; }
+    let mid = 0, loose = rem;
+    if (inter > 0) { mid = Math.floor(rem / inter); loose = rem - mid * inter; }
+    const parts = [];
+    if (stock) parts.push(stock + " " + d.stockUnit + "(s)");
+    if (d.hasIntermediate && mid) parts.push(mid + " " + d.intermediateUnit + "(s)");
+    if (loose || !parts.length) parts.push(loose + " " + d.baseUnit + "(s)");
+    return parts.join(" + ");
+  }
+
+  const row = (label, value, cls, total) => '<div class="rl ' + (total ? "total" : "") + '"><span>' + label + '</span><span class="' + (cls || "") + '">' + value + "</span></div>";
+
+  function render() {
+    const inShop = x => shopFilter === "all" || x.shopId === shopFilter;
+    const { from, to } = rawRange();
+    $("rangeLabel").textContent = periodType === "all" ? "All time" :
+      from.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) + " → " + to.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    const within = d => d >= from && d <= to;
+
+    const S = sales.filter(inShop).filter(s => within(tsDate(s.createdAt)));
+    const E = expenses.filter(inShop).filter(e => within(userDate(e.date, e.createdAt)));
+    const P = purchases.filter(inShop).filter(r => within(tsDate(r.createdAt)));
+    const CP = creditTx.filter(inShop).filter(t => t.type === "PAYMENT" && within(tsDate(t.createdAt)));
+    const SP = supplierTx.filter(inShop).filter(t => t.type === "PAYMENT" && within(tsDate(t.createdAt)));
+    const ADJ = adjustments.filter(inShop).filter(a => within(userDate(a.date, a.createdAt)));
+
+    let revenue = 0, cogs = 0, anyEstimated = false;
+    const perDrug = {};
+    S.forEach(s => {
+      const { cost, estimated } = saleCost(s);
+      if (estimated) anyEstimated = true;
+      revenue += s.total || 0; cogs += cost;
+      const k = s.drugId || s.drugName;
+      if (!perDrug[k]) perDrug[k] = { drugId: s.drugId, name: s.drugName || "Unknown drug", cls: s.drugClass || "Other", qtyBase: 0, revenue: 0, cogs: 0 };
+      perDrug[k].qtyBase += s.baseQtyDeducted || 0; perDrug[k].revenue += s.total || 0; perDrug[k].cogs += cost;
+    });
+    const gross = revenue - cogs;
+    const expensesTotal = E.reduce((a, e) => a + expAmount(e), 0);
+    const net = gross - expensesTotal;
+
+    let purchaseCash = 0;
+    P.forEach(r => {
+      const items = Array.isArray(r.items) ? r.items : [];
+      purchaseCash += items.length ? items.filter(i => !i.onCredit).reduce((a, i) => a + (i.lineTotalCost || 0), 0) : (r.totalAmount || 0);
+    });
+    const creditSales = S.filter(s => s.paymentStatus === "CREDIT").reduce((a, s) => a + (s.total || 0), 0);
+    const creditPayments = CP.reduce((a, t) => a + (t.amount || 0), 0);
+    const supplierPayments = SP.reduce((a, t) => a + (t.amount || 0), 0);
+    const cashSales = revenue - creditSales;
+    let dep = 0, wd = 0, oth = 0, sur = 0, sho = 0;
+    ADJ.forEach(a => {
+      const amt = Number(a.amount) || 0;
+      if (a.type === "owner_deposit") dep += amt; else if (a.type === "owner_withdrawal") wd += amt;
+      else if (a.type === "other_income") oth += amt; else if (a.type === "cash_surplus") sur += amt; else if (a.type === "cash_shortage") sho += amt;
+    });
+    const cashIn = dep + oth + sur, cashOut = wd + sho;
+    const cashMovement = cashSales + creditPayments + cashIn - purchaseCash - supplierPayments - expensesTotal - cashOut;
+
+    $("profitSummary").innerHTML =
+      row("Revenue", money(revenue)) + row("Cost of goods sold", money(cogs)) + row("Gross profit", money(gross), gross < 0 ? "neg" : "") +
+      row("Expenses", money(expensesTotal)) + row("Net profit", money(net), net < 0 ? "neg" : "pos", true);
+    $("estNote").classList.toggle("hidden", !anyEstimated);
+
+    $("cashMovement").innerHTML =
+      row("Sales collected", money(cashSales), "pos") + row("Credit payments collected", money(creditPayments), "pos") +
+      row("Stock purchases paid", "−" + money(purchaseCash), "neg") +
+      (supplierPayments ? row("Supplier credit paid off", "−" + money(supplierPayments), "neg") : "") +
+      (cashIn ? row("Owner deposits / other income / surplus", "+" + money(cashIn), "pos") : "") +
+      (cashOut ? row("Owner withdrawals / shortages", "−" + money(cashOut), "neg") : "") +
+      row("Operating expenses", "−" + money(expensesTotal), "neg") +
+      row("Net cash movement", money(cashMovement), cashMovement < 0 ? "neg" : "pos", true);
+
+    $("reconciliation").innerHTML =
+      row("New credit sales this period (①)", money(creditSales)) + row("Old credit payments collected (②)", money(creditPayments)) +
+      row("New stock purchased, cash out (③)", money(purchaseCash)) +
+      (cashIn || cashOut ? row("Deposits/withdrawals, other income, surplus/shortage (④)", "+" + money(cashIn) + " / −" + money(cashOut)) : "") +
+      row("Net profit · Net cash movement", money(net) + " · " + money(cashMovement), "", true);
+
+    const arr = Object.values(perDrug);
+    const bySales = arr.slice().sort((a, b) => b.qtyBase - a.qtyBase).slice(0, 10);
+    $("bestSelling").innerHTML = bySales.length ? bySales.map(x =>
+      '<div class="item">' + esc(x.name) + '<div class="sub">' + esc(qtyLabel(x.qtyBase, x.drugId)) + " sold · " + money(x.revenue) + " revenue</div></div>").join("") : '<div class="empty">No sales in this period.</div>';
+    const byProfit = arr.map(x => ({ ...x, profit: x.revenue - x.cogs })).sort((a, b) => b.profit - a.profit).slice(0, 10);
+    $("highestProfit").innerHTML = byProfit.length ? byProfit.map(x =>
+      '<div class="item">' + esc(x.name) + '<div class="sub">Profit: ' + money(x.profit) + " (revenue " + money(x.revenue) + " − cost " + money(x.cogs) + ")</div></div>").join("") : '<div class="empty">No sales in this period.</div>';
+
+    const cls = {};
+    arr.forEach(x => { cls[x.cls] = cls[x.cls] || { revenue: 0, cogs: 0 }; cls[x.cls].revenue += x.revenue; cls[x.cls].cogs += x.cogs; });
+    const classArr = Object.entries(cls).map(([c, v]) => ({ cls: c, profit: v.revenue - v.cogs, revenue: v.revenue })).sort((a, b) => b.profit - a.profit);
+    $("profitByClass").innerHTML = classArr.length ? classArr.map(x =>
+      '<div class="item">' + esc(x.cls) + '<div class="sub">Profit: ' + money(x.profit) + " · revenue " + money(x.revenue) + "</div></div>").join("") : '<div class="empty">No sales in this period.</div>';
+
+    const shopName = shopFilter !== "all" ? (shopsById[shopFilter] || "") : (Object.keys(shopsById).length > 1 ? "All shops" : (Object.values(shopsById)[0] || ""));
+    last = { from, to, shopName, periodName: periodLabel(), revenue, cogs, gross, expensesTotal, net, anyEstimated, cashSales, creditPayments, purchaseCash, supplierPayments, cashIn, cashOut, cashMovement,
+      bySales: bySales.slice(0, 5).map(x => ({ name: x.name, qty: qtyLabel(x.qtyBase, x.drugId), revenue: x.revenue })),
+      byProfit: byProfit.slice(0, 5).map(x => ({ name: x.name, profit: x.profit })) };
+  }
+
+  // ---------- share / save ----------
+  function buildText() {
+    if (!last) return null;
+    const s = last, L = [];
+    const d = x => x.toLocaleDateString("en-GB");
+    L.push("MEDISTOCK CLOUD — BUSINESS SUMMARY");
+    if (s.shopName) L.push("Shop: " + s.shopName);
+    L.push("Period: " + s.periodName + (periodType === "all" ? "" : " (" + d(s.from) + " – " + d(s.to) + ")"));
+    L.push("--------------------------------", "PROFIT SUMMARY");
+    L.push("Revenue: " + money(s.revenue), "Cost of goods sold: " + money(s.cogs), "Gross profit: " + money(s.gross), "Expenses: " + money(s.expensesTotal), "Net profit: " + money(s.net));
+    if (s.anyEstimated) L.push("(Some sales use an estimated cost.)");
+    L.push("--------------------------------", "CASH & INVENTORY MOVEMENT");
+    L.push("Sales collected: " + money(s.cashSales), "Credit payments collected: " + money(s.creditPayments), "Stock purchases paid: -" + money(s.purchaseCash));
+    if (s.supplierPayments) L.push("Supplier credit paid off: -" + money(s.supplierPayments));
+    if (s.cashIn) L.push("Owner deposits/other income/surplus: +" + money(s.cashIn));
+    if (s.cashOut) L.push("Owner withdrawals/shortages: -" + money(s.cashOut));
+    L.push("Operating expenses: -" + money(s.expensesTotal), "Net cash movement: " + money(s.cashMovement));
+    if (s.bySales.length) { L.push("--------------------------------", "TOP SELLING (by quantity)"); s.bySales.forEach((x, i) => L.push((i + 1) + ". " + x.name + " — " + x.qty + " sold, " + money(x.revenue) + " revenue")); }
+    if (s.byProfit.length) { L.push("--------------------------------", "MOST PROFITABLE"); s.byProfit.forEach((x, i) => L.push((i + 1) + ". " + x.name + " — " + money(x.profit) + " profit")); }
+    L.push("--------------------------------", "Generated " + new Date().toLocaleString());
+    return L.join("\n");
+  }
+  window.shareSummary = async function () {
+    const text = buildText();
+    if (!text) { alert("Nothing to share yet."); return; }
+    try {
+      if (navigator.share) await navigator.share({ text });
+      else { await navigator.clipboard.writeText(text); alert("Summary copied."); }
+    } catch (e) { if (e && e.name !== "AbortError") { try { await navigator.clipboard.writeText(text); alert("Summary copied."); } catch (e2) { prompt("Copy this summary:", text); } } }
+  };
+  window.saveSummary = function () {
+    const text = buildText();
+    if (!text) { alert("Nothing to save yet."); return; }
+    const blob = new Blob([text], { type: "text/plain" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "MediStockCloud-Summary-" + new Date().toISOString().slice(0, 10) + ".txt";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+
+  // ---------- controls ----------
+  function syncControls() {
+    document.querySelectorAll("#periodPills .pill-btn").forEach(b => b.classList.toggle("selected", b.dataset.period === periodType));
+    $("customRange").classList.toggle("hidden", periodType !== "custom");
+  }
+  document.querySelectorAll("#periodPills .pill-btn").forEach(b => b.addEventListener("click", () => { periodType = b.dataset.period; savePref(); syncControls(); render(); }));
+  ["customFrom", "customTo"].forEach(id => $(id).addEventListener("change", () => { savePref(); render(); }));
+  $("shopPick").addEventListener("change", () => { shopFilter = $("shopPick").value; try { localStorage.setItem("mcReportsShop", shopFilter); } catch (e) {} render(); });
+  if (periodType === "custom") { $("customFrom").value = pref.from || ""; $("customTo").value = pref.to || ""; }
+  syncControls();
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+    const snap = await getDoc(doc(db, "users", user.uid));
+    if (!snap.exists()) { window.location.href = "login.html"; return; }
+    const profile = snap.data();
+    if (profile.active === false) { await auth.signOut(); window.location.href = "login.html?disabled=1"; return; }
+    role = profile.role; businessId = profile.businessId;
+
+    let filters;
+    if (role === "owner") {
+      try { shopFilter = localStorage.getItem("mcReportsShop") || "all"; } catch (e) {}
+      $("shopIndicator").textContent = "Profit and cash reports for your business";
+      filters = [where("businessId", "==", businessId)];
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
+        shopsById = {}; s.docs.forEach(d => { shopsById[d.id] = d.data().name; });
+        const ids = Object.keys(shopsById);
+        $("shopPick").innerHTML = '<option value="all">All shops</option>' + ids.map(id => '<option value="' + esc(id) + '">' + esc(shopsById[id]) + "</option>").join("");
+        if (!ids.includes(shopFilter)) shopFilter = "all";
+        $("shopPick").value = shopFilter;
+        $("shopPickWrap").classList.toggle("hidden", ids.length < 2);
+        render();
+      });
+    } else {
+      shopFilter = profile.shopId;
+      $("shopIndicator").textContent = "Profit and cash reports for your shop";
+      filters = [where("businessId", "==", businessId), where("shopId", "==", profile.shopId)];
+      getDoc(doc(db, "shops", profile.shopId)).then(s => { if (s.exists()) { shopsById[profile.shopId] = s.data().name; render(); } }).catch(() => {});
+    }
+    const watch = (name, setter, extra) => onSnapshot(query(collection(db, name), ...filters, ...(extra || [])), s => { setter(s.docs.map(d => ({ id: d.id, ...d.data() }))); render(); });
+    onSnapshot(query(collection(db, "sales"), ...filters), { includeMetadataChanges: true }, s => {
+      sales = s.docs.map(d => ({ id: d.id, ...d.data() }));
+      const badge = $("netBadge");
+      badge.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)";
+      badge.className = "badge " + (s.metadata.fromCache ? "offline" : "online");
+      render();
+    });
+    watch("expenses", v => expenses = v);
+    watch("drugs", v => drugs = v);
+    watch("credit_transactions", v => creditTx = v);
+    watch("supplier_transactions", v => supplierTx = v);
+    watch("cash_adjustments", v => adjustments = v);
+    watch("receipts", v => purchases = v, [where("type", "==", "PURCHASE")]);
+  });
+</script>
+</body>
+</html>
