@@ -248,10 +248,19 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-  import {
-    getFirestore, doc, getDoc, getDocs, updateDoc, collection, addDoc,
-    onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where
-  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc as _getDoc, getDocs as _getDocs, updateDoc, collection, addDoc, onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where, getDocFromCache, getDocsFromCache } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  // ---- offline-friendly reads: use the phone's saved copy when offline or when the connection is slow ----
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDoc(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDocs(q) {
+    if (navigator.onLine === false) { try { return await getDocsFromCache(q); } catch (e) {} }
+    try { return await _slowRace(_getDocs(q), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocsFromCache(q); } catch (e2) { throw e; } }
+  }
 
   const firebaseConfig = {
     apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
@@ -321,13 +330,13 @@
     if (!name) { statusEl.textContent = "Enter a customer name."; statusEl.style.color = "var(--danger)"; return; }
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
-      await addDoc(collection(db, "credit_accounts"), {
+      window.mcQueue(addDoc(collection(db, "credit_accounts"), {
         businessId: currentBusinessId, shopId: currentShopId,
         name, phone: document.getElementById("newPhone").value.trim(),
         creditLimit: Number(document.getElementById("newLimit").value) || 0,
         note: document.getElementById("newNote").value.trim(),
         active: true, createdAt: serverTimestamp()
-      });
+      }));
       document.getElementById("newName").value = "";
       document.getElementById("newPhone").value = "";
       document.getElementById("newLimit").value = "0";
@@ -382,12 +391,12 @@
       return;
     }
     try {
-      await addDoc(collection(db, "credit_transactions"), {
+      window.mcQueue(addDoc(collection(db, "credit_transactions"), {
         businessId: currentBusinessId, shopId: currentShopId,
         customerId: id, customerName: c.name, type: "PAYMENT",
         amount, paidAmount: amount, balanceChange: -amount,
         description: "Customer credit payment", cashier: cashierName, createdAt: serverTimestamp()
-      });
+      }));
       openAccount(id);
     } catch (err) {
       alert("Failed: " + err.message);
@@ -409,11 +418,11 @@
     if (!newName) { statusEl.textContent = "Name cannot be empty."; statusEl.style.color = "var(--danger)"; return; }
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
-      await updateDoc(doc(db, "credit_accounts", currentAccountId), {
+      window.mcQueue(updateDoc(doc(db, "credit_accounts", currentAccountId), {
         name: newName,
         phone: document.getElementById("editPhone").value.trim(),
         creditLimit: Number(document.getElementById("editLimit").value) || 0
-      });
+      }));
       document.getElementById("editBlock").classList.add("hidden");
     } catch (err) {
       statusEl.textContent = "Failed: " + err.message;
@@ -426,7 +435,7 @@
     if (!c) return;
     if (c.active !== false && !confirm(`Deactivate ${c.name}? They'll be hidden from the active customer list but their history is kept.`)) return;
     try {
-      await updateDoc(doc(db, "credit_accounts", c.id), { active: c.active === false ? true : false });
+      window.mcQueue(updateDoc(doc(db, "credit_accounts", c.id), { active: c.active === false ? true : false }));
       document.getElementById("accountCard").classList.add("hidden");
     } catch (err) {
       alert("Failed: " + err.message);

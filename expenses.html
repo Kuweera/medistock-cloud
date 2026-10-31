@@ -221,10 +221,19 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-  import {
-    getFirestore, doc, getDoc, getDocs, setDoc, deleteDoc, collection, addDoc, onSnapshot,
-    enableIndexedDbPersistence, serverTimestamp, query, where
-  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc as _getDoc, getDocs as _getDocs, setDoc, deleteDoc, collection, addDoc, onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where, getDocFromCache, getDocsFromCache } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  // ---- offline-friendly reads: use the phone's saved copy when offline or when the connection is slow ----
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDoc(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDocs(q) {
+    if (navigator.onLine === false) { try { return await getDocsFromCache(q); } catch (e) {} }
+    try { return await _slowRace(_getDocs(q), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocsFromCache(q); } catch (e2) { throw e; } }
+  }
 
   const firebaseConfig = {
     apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
@@ -262,7 +271,7 @@
   window.addNewCategory = async function () {
     const name = document.getElementById("e_newCategory").value.trim();
     if (!name) return;
-    await setDoc(doc(db, "expense_categories", name), { name });
+    window.mcQueue(setDoc(doc(db, "expense_categories", name), { name }));
     document.getElementById("e_newCategory").value = "";
     await populateCategories();
     document.getElementById("e_category").value = name;
@@ -311,13 +320,13 @@
     const total = items.reduce((sum, c) => sum + c.amount, 0);
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
-      await addDoc(collection(db, "expenses"), {
+      window.mcQueue(addDoc(collection(db, "expenses"), {
         businessId: currentBusinessId, shopId: currentShopId, ownerUid: currentUser.uid,
         date: document.getElementById("e_date").value,
         note: document.getElementById("e_note").value.trim(),
         items, totalAmount: total, cashier: cashierName,
         createdAt: serverTimestamp()
-      });
+      }));
       cart = [];
       renderCart();
       document.getElementById("e_note").value = "";
@@ -330,7 +339,7 @@
 
   window.deleteExpense = async function (id) {
     if (!confirm("Delete this whole expense record?")) return;
-    try { await deleteDoc(doc(db, "expenses", id)); }
+    try { window.mcQueue(deleteDoc(doc(db, "expenses", id))); }
     catch (err) { alert("Couldn't delete: " + err.message); }
   };
 

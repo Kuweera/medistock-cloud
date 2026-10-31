@@ -223,7 +223,14 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-  import { getFirestore, doc, getDoc, collection, onSnapshot, enableIndexedDbPersistence, writeBatch, serverTimestamp, query, where } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc as _getDoc, collection, onSnapshot, enableIndexedDbPersistence, writeBatch, serverTimestamp, query, where, getDocFromCache, increment } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  // ---- offline-friendly reads: use the phone's saved copy when offline or when the connection is slow ----
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDoc(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
 
   const firebaseConfig = {
     apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
@@ -362,13 +369,13 @@
     try {
       const wb = writeBatch(db);
       wb.update(doc(db, "batches", id), { quantity: 0 });
-      if (d) wb.update(doc(db, "drugs", b.drugId), { currentStockBase: Math.max(0, (d.currentStockBase || 0) - b.quantity) });
+      if (d) wb.update(doc(db, "drugs", b.drugId), { currentStockBase: increment(-b.quantity) });
       wb.set(doc(collection(db, "stock_transactions")), {
         businessId, shopId: b.shopId, drugId: b.drugId, drugName: b.drugName, type: "WRITE_OFF", baseUnitsChange: -b.quantity,
         note: "Write-off — batch " + (b.batchNumber || "—") + " (" + (reason || "no reason given") + ")",
         batchId: id, cashier: cashierName, createdAt: serverTimestamp()
       });
-      await wb.commit();
+      window.mcQueue(wb.commit());
     } catch (err) {
       alert(err.code === "permission-denied" ? "Not allowed to write off stock." : "Couldn't write off: " + err.message);
     }

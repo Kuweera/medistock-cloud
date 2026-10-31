@@ -287,7 +287,19 @@
 </script><script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-  import { getFirestore, doc, getDoc, getDocs, collection, onSnapshot, enableIndexedDbPersistence, query, where, writeBatch, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc as _getDoc, getDocs as _getDocs, collection, onSnapshot, enableIndexedDbPersistence, query, where, writeBatch, runTransaction, serverTimestamp, getDocFromCache, getDocsFromCache, increment } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  // ---- offline-friendly reads: use the phone's saved copy when offline or when the connection is slow ----
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDoc(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDocs(q) {
+    if (navigator.onLine === false) { try { return await getDocsFromCache(q); } catch (e) {} }
+    try { return await _slowRace(_getDocs(q), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocsFromCache(q); } catch (e2) { throw e; } }
+  }
 
   const firebaseConfig = {
     apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
@@ -306,7 +318,7 @@
   const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const fmt = n => Math.round(Number(n) || 0).toLocaleString();
 
-  let role = null, currentUser = null, businessId = null, myShopId = null, cashierName = "";
+  let role = null, currentUser = null, businessId = null, myShopId = null, cashierName = "", myOperatorId = "";
   let businessName = "", businessPhone = "";
   let shopsById = {}, receipts = [], expenses = [], creditTx = [], creditAccounts = [], cashAdj = [], stockAdj = [], stockTx = [], drugs = [];
   let shopFilter = "all", shown = 40;
@@ -507,7 +519,7 @@
           amount: r.totalAmount, paidAmount: 0, balanceChange: -(r.totalAmount || 0), receiptId: id,
           description: "Correction: receipt " + label + " was recorded on credit by mistake — now a cash sale", cashier: cashierName, createdAt: serverTimestamp()
         });
-        await wb.commit();
+        window.mcQueue(wb.commit());
         alert("Sale reclassified as cash.");
       } else {
         const name = (prompt("This was actually a credit sale — enter the customer name:") || "").trim();
@@ -528,7 +540,7 @@
           amount: r.totalAmount, paidAmount: 0, balanceChange: r.totalAmount || 0, dueDate: null, receiptId: id,
           description: "Credit sale receipt " + label + " (corrected from cash)", cashier: cashierName, createdAt: serverTimestamp()
         });
-        await wb.commit();
+        window.mcQueue(wb.commit());
         alert("Sale reclassified as credit — added to " + name + "'s balance.");
       }
     } catch (err) { alert(friendlyErr(err)); }
@@ -688,14 +700,18 @@
       : "";
   }
 
+  // Receipt numbers are made on the phone (works offline); the operator's ID keeps them unique across phones.
   async function nextReceiptNumber(shopId) {
-    const ref = doc(db, "counters", shopId + "_sales");
-    return await runTransaction(db, async tx => {
-      const snap = await tx.get(ref);
-      const next = snap.exists() ? (snap.data().next || 1) : 1;
-      tx.set(ref, { businessId, shopId, next: next + 1 }, { merge: true });
-      return next;
-    });
+    const who = role === "owner" ? "O" : (myOperatorId || "X");
+    const key = "mcNum:" + (currentUser ? currentUser.uid : "x") + ":" + shopId + ":S";
+    let n = parseInt(localStorage.getItem(key) || "0", 10) || 0;
+    if (!n) {
+      const re = new RegExp("^S-" + who + "-(\\d+)$");
+      receipts.forEach(r => { if (r.shopId === shopId && r.type === "SALE") { const m = re.exec(r.displayNumber || ""); if (m) n = Math.max(n, parseInt(m[1], 10)); } });
+    }
+    n += 1;
+    try { localStorage.setItem(key, String(n)); } catch (e) {}
+    return who + "-" + n;
   }
 
   window.completeExchange = async function () {
@@ -741,7 +757,7 @@
         for (const did of Object.keys(need)) if (need[did] > (fresh[did].currentStockBase || 0)) throw new Error("Not enough stock of " + fresh[did].name + " for the replacement.");
         for (const did of Object.keys(need)) {
           const bs = await getDocs(query(collection(db, "batches"), where("businessId", "==", businessId), where("shopId", "==", shopId), where("drugId", "==", did)));
-          liveBatches[did] = bs.docs.map(d => ({ id: d.id, ...d.data() })).filter(b => daysUntil(b.expiryDate) >= 0 && b.quantity > 0).sort((a, b) => expiryMs(a.expiryDate) - expiryMs(b.expiryDate));
+          liveBatches[did] = bs.docs.map(d => ({ id: d.id, ...d.data(), origQty: d.data().quantity })).filter(b => daysUntil(b.expiryDate) >= 0 && b.quantity > 0).sort((a, b) => expiryMs(a.expiryDate) - expiryMs(b.expiryDate));
         }
         exReplItems.forEach(x => {
           const d = fresh[x.drug.id]; let remaining = x.base, cogs = 0;
@@ -759,7 +775,7 @@
       }
 
       const wb = writeBatch(db);
-      Object.keys(delta).forEach(did => wb.update(doc(db, "drugs", did), { currentStockBase: (fresh[did].currentStockBase || 0) + delta[did] }));
+      Object.keys(delta).forEach(did => wb.update(doc(db, "drugs", did), { currentStockBase: increment(delta[did]) }));
 
       // 1) every returned line: back into stock as its own batch at the ORIGINAL cost + an offsetting negative sale
       const usedSales = new Set();
@@ -794,8 +810,8 @@
       // 2) replacement(s) = ONE normal sale receipt with all the replacement items
       if (wants) {
         const label = "S-" + replNo, rRef = doc(collection(db, "receipts"));
-        const finalQty = {}; Object.keys(liveBatches).forEach(did => liveBatches[did].forEach(b => { if (touched.has(b.id)) finalQty[b.id] = b.quantity; }));
-        Object.keys(finalQty).forEach(bid => wb.update(doc(db, "batches", bid), { quantity: finalQty[bid] }));
+        const finalQty = {}; Object.keys(liveBatches).forEach(did => liveBatches[did].forEach(b => { if (touched.has(b.id)) finalQty[b.id] = b.quantity - b.origQty; }));
+        Object.keys(finalQty).forEach(bid => wb.update(doc(db, "batches", bid), { quantity: increment(finalQty[bid]) }));
         wb.set(rRef, {
           businessId, shopId, type: "SALE", displayNumber: label, createdAt: serverTimestamp(), cashier: cashierName,
           itemCount: replLines.length, totalAmount: replTotal, paymentStatus: rc.paymentStatus, customerId: rc.customerId || null,
@@ -815,7 +831,7 @@
           dueDate: null, receiptId: rRef.id, description: "Exchange for receipt " + rc.displayNumber + " (new receipt " + label + ")", cashier: cashierName, createdAt: serverTimestamp()
         });
       }
-      await wb.commit();
+      window.mcQueue(wb.commit());
       busy = false; $("completeExchangeBtn").disabled = false; st.textContent = "";
       closeExchange();
       alert(wants ? "Exchange recorded." : "Return recorded.");
@@ -842,7 +858,7 @@
     if (!snap.exists()) { window.location.href = "login.html"; return; }
     const profile = snap.data();
     if (profile.active === false) { await auth.signOut(); window.location.href = "login.html?disabled=1"; return; }
-    currentUser = user; role = profile.role; businessId = profile.businessId; myShopId = profile.shopId;
+    currentUser = user; role = profile.role; businessId = profile.businessId; myShopId = profile.shopId; myOperatorId = profile.operatorId || "";
     cashierName = role === "owner" ? user.email : profile.name;
     getDoc(doc(db, "businesses", businessId)).then(b => { if (b.exists()) { businessName = b.data().name || ""; businessPhone = b.data().phone || ""; } }).catch(() => {});
 

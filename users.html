@@ -191,20 +191,6 @@
   <div class="hint2">The operator logs in with Shop Code + Operator ID + PIN. The Operator ID is created for you.</div>
 </div>
 
-<!-- OPERATOR: own account -->
-<div class="card hidden" id="meCard">
-  <h2>My Account</h2>
-  <div id="meInfo" class="op-meta" style="font-size:13px;"></div>
-  <label>Current PIN</label>
-  <input type="password" inputmode="numeric" id="curPin" maxlength="6">
-  <label>New 6-digit PIN</label>
-  <input type="password" inputmode="numeric" id="chgPin" maxlength="6">
-  <label>Confirm new PIN</label>
-  <input type="password" inputmode="numeric" id="chgPin2" maxlength="6">
-  <button class="btn-primary" onclick="changeMyPin()">Change my PIN</button>
-  <div class="msg" id="pinStatus"></div>
-</div>
-
 <div class="card">
   <h2 id="logTitle">Activity Log</h2>
   <div class="hint2" style="margin-top:0;">Sales, purchases, expenses, write-offs, stock-taking edits, payments and cash adjustments, with who did them. Older credit/supplier payments and cash adjustments were recorded without a name.</div>
@@ -261,8 +247,15 @@
 </script>
 <script type="module">
   import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
-  import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-  import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import { getFirestore, doc, setDoc, writeBatch, getDoc as _getDoc, updateDoc, collection, onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where, getDocFromCache } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  // ---- offline-friendly reads: use the phone's saved copy when offline or when the connection is slow ----
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDoc(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
 
   const firebaseConfig = {
     apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
@@ -438,10 +431,15 @@
       try {
         secondary = initializeApp(firebaseConfig, "operator-creator-" + Date.now() + "-" + attempt);
         const sAuth = getAuth(secondary), sDb = getFirestore(secondary);
+        // 1) the owner (signed in on this page) writes an invite for exactly this shop + Operator ID
+        const inviteId = shopId + "_" + operatorId;
+        await setDoc(doc(db, "invites", inviteId), { businessId, shopId, operatorId, name, used: false, createdAt: serverTimestamp() });
+        // 2) the new operator's own session claims it: profile + "used" flag are written together
         const cred = await createUserWithEmailAndPassword(sAuth, internalEmail(shop.shopCode, operatorId), pin);
-        await setDoc(doc(sDb, "users", cred.user.uid), {
-          businessId, shopId, role: "operator", operatorId, name, active: true, createdAt: serverTimestamp()
-        });
+        const wbOp = writeBatch(sDb);
+        wbOp.set(doc(sDb, "users", cred.user.uid), { businessId, shopId, role: "operator", operatorId, name, active: true, createdAt: serverTimestamp() });
+        wbOp.update(doc(sDb, "invites", inviteId), { used: true, usedBy: cred.user.uid, usedAt: serverTimestamp() });
+        await wbOp.commit();
         await signOut(sAuth);
         await deleteApp(secondary);
         return { operatorId, shopCode: shop.shopCode };
@@ -490,25 +488,6 @@
     busy = false;
   };
 
-  // ================= Operator: change own PIN =================
-  window.changeMyPin = async function () {
-    const cur = $("curPin").value, p1 = $("chgPin").value, p2 = $("chgPin2").value;
-    if (!validPin(cur)) return setMsg("pinStatus", "Enter your current 6-digit PIN.", true);
-    if (!validPin(p1)) return setMsg("pinStatus", "New PIN must be exactly 6 digits.", true);
-    if (p1 !== p2) return setMsg("pinStatus", "The two new PINs don't match.", true);
-    if (p1 === cur) return setMsg("pinStatus", "New PIN must be different from the current one.", true);
-    setMsg("pinStatus", "Updating…");
-    try {
-      const user = auth.currentUser;
-      await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, cur));
-      await updatePassword(user, p1);
-      $("curPin").value = ""; $("chgPin").value = ""; $("chgPin2").value = "";
-      setMsg("pinStatus", "PIN changed. Use the new PIN next time you log in.");
-    } catch (err) {
-      setMsg("pinStatus", (err.code === "auth/invalid-credential" || err.code === "auth/wrong-password") ? "Current PIN is wrong." : (err.message || "Couldn't change PIN."), true);
-    }
-  };
-
   // ================= Controls =================
   document.querySelectorAll("#rangePills .pill-btn").forEach(b => b.addEventListener("click", () => {
     rangeDays = Number(b.dataset.r); shown = 60;
@@ -553,11 +532,9 @@
         operators = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.role === "operator"); refresh();
       }, err => { $("opList").innerHTML = '<div class="empty">' + esc(rulesHint(err)) + "</div>"; });
     } else {
-      $("meCard").classList.remove("hidden");
       $("whoWrap").classList.add("hidden"); $("shopWrap").classList.add("hidden");
       $("logTitle").textContent = "My Activity";
-      $("meInfo").textContent = me.name + " · Operator ID " + me.operatorId;
-      $("shopIndicator").textContent = "Your account and your own activity";
+      $("shopIndicator").textContent = "Your own activity (" + me.name + " · Operator ID " + me.operatorId + ")";
       filters = [where("businessId", "==", businessId), where("shopId", "==", myShopId)];
     }
     onSnapshot(query(collection(db, "receipts"), ...filters), { includeMetadataChanges: true }, s => { receipts = s.docs.map(d => d.data()); mark(s); refresh(); });

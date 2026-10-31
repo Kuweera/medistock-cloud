@@ -215,10 +215,19 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-  import {
-    getFirestore, doc, getDoc, getDocs, updateDoc, deleteDoc, collection, addDoc,
-    onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where, writeBatch
-  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc as _getDoc, getDocs as _getDocs, updateDoc, deleteDoc, collection, addDoc, onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where, writeBatch, getDocFromCache, getDocsFromCache } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  // ---- offline-friendly reads: use the phone's saved copy when offline or when the connection is slow ----
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDoc(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDocs(q) {
+    if (navigator.onLine === false) { try { return await getDocsFromCache(q); } catch (e) {} }
+    try { return await _slowRace(_getDocs(q), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocsFromCache(q); } catch (e2) { throw e; } }
+  }
 
   const firebaseConfig = {
     apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
@@ -308,11 +317,11 @@
       return;
     }
     try {
-      await addDoc(collection(db, "supplier_transactions"), {
+      window.mcQueue(addDoc(collection(db, "supplier_transactions"), {
         businessId: currentBusinessId, shopId: currentShopId,
         supplierName: name, type: "PAYMENT", amount,
         description: "Payment to supplier", cashier: cashierName, createdAt: serverTimestamp()
-      });
+      }));
       openAccount(name);
     } catch (err) {
       alert("Failed: " + err.message);
@@ -337,8 +346,8 @@
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
       if (newName === oldName) {
-        if (existing) await updateDoc(doc(db, "suppliers", existing.id), { phone: newPhone });
-        else await addDoc(collection(db, "suppliers"), { businessId: currentBusinessId, shopId: currentShopId, name: newName, phone: newPhone, createdAt: serverTimestamp() });
+        if (existing) window.mcQueue(updateDoc(doc(db, "suppliers", existing.id), { phone: newPhone }));
+        else window.mcQueue(addDoc(collection(db, "suppliers"), { businessId: currentBusinessId, shopId: currentShopId, name: newName, phone: newPhone, createdAt: serverTimestamp() }));
       } else {
         const clash = allSuppliers.find(x => x.name.toLowerCase() === newName.toLowerCase());
         if (clash) { statusEl.textContent = `A supplier named "${newName}" already exists.`; statusEl.style.color = "var(--danger)"; return; }
@@ -357,7 +366,7 @@
           where("supplierName", "==", oldName)
         ));
         affectedTxns.docs.forEach(d => wb.update(d.ref, { supplierName: newName }));
-        await wb.commit();
+        window.mcQueue(wb.commit());
         currentAccountName = newName;
       }
       document.getElementById("editBlock").classList.add("hidden");
@@ -371,7 +380,7 @@
     const s = allSuppliers.find(x => x.name === currentAccountName);
     if (!s) { alert("Add a purchase or transaction for this supplier first, then deactivation becomes available."); return; }
     try {
-      await updateDoc(doc(db, "suppliers", s.id), { active: s.active === false ? true : false });
+      window.mcQueue(updateDoc(doc(db, "suppliers", s.id), { active: s.active === false ? true : false }));
       document.getElementById("accountCard").classList.add("hidden");
     } catch (err) {
       alert("Failed: " + err.message);
@@ -389,7 +398,7 @@
     }
     if (!confirm(`Delete "${name}"? This supplier has no transaction history, so this can't be undone but won't affect any other records.`)) return;
     try {
-      if (s) await deleteDoc(doc(db, "suppliers", s.id));
+      if (s) window.mcQueue(deleteDoc(doc(db, "suppliers", s.id)));
       document.getElementById("accountCard").classList.add("hidden");
     } catch (err) {
       alert("Failed: " + err.message);

@@ -667,6 +667,7 @@
     window.setAuthTab("operator");
     setOpLoginStatus("This account has been deactivated. Ask the owner.", true);
   }
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>
 </html>

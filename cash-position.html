@@ -203,10 +203,19 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-  import {
-    getFirestore, doc, getDoc, getDocs, addDoc, collection,
-    onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where
-  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc as _getDoc, getDocs as _getDocs, addDoc, collection, onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where, getDocFromCache, getDocsFromCache } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  // ---- offline-friendly reads: use the phone's saved copy when offline or when the connection is slow ----
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDoc(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDocs(q) {
+    if (navigator.onLine === false) { try { return await getDocsFromCache(q); } catch (e) {} }
+    try { return await _slowRace(_getDocs(q), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocsFromCache(q); } catch (e2) { throw e; } }
+  }
 
   const firebaseConfig = {
     apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
@@ -332,10 +341,10 @@
     if (!amount || amount <= 0) { statusEl.textContent = "Enter a valid amount."; statusEl.style.color = "var(--danger)"; return; }
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
-      await addDoc(collection(db, "cash_adjustments"), {
+      window.mcQueue(addDoc(collection(db, "cash_adjustments"), {
         businessId: currentBusinessId, shopId: currentShopId,
         type, amount, reason, date, cashier: cashierName, createdAt: serverTimestamp()
-      });
+      }));
       document.getElementById("ca_amount").value = "";
       document.getElementById("ca_reason").value = "";
       statusEl.textContent = "";

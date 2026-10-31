@@ -379,10 +379,19 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-  import {
-    getFirestore, doc, getDoc, setDoc, collection, addDoc, getDocs, onSnapshot,
-    enableIndexedDbPersistence, serverTimestamp, query, where
-  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc as _getDoc, setDoc, collection, addDoc, getDocs as _getDocs, onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where, getDocFromCache, getDocsFromCache } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  // ---- offline-friendly reads: use the phone's saved copy when offline or when the connection is slow ----
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDoc(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDocs(q) {
+    if (navigator.onLine === false) { try { return await getDocsFromCache(q); } catch (e) {} }
+    try { return await _slowRace(_getDocs(q), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocsFromCache(q); } catch (e2) { throw e; } }
+  }
 
   const firebaseConfig = {
     apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
@@ -515,7 +524,7 @@
   window.addNewClass = async function () {
     const name = document.getElementById("f_newClass").value.trim();
     if (!name) return;
-    await setDoc(doc(db, "drug_classes", name), { name });
+    window.mcQueue(setDoc(doc(db, "drug_classes", name), { name }));
     document.getElementById("f_newClass").value = "";
     await populateSelects();
     document.getElementById("f_class").value = name;
@@ -523,7 +532,7 @@
   window.addNewForm = async function () {
     const name = document.getElementById("f_newForm").value.trim();
     if (!name) return;
-    await setDoc(doc(db, "dosage_forms", name), { name });
+    window.mcQueue(setDoc(doc(db, "dosage_forms", name), { name }));
     document.getElementById("f_newForm").value = "";
     await populateSelects();
     document.getElementById("f_form").value = name;
@@ -538,7 +547,7 @@
       : " It'll reappear in the normal list and become sellable again.";
     if (!confirm(`${verb} this drug?${warn}`)) return;
     try {
-      await setDoc(doc(db, "drugs", id), { active: !isCurrentlyActive }, { merge: true });
+      window.mcQueue(setDoc(doc(db, "drugs", id), { active: !isCurrentlyActive }, { merge: true }));
     } catch (err) {
       alert("Failed: " + err.message);
     }
@@ -636,7 +645,7 @@
         const currentStockBase = PackagingEngine.openingStockToBase(
           s.openStock || 0, baseUnitsPerStock, s.openIntermediate || 0, s.basePerIntermediate, s.openBase || 0
         );
-        await addDoc(collection(db, "drugs"), {
+        window.mcQueue(addDoc(collection(db, "drugs"), {
           businessId: currentBusinessId, shopId: currentShopId, ownerUid: currentUser.uid,
           name: s.name, generic: s.generic || "", drugClass: s.drugClass || "", dosageForm: s.dosageForm || "",
           supplier: s.supplier || "", active: true,
@@ -648,7 +657,7 @@
           retailIntermediate: Number(s.retailIntermediate) || 0, retailBase: Number(s.retailBase) || 0,
           reorderLevel: Number(s.reorderLevel) || 0, targetStock: Number(s.targetStock) || 0,
           currentStockBase, createdAt: serverTimestamp()
-        });
+        }));
         done++;
       } catch (err) {
         failed++;
@@ -815,10 +824,10 @@
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
       if (editingId) {
-        await setDoc(doc(db, "drugs", editingId), record, { merge: true });
+        window.mcQueue(setDoc(doc(db, "drugs", editingId), record, { merge: true }));
         statusEl.textContent = "Updated.";
       } else {
-        await addDoc(collection(db, "drugs"), { ...record, createdAt: serverTimestamp() });
+        window.mcQueue(addDoc(collection(db, "drugs"), { ...record, createdAt: serverTimestamp() }));
         statusEl.textContent = "Saved.";
       }
       clearForm();

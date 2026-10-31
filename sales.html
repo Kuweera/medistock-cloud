@@ -275,10 +275,19 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-  import {
-    getFirestore, doc, getDoc, getDocs, writeBatch, runTransaction, collection, addDoc,
-    onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where
-  } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc as _getDoc, getDocs as _getDocs, writeBatch, runTransaction, collection, addDoc, onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where, getDocFromCache, getDocsFromCache, increment } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  // ---- offline-friendly reads: use the phone's saved copy when offline or when the connection is slow ----
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDoc(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDocs(q) {
+    if (navigator.onLine === false) { try { return await getDocsFromCache(q); } catch (e) {} }
+    try { return await _slowRace(_getDocs(q), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocsFromCache(q); } catch (e2) { throw e; } }
+  }
 
   const firebaseConfig = {
     apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
@@ -296,6 +305,7 @@
 
   let currentUser = null;
   let currentRole = null;
+  let currentOperatorId = "";
   let cashierName = "";
   let currentBusinessId = null;
   let currentShopId = null;
@@ -619,15 +629,22 @@
     hint.textContent = `Existing customer — currently owes ${Math.max(0, balance).toLocaleString()}, limit ${match.creditLimit.toLocaleString()}.`;
   }
 
+  // Receipt numbers are made on the phone (no server needed, works offline). The operator's ID is part of the
+  // number, so two phones selling at the same time can never produce the same receipt number.
   async function getNextReceiptNumber() {
-    const counterId = `${currentShopId}_sales`;
-    const counterRef = doc(db, "counters", counterId);
-    return await runTransaction(db, async (tx) => {
-      const snap = await tx.get(counterRef);
-      const next = snap.exists() ? (snap.data().next || 1) : 1;
-      tx.set(counterRef, { businessId: currentBusinessId, shopId: currentShopId, next: next + 1 }, { merge: true });
-      return next;
-    });
+    const who = currentRole === "owner" ? "O" : (currentOperatorId || "X");
+    const key = "mcNum:" + (auth.currentUser ? auth.currentUser.uid : "x") + ":" + currentShopId + ":S";
+    let n = parseInt(localStorage.getItem(key) || "0", 10) || 0;
+    if (!n) { // first time on this phone, or storage was cleared: carry on after the highest number already on record
+      try {
+        const snap = await getDocs(query(collection(db, "receipts"), where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId), where("type", "==", "SALE")));
+        const re = new RegExp("^S-" + who + "-(\\d+)$");
+        snap.docs.forEach(d => { const m = re.exec(d.data().displayNumber || ""); if (m) n = Math.max(n, parseInt(m[1], 10)); });
+      } catch (e) {}
+    }
+    n += 1;
+    try { localStorage.setItem(key, String(n)); } catch (e) {}
+    return who + "-" + n;
   }
 
   function buildReceiptText(receiptNo, items, total, paymentStatus, customerName) {
@@ -718,7 +735,7 @@
         if (!liveDrugSnaps[item.drugId]) liveDrugSnaps[item.drugId] = await getDoc(doc(db, "drugs", item.drugId));
       }
 
-      statusEl.textContent = "Reserving receipt number…";
+      statusEl.textContent = "Preparing receipt…";
       const receiptNo = await getNextReceiptNumber();
 
       statusEl.textContent = "Saving…";
@@ -736,7 +753,7 @@
             if (remaining <= 0) break;
             const take = Math.min(remaining, b.quantity);
             if (take <= 0) continue;
-            batch.update(doc(db, "batches", b.id), { quantity: b.quantity - take });
+            batch.update(doc(db, "batches", b.id), { quantity: increment(-take) });
             used.push({ batchId: b.id, batchNumber: b.batchNumber || "", qty: take, costPerStockUnit: b.purchasePricePerStockUnit || b.costPerStockUnit || 0 });
             remaining -= take;
           }
@@ -748,7 +765,7 @@
         batchesUsedByDrug[drugId] = used;
         const drugSnap = liveDrugSnaps[drugId];
         const currentBase = drugSnap.exists() ? (drugSnap.data().currentStockBase || 0) : 0;
-        batch.update(doc(db, "drugs", drugId), { currentStockBase: currentBase - drugDeductions[drugId] });
+        batch.update(doc(db, "drugs", drugId), { currentStockBase: increment(-drugDeductions[drugId]) });
       }
 
       const receiptRef = doc(collection(db, "receipts"));
@@ -808,7 +825,7 @@
         });
       }
 
-      await batch.commit();
+      window.mcQueue(batch.commit());
 
       lastReceiptData = { receiptNo, items: saleItems, total: grandTotal, paymentStatus, customerName: customerNameInput };
       document.getElementById("receiptNumber").textContent = `S-${receiptNo}`;
@@ -958,6 +975,7 @@
     const profile = userSnap.data();
     if (profile.active === false) { await auth.signOut(); window.location.href = "login.html?disabled=1"; return; }
     currentRole = profile.role;
+    currentOperatorId = profile.operatorId || "";
     currentBusinessId = profile.businessId;
     cashierName = profile.role === "owner" ? user.email : profile.name;
 
