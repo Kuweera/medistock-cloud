@@ -256,6 +256,18 @@
   <button class="btn-secondary btn-small" style="width:100%;" onclick="closeExchange()">← Back to history</button>
 </div>
 
+<!-- Pick which customer a sale is being put on credit for -->
+<div id="custPicker" class="hidden" style="position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.6); display:flex; align-items:flex-end; justify-content:center;">
+  <div style="background:var(--card); width:100%; max-width:520px; border-radius:16px 16px 0 0; padding:14px; max-height:82vh; overflow:auto; border:1px solid var(--border);">
+    <h2 style="margin:0 0 6px;">Which customer owes this?</h2>
+    <p class="meta" style="margin:0 0 8px;">Pick a saved Credit / Loans customer, or type a new name.</p>
+    <input id="custSearch" placeholder="Search saved customers or type a new name…" autocomplete="off">
+    <div id="custList" style="margin-top:8px;"></div>
+    <button type="button" id="custNew" class="btn-small btn-secondary hidden" style="width:100%; margin-top:6px;"></button>
+    <button type="button" id="custCancel" class="btn-small btn-danger-outline" style="width:100%; margin-top:8px;">Cancel</button>
+  </div>
+</div>
+
 <script>
   (function(){
     var toggle = document.getElementById('navToggle');
@@ -502,6 +514,30 @@
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   }
 
+  // Saved credit customers for this shop (with what each one currently owes) — or a brand-new name.
+  function pickCustomer(shopId) {
+    return new Promise(resolve => {
+      const box = $("custPicker"), inp = $("custSearch"), list = $("custList"), nw = $("custNew");
+      const accts = creditAccounts.filter(c => c.shopId === shopId && c.active !== false).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      const bal = {};
+      creditTx.filter(t => t.shopId === shopId).forEach(t => { bal[t.customerId] = (bal[t.customerId] || 0) + (t.balanceChange || 0); });
+      function draw() {
+        const q = inp.value.trim().toLowerCase(), typed = inp.value.trim();
+        const rows = accts.filter(c => !q || String(c.name).toLowerCase().includes(q) || String(c.phone || "").includes(q));
+        list.innerHTML = rows.map(c => '<button type="button" class="lineBtn" data-n="' + esc(c.name) + '">' + esc(c.name) + (c.phone ? " · " + esc(c.phone) : "") + '<br><span class="sub">Currently owes ' + fmt(Math.max(0, bal[c.id] || 0)) + "</span></button>").join("") || '<div class="empty">' + (accts.length ? "No saved customer matches." : "No saved credit customers yet.") + "</div>";
+        const exists = accts.some(c => String(c.name).toLowerCase() === typed.toLowerCase());
+        nw.classList.toggle("hidden", !typed || exists);
+        nw.textContent = "+ Use “" + typed + "” as a NEW customer";
+      }
+      function done(v) { box.classList.add("hidden"); inp.oninput = null; list.onclick = null; nw.onclick = null; $("custCancel").onclick = null; resolve(v); }
+      inp.value = ""; draw(); box.classList.remove("hidden"); inp.focus();
+      inp.oninput = draw;
+      list.onclick = e => { const b = e.target.closest("button[data-n]"); if (b) done(b.dataset.n); };
+      nw.onclick = () => done(inp.value.trim());
+      $("custCancel").onclick = () => done(null);
+    });
+  }
+
   window.reclassify = async function (id) {
     if (busy) return;
     const r = receipts.find(x => x.id === id); if (!r || r.type !== "SALE") return;
@@ -522,7 +558,7 @@
         window.mcQueue(wb.commit());
         alert("Sale reclassified as cash.");
       } else {
-        const name = (prompt("This was actually a credit sale — enter the customer name:") || "").trim();
+        const name = await pickCustomer(r.shopId);
         if (!name) { busy = false; return; }
         if (!confirm("Reclassify receipt " + label + " (" + fmt(r.totalAmount) + ") as a CREDIT sale for " + name + "?")) { busy = false; return; }
         let acct = creditAccounts.find(c => c.shopId === r.shopId && String(c.name).toLowerCase() === name.toLowerCase());

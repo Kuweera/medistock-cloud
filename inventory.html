@@ -236,14 +236,14 @@
       <select id="f_form"></select>
     </div>
   </div>
-  <div class="row" style="margin-top:6px;">
-    <div>
-      <input type="text" id="f_newClass" placeholder="New class name…">
-      <button class="btn-toggle" style="margin-top:6px; margin-bottom:0; padding:8px;" onclick="addNewClass()">+ Add class</button>
+  <div class="row hidden" id="newClsRow" style="margin-top:6px;">
+    <div id="newClassCol" class="hidden">
+      <input type="text" id="f_newClass" placeholder="New class name">
+      <button class="btn-toggle" style="margin-top:6px; margin-bottom:0; padding:8px;" onclick="addNewClass()">+ Save class</button>
     </div>
-    <div>
-      <input type="text" id="f_newForm" placeholder="New dosage form…">
-      <button class="btn-toggle" style="margin-top:6px; margin-bottom:0; padding:8px;" onclick="addNewForm()">+ Add form</button>
+    <div id="newFormCol" class="hidden">
+      <input type="text" id="f_newForm" placeholder="New dosage form">
+      <button class="btn-toggle" style="margin-top:6px; margin-bottom:0; padding:8px;" onclick="addNewForm()">+ Save form</button>
     </div>
   </div>
 
@@ -321,6 +321,7 @@
     </div>
   </div>
 
+  <div id="openingBlock">
   <h2 style="margin-top:18px;">Opening stock</h2>
   <div class="row">
     <div>
@@ -339,6 +340,8 @@
   <div class="hint" id="openingHint"></div>
   <div class="hint" style="color:var(--warn);">Use this only for a drug's very first stock. Once you're recording batches for it on the Batches page, add all further stock there instead — adding it in both places would count it twice.</div>
   <div class="hint" id="openingPreview" style="font-size:13px; color:var(--text);">Total opening stock = 0 base unit(s)</div>
+  </div>
+  <div id="lockNote" class="hint hidden" style="margin-top:14px; padding:10px; border:1px solid var(--warn); border-radius:10px; color:var(--text); font-size:12.5px; line-height:1.5;">🔒 <b>Stock quantity and packaging are locked</b> once a drug has been saved. To correct the quantity, use <a href="stocktake.html" style="color:var(--accent);">Stock Taking</a> — a reason is required and every change is recorded. (If the packaging itself was entered wrongly, deactivate this drug and add it again.)</div>
 
   <button class="btn-primary" onclick="saveDrug()">Save Drug</button>
   <button class="btn-toggle" style="margin-top:8px;" onclick="closeForm()">Cancel</button>
@@ -509,34 +512,71 @@
   });
 
   // ---- Drug class / dosage form dropdowns, backed by shared lookup lists ----
-  async function populateSelects() {
-    const classSnap = await getDocs(collection(db, "drug_classes"));
-    const formSnap = await getDocs(collection(db, "dosage_forms"));
-    const classSel = document.getElementById("f_class");
-    const formSel = document.getElementById("f_form");
-    const prevClass = classSel.value, prevForm = formSel.value;
-    classSel.innerHTML = classSnap.docs.map(d => `<option value="${d.id}">${d.id}</option>`).join("");
-    formSel.innerHTML = formSnap.docs.map(d => `<option value="${d.id}">${d.id}</option>`).join("");
-    if (prevClass) classSel.value = prevClass;
-    if (prevForm) formSel.value = prevForm;
+  const DEFAULT_CLASSES = ["Analgesic / Pain relief", "Antibiotic", "Antimalarial", "Antifungal", "Antiviral", "Antiparasitic / Anthelmintic", "Antihistamine / Allergy",
+    "Antacid / Gastrointestinal", "Anti-diarrhoeal / ORS", "Antihypertensive", "Antidiabetic", "Cardiovascular", "Cough & Cold", "Corticosteroid", "Vitamin / Supplement",
+    "Contraceptive / Hormonal", "Muscle relaxant", "Anticonvulsant / Neuro", "Skin / Topical", "Eye / Ear / Nose", "Antiseptic / Disinfectant", "First aid / Consumable", "Other"];
+  const DEFAULT_FORMS = ["Tablet", "Capsule", "Syrup", "Suspension", "Injection", "Cream / Ointment", "Gel", "Drops (eye / ear / nose)", "Solution", "Powder / Sachet",
+    "Suppository / Pessary", "Inhaler", "Lotion", "Spray", "Patch", "Other"];
+  const extraLists = { classes: new Set(), forms: new Set() };
+  const NEW_VALUE = "__new__";
+
+  function fillSelect(sel, names, keep, addLabel, placeholder) {
+    const sorted = Array.from(new Set(names.filter(Boolean))).sort((x, y) => x.localeCompare(y));
+    sel.innerHTML = '<option value="">' + placeholder + '</option>' + sorted.map(n => '<option value="' + n.replace(/"/g, "&quot;") + '">' + n + "</option>").join("") + '<option value="' + NEW_VALUE + '">' + addLabel + "</option>";
+    if (keep && sorted.includes(keep)) sel.value = keep;
   }
+  async function populateSelects() {
+    let cs = [], fs = [];
+    try { cs = (await getDocs(collection(db, "drug_classes"))).docs.map(d => d.id); } catch (e) {}
+    try { fs = (await getDocs(collection(db, "dosage_forms"))).docs.map(d => d.id); } catch (e) {}
+    const used = (key) => (typeof allDrugs !== "undefined" ? allDrugs : []).map(d => d[key]).filter(Boolean);
+    const classSel = document.getElementById("f_class"), formSel = document.getElementById("f_form");
+    fillSelect(classSel, DEFAULT_CLASSES.concat(cs, used("drugClass"), Array.from(extraLists.classes)), classSel.value, "➕ Add a new class…", "— Select drug class —");
+    fillSelect(formSel, DEFAULT_FORMS.concat(fs, used("dosageForm"), Array.from(extraLists.forms)), formSel.value, "➕ Add a new form…", "— Select dosage form —");
+  }
+  function ensureOption(selId, value) {
+    const sel = document.getElementById(selId);
+    if (!value || Array.from(sel.options).some(o => o.value === value)) return;
+    const o = document.createElement("option"); o.value = value; o.textContent = value;
+    sel.insertBefore(o, sel.options[sel.options.length - 1]);
+  }
+  function syncNewRows() {
+    const nc = document.getElementById("f_class").value === NEW_VALUE, nf = document.getElementById("f_form").value === NEW_VALUE;
+    document.getElementById("newClassCol").classList.toggle("hidden", !nc);
+    document.getElementById("newFormCol").classList.toggle("hidden", !nf);
+    document.getElementById("newClsRow").classList.toggle("hidden", !(nc || nf));
+  }
+  document.getElementById("f_class").addEventListener("change", syncNewRows);
+  document.getElementById("f_form").addEventListener("change", syncNewRows);
 
   window.addNewClass = async function () {
     const name = document.getElementById("f_newClass").value.trim();
     if (!name) return;
     window.mcQueue(setDoc(doc(db, "drug_classes", name), { name }));
+    extraLists.classes.add(name);
     document.getElementById("f_newClass").value = "";
     await populateSelects();
     document.getElementById("f_class").value = name;
+    syncNewRows();
   };
   window.addNewForm = async function () {
     const name = document.getElementById("f_newForm").value.trim();
     if (!name) return;
     window.mcQueue(setDoc(doc(db, "dosage_forms", name), { name }));
+    extraLists.forms.add(name);
     document.getElementById("f_newForm").value = "";
     await populateSelects();
     document.getElementById("f_form").value = name;
+    syncNewRows();
   };
+
+  // ---- lock: after the first save, stock quantity + packaging can only change through Stock Taking ----
+  const LOCK_IDS = ["f_stockUnit", "f_baseUnit", "f_hasIntermediate", "f_intermediateUnit", "f_intermediatePerStock", "f_basePerIntermediate", "f_basePerStockDirect"];
+  function setLocked(on) {
+    LOCK_IDS.forEach(id => { document.getElementById(id).disabled = on; });
+    document.getElementById("openingBlock").classList.toggle("hidden", on);
+    document.getElementById("lockNote").classList.toggle("hidden", !on);
+  }
 
   // ---- Deactivate / Reactivate (soft delete — never a hard delete, since
   // batches/sales/purchases keep referencing a drug by id) ----
@@ -700,6 +740,8 @@
     editingId = null;
     document.getElementById("formTitle").textContent = "Add Drug";
     clearForm();
+    setLocked(false);
+    syncNewRows();
     showOnlyForm();
     document.getElementById("formCard").classList.remove("hidden");
     window.scrollTo(0, 0);
@@ -733,8 +775,10 @@
 
     document.getElementById("f_name").value = d.name || "";
     document.getElementById("f_generic").value = d.generic || "";
+    ensureOption("f_class", d.drugClass); ensureOption("f_form", d.dosageForm);
     document.getElementById("f_class").value = d.drugClass || "";
     document.getElementById("f_form").value = d.dosageForm || "";
+    syncNewRows();
     document.getElementById("f_supplier").value = d.supplier || "";
     document.getElementById("f_stockUnit").value = d.stockUnit || "";
     document.getElementById("f_baseUnit").value = d.baseUnit || "";
@@ -763,6 +807,7 @@
 
     document.getElementById("formStatus").textContent = "";
     updateCalcPreview();
+    setLocked(true);
     showOnlyForm();
     document.getElementById("formCard").classList.remove("hidden");
     window.scrollTo(0, 0);
@@ -773,6 +818,10 @@
     const name = document.getElementById("f_name").value.trim();
     if (!name) { statusEl.textContent = "Drug name is required."; statusEl.style.color = "var(--danger)"; return; }
     if (!currentShopId) { statusEl.textContent = "No shop selected."; statusEl.style.color = "var(--danger)"; return; }
+
+    const clsVal = document.getElementById("f_class").value.trim(), formVal = document.getElementById("f_form").value.trim();
+    if (!clsVal || clsVal === NEW_VALUE) { statusEl.textContent = "Choose a drug class (or add a new one)."; statusEl.style.color = "var(--danger)"; return; }
+    if (!formVal || formVal === NEW_VALUE) { statusEl.textContent = "Choose a dosage form (or add a new one)."; statusEl.style.color = "var(--danger)"; return; }
 
     const p = currentPackagingInputs();
     if (!p.stockUnit || !p.baseUnit || !p.baseUnitsPerStock) {
@@ -820,6 +869,11 @@
       targetStock: Number(document.getElementById("f_targetStock").value) || 0,
       currentStockBase
     };
+
+    if (editingId) {
+      // locked fields are never rewritten when editing: quantity changes go through Stock Taking (with a reason)
+      ["currentStockBase", "stockUnit", "hasIntermediate", "intermediateUnit", "baseUnit", "intermediatePerStock", "basePerIntermediate", "baseUnitsPerStock"].forEach(k => delete record[k]);
+    }
 
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
@@ -951,6 +1005,7 @@
 
     await populateSelects();
     updateCalcPreview();
+    if (new URLSearchParams(location.search).get("add") === "1") window.openForm();
 
     if (currentRole === "owner") {
       const shopsSnap = await getDocs(query(collection(db, "shops"), where("businessId", "==", currentBusinessId)));

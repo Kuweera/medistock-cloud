@@ -297,8 +297,18 @@
     renderCart();
   };
 
+  // unfinished expense list is kept on the phone, so it survives leaving this page
+  let _draftReady = false;
+  const draftKey = () => "expense:" + (currentUser ? currentUser.uid : "x") + ":" + currentShopId;
+  function saveExpenseDraft() {
+    if (!_draftReady || !window.mcDraft) return;
+    if (cart.length === 0) window.mcDraft.clear(draftKey()); else window.mcDraft.save(draftKey(), { cart, note: document.getElementById("e_note").value, date: document.getElementById("e_date").value });
+  }
+  document.getElementById("e_note").addEventListener("input", saveExpenseDraft);
+
   function renderCart() {
     const card = document.getElementById("cartCard");
+    saveExpenseDraft();
     if (cart.length === 0) { card.classList.add("hidden"); return; }
     card.classList.remove("hidden");
     document.getElementById("cartList").innerHTML = cart.map((c, idx) => `
@@ -328,8 +338,8 @@
         createdAt: serverTimestamp()
       }));
       cart = [];
-      renderCart();
       document.getElementById("e_note").value = "";
+      renderCart();
       statusEl.textContent = "";
     } catch (err) {
       statusEl.textContent = "Failed: " + err.message;
@@ -411,6 +421,16 @@
       document.getElementById("shopIndicator").textContent = shopSnap.exists() ? `Shop: ${shopSnap.data().name}` : "(unknown shop)";
     }
     if (!currentShopId) return;
+
+    const draft = window.mcDraft ? window.mcDraft.load(draftKey(), 3 * 86400000) : null;
+    if (draft && Array.isArray(draft.cart) && draft.cart.length) {
+      cart = draft.cart;
+      if (draft.note) document.getElementById("e_note").value = draft.note;
+      if (draft.date) document.getElementById("e_date").value = draft.date;
+      _draftReady = true;
+      renderCart();
+    }
+    _draftReady = true;
 
     const expensesQ = query(collection(db, "expenses"), where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId));
     onSnapshot(expensesQ, { includeMetadataChanges: true }, (snap) => {

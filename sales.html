@@ -23,10 +23,10 @@
   .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
   .card{
     background:var(--card); border:1px solid var(--border); border-radius:14px;
-    padding:16px; margin-bottom:14px;
+    padding:12px; margin-bottom:10px;
   }
   .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
-  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  label{display:block; font-size:12px; color:var(--muted); margin:6px 0 2px;}
   input, select, textarea{
     width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
     background:var(--card); color:var(--text); font-size:14px; font-family:inherit;
@@ -36,7 +36,7 @@
   .chk{display:flex; align-items:center; gap:8px; margin:10px 0;}
   .chk input{width:auto;}
   button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
-  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:11px; margin-top:8px;}
   .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent); width:100%; padding:10px; margin-top:8px;}
   .btn-danger-outline{background:transparent; border:1px solid var(--danger); color:var(--danger);}
   .btn-small{width:auto; padding:7px 12px; font-size:12.5px;}
@@ -49,7 +49,7 @@
   .pill-btn{
     display:flex; align-items:center; gap:8px;
     background:transparent; border:1px solid var(--border); color:var(--text);
-    padding:9px 14px; border-radius:999px; font-size:13.5px; font-weight:500; cursor:pointer;
+    padding:7px 12px; border-radius:999px; font-size:13px; font-weight:500; cursor:pointer;
   }
   .pill-btn .dot{width:14px; height:14px; border-radius:50%; border:2px solid var(--muted); flex-shrink:0;}
   .pill-btn.selected{border-color:var(--accent); color:var(--accent); font-weight:700;}
@@ -68,6 +68,18 @@
   .cart-item:last-child{border-bottom:none;}
   .cart-item-name{font-weight:600; font-size:14px;}
   .cart-item-meta{font-size:12px; color:var(--muted);}
+  body{padding-bottom:78px;}
+  .cfg-head{display:flex; justify-content:space-between; align-items:center; gap:8px;}
+  .cfg-head h2{margin:0; font-size:16px;}
+  .cfg-head button{margin:0; width:auto; padding:6px 10px; font-size:12px;}
+  .cfg-foot{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:8px;}
+  .cfg-foot .total-line{margin:0; font-size:17px; text-align:left;}
+  .cfg-foot .btn-primary{width:auto; margin:0; padding:11px 18px;}
+  .cart-bar{position:fixed; left:0; right:0; bottom:0; z-index:40; display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--card); border-top:2px solid var(--accent); padding:9px 14px; box-shadow:0 -3px 12px rgba(0,0,0,.3);}
+  .cart-bar b{font-size:14px;} .cart-bar .amt{font-size:18px; font-weight:700; display:block;}
+  .cart-bar .btn-primary{width:auto; margin:0; padding:11px 20px;}
+  #frequentCard{padding:8px 12px;}
   .receipt-box{
     font-family:monospace; font-size:12.5px; white-space:pre-wrap; background:var(--bg);
     border:1px solid var(--border); border-radius:8px; padding:12px; line-height:1.6;
@@ -170,7 +182,7 @@
 <div class="hint" id="shopIndicator" style="margin-bottom:8px;"></div>
 
 <div class="card hidden" id="frequentCard">
-  <h2>Frequently Sold</h2>
+  <div class="hint" style="margin:0 0 6px;">Frequently sold</div>
   <div class="chip-row" id="frequentChips"></div>
 </div>
 
@@ -180,29 +192,27 @@
 </div>
 
 <div class="card hidden selected-card" id="configureCard">
-  <button class="btn-secondary" onclick="closeConfigure()">← Search a different drug</button>
-  <h2 id="configDrugName">—</h2>
-  <div class="hint" id="configDrugStock"></div>
+  <div class="cfg-head"><h2 id="configDrugName">&hellip;</h2><button class="btn-secondary" onclick="closeConfigure()">&#10005; Change</button></div>
+  <div class="hint" id="configDrugStock" style="margin-top:2px;"></div>
 
-  <label>Sell by</label>
-  <div class="pill-row" id="unitLevelPills"></div>
+  <div class="pill-row" id="unitLevelPills" style="margin-top:6px;"></div>
 
-  <div class="row" style="margin-top:10px;">
+  <div class="row">
     <div>
       <label>Quantity</label>
-      <input type="number" id="qty" min="1" placeholder="0">
+      <input type="number" id="qty" min="1" placeholder="0" inputmode="decimal">
     </div>
     <div>
       <label id="priceLabel">Price per unit</label>
-      <input type="number" id="pricePerUnit" min="0">
+      <input type="number" id="pricePerUnit" min="0" inputmode="decimal">
     </div>
   </div>
 
   <div class="hint" id="stockCheckMsg"></div>
-  <div class="total-line" id="lineTotal">Line total: 0</div>
-
-  <button class="btn-primary" id="addToCartBtn" onclick="addToCart()">Add to Cart</button>
-  <button class="btn-secondary" onclick="closeConfigure()">Cancel</button>
+  <div class="cfg-foot">
+    <div class="total-line" id="lineTotal">Line total: 0</div>
+    <button class="btn-primary" id="addToCartBtn" onclick="addToCart()">Add to Cart</button>
+  </div>
 </div>
 
 <div class="card hidden" id="cartCard">
@@ -236,6 +246,11 @@
   <button class="btn-primary" onclick="shareReceipt()">Share Receipt</button>
   <button class="btn-secondary" onclick="saveReceiptToPhone()">Save to Phone</button>
   <button class="btn-secondary" onclick="startNewSale()">New Sale</button>
+</div>
+
+<div class="cart-bar hidden" id="cartBar">
+  <div><b id="cartBarCount">0 items</b><span class="amt" id="cartBarTotal">0</span></div>
+  <button class="btn-primary" onclick="goToCart()">Checkout &rsaquo;</button>
 </div>
 
 <div class="card">
@@ -577,13 +592,42 @@
     renderCart();
   };
 
+  // ---- unfinished sale is kept on the phone, so you can leave this page (e.g. to look up a credit record) and come back ----
+  let _draftReady = false;
+  const draftKey = () => "sell:" + (currentUser ? currentUser.uid : "x") + ":" + currentShopId;
+  function saveSellDraft() {
+    if (!_draftReady || !window.mcDraft) return;
+    const credit = document.getElementById("onCredit").checked;
+    if (cart.length === 0 && !credit) { window.mcDraft.clear(draftKey()); return; }
+    window.mcDraft.save(draftKey(), {
+      cart, onCredit: credit,
+      customerName: document.getElementById("customerName").value,
+      customerPhone: document.getElementById("customerPhone").value,
+      expectedPaymentDate: document.getElementById("expectedPaymentDate").value
+    });
+  }
+  ["onCredit", "customerName", "customerPhone", "expectedPaymentDate"].forEach(id => {
+    document.getElementById(id).addEventListener("input", saveSellDraft);
+    document.getElementById(id).addEventListener("change", saveSellDraft);
+  });
+  window.goToCart = function () {
+    const c = document.getElementById("cartCard");
+    window.scrollTo({ top: c.offsetTop - 10, behavior: "smooth" });
+  };
+
   function renderCart() {
     const card = document.getElementById("cartCard");
     const list = document.getElementById("cartList");
+    const bar = document.getElementById("cartBar");
+    saveSellDraft();
     if (cart.length === 0) {
       card.classList.add("hidden");
+      bar.classList.add("hidden");
       return;
     }
+    bar.classList.remove("hidden");
+    document.getElementById("cartBarCount").textContent = cart.length + (cart.length === 1 ? " item" : " items");
+    document.getElementById("cartBarTotal").textContent = cart.reduce((a, c) => a + (c.total || 0), 0).toLocaleString();
     card.classList.remove("hidden");
     list.innerHTML = cart.map((c, idx) => {
       const disp = cartLineDisplay(c);
@@ -835,8 +879,10 @@
       window.scrollTo({ top: document.getElementById("receiptCard").offsetTop - 10, behavior: "smooth" });
 
       cart = [];
+      document.getElementById("cartBar").classList.add("hidden");
       document.getElementById("onCredit").checked = false;
       document.getElementById("creditFields").classList.add("hidden");
+      if (window.mcDraft) window.mcDraft.clear(draftKey());
       document.getElementById("customerName").value = "";
       document.getElementById("customerPhone").value = "";
       document.getElementById("expectedPaymentDate").value = "";
@@ -922,28 +968,26 @@
       creditAccounts.map(c => `<option value="${c.name}"></option>`).join("");
   }
 
-  async function loadRecentReceipts() {
+  // Live list: it follows the phone's own copy of the data, so a sale made offline appears the moment it is saved.
+  let _recentUnsub = null;
+  function loadRecentReceipts() {
+    if (_recentUnsub) return;
     const container = document.getElementById("recentReceiptsList");
-    try {
-      const snap = await getDocs(query(
-        collection(db, "receipts"),
-        where("businessId", "==", currentBusinessId),
-        where("shopId", "==", currentShopId),
-        where("type", "==", "SALE")
-      ));
-      const receipts = snap.docs.map(d => d.data())
+    _recentUnsub = onSnapshot(query(
+      collection(db, "receipts"),
+      where("businessId", "==", currentBusinessId),
+      where("shopId", "==", currentShopId),
+      where("type", "==", "SALE")
+    ), { includeMetadataChanges: true }, (snap) => {
+      const receipts = snap.docs.map(d => ({ ...d.data({ serverTimestamps: "estimate" }), _pending: d.metadata.hasPendingWrites }))
         .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0))
         .slice(0, 10);
-      if (receipts.length === 0) {
-        container.innerHTML = '<div class="empty">No sales yet.</div>';
-        return;
-      }
+      if (receipts.length === 0) { container.innerHTML = '<div class="empty">No sales yet.</div>'; return; }
       container.innerHTML = receipts.map(r => {
         const date = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleString() : "";
         const paymentTag = r.paymentStatus === "CREDIT" ? ` · CREDIT${r.customerName ? " - " + r.customerName : ""}` : "";
+        const pendingTag = r._pending ? ' · <span style="color:var(--warn); font-weight:700;">⏳ not synced yet</span>' : "";
         const itemLines = (r.items || []).map(i => {
-          // hasIntermediate wasn't stored on older receipts — derive it from
-          // whether an intermediate unit name exists at all.
           const disp = cartLineDisplay({ ...i, hasIntermediate: i.hasIntermediate ?? !!i.intermediateUnit });
           return `
             <div class="cart-item">
@@ -957,14 +1001,14 @@
         return `
           <div style="margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid var(--border);">
             <div class="cart-item-name">Receipt #${r.displayNumber} · ${date}</div>
-            <div class="cart-item-meta" style="margin-bottom:6px;">${r.cashier || ""}${paymentTag}</div>
+            <div class="cart-item-meta" style="margin-bottom:6px;">${r.cashier || ""}${paymentTag}${pendingTag}</div>
             ${itemLines || '<div class="empty">No item detail saved for this receipt.</div>'}
             <div class="total-line" style="font-size:15px; margin-top:6px;">Total: ${Number(r.totalAmount || 0).toLocaleString()}</div>
           </div>`;
       }).join("");
-    } catch (err) {
+    }, (err) => {
       container.innerHTML = `<div class="empty" style="color:var(--danger);">Couldn't load receipts: ${err.message}</div>`;
-    }
+    });
   }
 
   onAuthStateChanged(auth, async (user) => {
@@ -1015,6 +1059,22 @@
       allDrugs = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
       if (document.getElementById("searchBox").value) renderResults(document.getElementById("searchBox").value);
     });
+
+    const draft = window.mcDraft ? window.mcDraft.load(draftKey(), 3 * 86400000) : null;
+    if (draft && Array.isArray(draft.cart) && draft.cart.length) {
+      cart = draft.cart;
+      document.getElementById("onCredit").checked = !!draft.onCredit;
+      document.getElementById("creditFields").classList.toggle("hidden", !draft.onCredit);
+      document.getElementById("customerName").value = draft.customerName || "";
+      document.getElementById("customerPhone").value = draft.customerPhone || "";
+      document.getElementById("expectedPaymentDate").value = draft.expectedPaymentDate || "";
+      _draftReady = true;
+      renderCart();
+      const st = document.getElementById("saleStatus");
+      st.textContent = "Your unfinished sale was restored.";
+      st.style.color = "var(--muted)";
+    }
+    _draftReady = true;
 
     loadFrequentlySold();
     loadCreditAccounts();

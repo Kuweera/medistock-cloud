@@ -19,45 +19,32 @@
     background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
   }
   h1{font-size:19px; margin:0;}
-  .topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
   .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
-  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);} .badge.error{color:var(--danger);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
   .card{
     background:var(--card); border:1px solid var(--border); border-radius:14px;
     padding:16px; margin-bottom:14px;
   }
   .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
-  .link{color:var(--accent); font-size:13px; text-decoration:none;}
-  .stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
-  .stat{background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px;}
-  a.stat, a.shop-card{display:block; text-decoration:none; color:inherit; -webkit-tap-highlight-color:transparent;}
-  a.stat:active, a.shop-card:active{opacity:.7;}
-  .stat .lbl .go, .shop-name .go{color:var(--muted); font-weight:400;}
-  .stat .num{font-size:20px; font-weight:700;}
-  .stat .lbl{font-size:11px; color:var(--muted); margin-top:2px;}
-  .stat.warn .num{color:var(--warn);}
-  .stat.danger .num{color:var(--danger);}
-  .stat.good .num{color:var(--accent2);}
-  .shop-card{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;}
-  .shop-card:last-child{margin-bottom:0;}
-  .shop-name{font-size:15px; font-weight:700; margin-bottom:8px;}
-  .shop-row{display:flex; justify-content:space-between; font-size:13px; padding:3px 0;}
-  .shop-row .v{font-weight:600;}
-  .v.good{color:var(--accent2);} .v.bad{color:var(--danger);}
-  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
-  .period-note{font-size:11px; color:var(--muted); margin-bottom:10px;}
-  .error-note{font-size:12.5px; color:var(--danger); margin-bottom:10px;}
-  .hidden{display:none !important;}
-  .pill-row{display:flex; gap:6px; flex-wrap:wrap;}
-  .pill-btn{
-    background:transparent; color:var(--muted); border:1px solid var(--border);
-    padding:6px 12px; font-size:12.5px; border-radius:999px; cursor:pointer;
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
   }
-  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
-  .row-inline{display:flex; gap:8px;}
-  .row-inline input{flex:1; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:13px;}
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
 
-  /* ===== Shared MediStock Cloud navigation (matches MediStock Pro) ===== */
+  /* ===== Shared MediStock Cloud navigation ===== */
   .app-header{
     position:sticky; top:0; z-index:20;
     background:var(--accent); color:#fff;
@@ -108,6 +95,39 @@
     border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
     font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
   }
+
+  /* ===== Dashboard ===== */
+  .hidden{display:none !important;}
+  .sec-h{font-size:12.5px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; color:var(--accent); margin:16px 2px 8px; display:flex; justify-content:space-between; align-items:center; gap:8px;}
+  .qa-sell{display:flex; align-items:center; justify-content:center; gap:10px; width:100%; padding:16px; border-radius:14px; background:var(--accent); color:#fff; font-size:19px; font-weight:800; text-decoration:none; margin-bottom:8px; box-shadow:0 3px 10px rgba(0,0,0,.25);}
+  .qa-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;}
+  .qa{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 4px; text-align:center; text-decoration:none; color:var(--text); font-size:12.5px; font-weight:600; display:block;}
+  .qa .ic{font-size:22px; display:block; margin-bottom:4px;}
+  .qa:active, .tile:active, .qa-sell:active{opacity:.7;}
+  .cash-card{display:block; text-decoration:none; color:var(--text); border:2px solid var(--accent); border-radius:14px; padding:14px; text-align:center; background:rgba(42,191,160,.10); margin-top:12px;}
+  .cash-card .l{font-size:12px; font-weight:700; letter-spacing:.5px; color:var(--accent);}
+  .cash-card .n{font-size:30px; font-weight:800; margin:4px 0;}
+  .cash-card .s{font-size:12px; color:var(--muted);}
+  .tiles{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  .tiles.three{grid-template-columns:repeat(3,1fr);}
+  .tile{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 6px; text-align:center; text-decoration:none; color:var(--text); display:block;}
+  .tile .n{font-size:21px; font-weight:800; color:var(--accent);}
+  .tile .l{font-size:12px; color:var(--muted); margin-top:2px;}
+  .tile.wide{grid-column:1 / -1;}
+  .tile.red{border-color:var(--danger);} .tile.red .n{color:var(--danger);}
+  .tile.amber{border-color:var(--warn);} .tile.amber .n{color:var(--warn);}
+  .tile.neg .n{color:var(--danger);}
+  .period-sel{background:transparent; border:none; color:var(--accent); font-size:13px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; width:auto; padding:0 2px; max-width:100%;}
+  .period-sel option{color:#000; text-transform:none;}
+  .range-note{font-size:11.5px; color:var(--muted); margin:-2px 2px 8px;}
+  .sup-row{display:flex; justify-content:space-between; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); font-size:13.5px;}
+  .sup-row:last-child{border-bottom:none;}
+  .sup-row .d{font-size:11.5px; color:var(--muted);} .sup-row .d.over{color:var(--danger); font-weight:700;}
+  .shop-row{display:grid; grid-template-columns:1.3fr 1fr 1fr 1fr; gap:6px; padding:8px 0; border-bottom:1px solid var(--border); font-size:12.5px; align-items:center; cursor:pointer;}
+  .shop-row.head{font-size:11px; color:var(--muted); cursor:default; font-weight:700;}
+  .shop-row div:not(:first-child){text-align:right;}
+  .card-lite{background:var(--card); border:1px solid var(--border); border-radius:14px; padding:12px;}
+  select.shop-pick{width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px;}
 </style>
 <script>
 (function(){
@@ -133,7 +153,7 @@
 <div class="nav-overlay" id="navOverlay"></div>
 <nav class="nav-panel" id="navPanel">
   <div class="nav-panel-title">Menu</div>
-  <a href="dashboard.html" class="active">Dashboard</a>
+  <a href="dashboard.html">Dashboard</a>
   <a href="charts.html">Charts</a>
   <a href="sales.html">Sell</a>
   <a href="inventory.html">Inventory</a>
@@ -152,48 +172,70 @@
 </nav>
 <script src="nav.js"></script>
 
-<div class="card" id="errorCard" style="display:none;">
-  <div class="error-note" id="errorNote"></div>
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+<div id="shopPickWrap" class="hidden" style="margin-bottom:6px;"><select id="shopPick" class="shop-pick"></select></div>
+
+<a id="backupBanner" class="hidden" href="backup.html" style="display:block; text-decoration:none; color:var(--text); border:1px solid var(--warn); background:rgba(240,180,41,.12); border-radius:10px; padding:10px 12px; font-size:13px; margin:4px 0 6px;">💾 <b id="backupMsg"></b> Tap to back up your records now ›</a>
+
+<div class="sec-h">⚡ Quick Actions</div>
+<a class="qa-sell" href="sales.html">💊 SELL</a>
+<div class="qa-grid">
+  <a class="qa" href="purchases.html"><span class="ic">📦</span>Purchase</a>
+  <a class="qa" href="credit.html"><span class="ic">🤝</span>Credit</a>
+  <a class="qa" href="inventory.html?add=1"><span class="ic">➕</span>Add Drug</a>
+  <a class="qa" href="whattobuy.html"><span class="ic">🛒</span>To Buy</a>
+  <a class="qa" href="stocktake.html"><span class="ic">📋</span>Stocktake</a>
+  <a class="qa" href="history.html"><span class="ic">🧾</span>History</a>
 </div>
 
-<div class="card">
-  <h2 id="overviewTitle">Business Overview</h2>
-  <div class="period-note" id="overviewNote">Sales/Expenses figures are for the period below, across all your shops. Stock and expiry figures are always current right now, whatever period you pick.</div>
-  <div class="pill-row" id="periodPills">
-    <button type="button" class="pill-btn" data-period="today">Day</button>
-    <button type="button" class="pill-btn" data-period="week">Week</button>
-    <button type="button" class="pill-btn selected" data-period="month">Month</button>
-    <button type="button" class="pill-btn" data-period="year">Year</button>
-    <button type="button" class="pill-btn" data-period="custom">Custom</button>
-    <button type="button" class="pill-btn" data-period="all">All time</button>
-  </div>
-  <div id="customRange" class="hidden" style="margin:8px 0;">
-    <div class="row-inline">
-      <input type="date" id="customFrom">
-      <input type="date" id="customTo">
-    </div>
-  </div>
-  <div class="period-note" id="periodRangeLabel" style="margin-top:2px;"></div>
-  <div class="stat-grid" style="margin-top:10px;">
-    <a class="stat good" href="sales.html"><div class="num" id="statSales">—</div><div class="lbl">Sales <span class="go">›</span></div></a>
-    <a class="stat" href="expenses.html"><div class="num" id="statExpenses">—</div><div class="lbl">Expenses <span class="go">›</span></div></a>
-    <a class="stat good" href="reports.html"><div class="num" id="statGross">—</div><div class="lbl">Gross profit (Sales − cost of goods) <span class="go">›</span></div></a>
-    <a class="stat good" href="reports.html"><div class="num" id="statNetProfit">—</div><div class="lbl">Net profit (Gross − Expenses) <span class="go">›</span></div></a>
-    <a class="stat" href="inventory.html"><div class="num" id="statStockValue">—</div><div class="lbl">Stock value (at wholesale) <span class="go">›</span></div></a>
-    <a class="stat warn" href="whattobuy.html"><div class="num" id="statLowStock">—</div><div class="lbl">Low stock items <span class="go">›</span></div></a>
-    <a class="stat danger" href="expiring.html?w=expired"><div class="num" id="statExpired">—</div><div class="lbl">Expired batches <span class="go">›</span></div></a>
-    <a class="stat warn" href="credit.html"><div class="num" id="statCreditOwed">—</div><div class="lbl">Credit owed to you <span class="go">›</span></div></a>
-  </div>
-</div>
-
-<a href="charts.html" class="card" style="display:block; text-decoration:none; color:inherit;">
-  <h2 style="margin:0;">📈 Trends &amp; Category Charts <span style="color:var(--muted); font-weight:400;">›</span></h2>
-  <div class="period-note" style="margin-top:4px;">Sales, profit and expense trends, top drugs, drug classes and more.</div>
+<a class="cash-card" href="cash-position.html">
+  <div class="l">💵 REAL CASH AVAILABLE</div>
+  <div class="n" id="realCash">—</div>
+  <div class="s">Actual business cash currently available</div>
 </a>
 
-<div class="card hidden" id="shopBreakdownCard">
-  <h2>Shop Performance <span style="text-transform:none; font-weight:400;">(selected period · tap a shop to open it)</span></h2>
-  <div id="shopBreakdown"><div class="empty">Loading…</div></div>
+<div class="sec-h">
+  <span>📈 Activity</span>
+  <select id="period" class="period-sel">
+    <option value="day">Day</option><option value="week">Week</option><option value="month">Month</option>
+    <option value="year">Year</option><option value="custom">Custom</option><option value="all">All time</option>
+  </select>
+</div>
+<div class="range-note" id="rangeNote"></div>
+<div id="customRange" class="hidden" style="margin-bottom:8px;"><div class="row"><input type="date" id="customFrom"><input type="date" id="customTo"></div></div>
+<div class="tiles">
+  <a class="tile" id="tSales" href="history.html?type=SALE"><div class="n" id="vSales">—</div><div class="l">Sales (UGX)</div></a>
+  <a class="tile" id="tProfit" href="reports.html"><div class="n" id="vProfit">—</div><div class="l">Profit (UGX)</div></a>
+  <a class="tile" href="expenses.html"><div class="n" id="vExpenses">—</div><div class="l">Expenses (UGX)</div></a>
+  <a class="tile" href="reports.html"><div class="n" id="vCashMove">—</div><div class="l">Cash Movement (UGX)</div></a>
+  <a class="tile wide" href="history.html?type=SALE"><div class="n" id="vCount">—</div><div class="l">Number of Sales</div></a>
+</div>
+
+<div class="sec-h">📊 At a Glance</div>
+<div class="tiles three">
+  <a class="tile" href="inventory.html"><div class="n" id="vStockValue" style="font-size:17px;">—</div><div class="l">Stock value</div></a>
+  <a class="tile" href="inventory.html"><div class="n" id="vMeds">—</div><div class="l">Medicines</div></a>
+  <a class="tile amber" href="whattobuy.html"><div class="n" id="vLow">—</div><div class="l">Low stock</div></a>
+  <a class="tile red" href="whattobuy.html"><div class="n" id="vToBuy">—</div><div class="l">To buy</div></a>
+  <a class="tile" id="tExpired" href="expiring.html?w=expired"><div class="n" id="vExpired">—</div><div class="l">Expired</div></a>
+  <a class="tile" id="tExp30" href="expiring.html?w=30"><div class="n" id="vExp30">—</div><div class="l">Expiring ≤30d</div></a>
+</div>
+
+<div class="sec-h">🤝 Debts</div>
+<div class="tiles">
+  <a class="tile amber" href="credit.html"><div class="n" id="vOwedToYou">—</div><div class="l">Owed to you (credit)</div></a>
+  <a class="tile" id="tOweSup" href="suppliers.html"><div class="n" id="vYouOwe">—</div><div class="l">You owe suppliers</div></a>
+</div>
+
+<div class="card-lite hidden" id="supCard" style="margin-top:10px;">
+  <div class="sec-h" style="margin:0 0 4px;">🏷️ Suppliers are waiting for payment</div>
+  <div id="supList"></div>
+</div>
+
+<div class="card-lite hidden" id="shopsCard" style="margin-top:12px;">
+  <div class="sec-h" style="margin:0 0 4px;">🏪 Shops <span style="text-transform:none; font-weight:400; color:var(--muted); font-size:11px;">(tap one to focus on it)</span></div>
+  <div class="shop-row head"><div>Shop</div><div>Sales</div><div>Profit</div><div>Cash</div></div>
+  <div id="shopRows"></div>
 </div>
 
 <script>
@@ -229,7 +271,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
   import { getFirestore, doc, getDoc as _getDoc, collection, onSnapshot, enableIndexedDbPersistence, query, where, getDocFromCache } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
-  // ---- offline-friendly reads: use the phone's saved copy when offline or when the connection is slow ----
+
   const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
   async function getDoc(ref) {
     if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
@@ -245,255 +287,206 @@
     messagingSenderId: "615610747921",
     appId: "1:615610747921:web:94b6627b64a250362335b0"
   };
-
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getFirestore(app);
   enableIndexedDbPersistence(db).catch(() => {});
 
-  let currentRole = null;
-  let currentBusinessId = null;
-  let currentShopId = null; // operator only
-  let shopsById = {};   // owner only: id -> name
-  let sales = [];
-  let expenses = [];
-  let drugs = [];
-  let batches = [];
-  let creditTxns = [];
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const fmt = n => Math.round(Number(n) || 0).toLocaleString();
 
-  // ---- Period engine (ported from Pro's Dashboard: Day/Week/Month/Year/
-  // Custom/All-time. Only the TYPE is remembered as a preference — the
-  // actual range always resolves against today's real date on reopen,
-  // it never resumes some stale range from last time.) ----
-  function getPeriodPref() {
-    try { const raw = localStorage.getItem("mcDashPeriod"); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
-  }
-  function savePeriodPref() {
-    try {
-      localStorage.setItem("mcDashPeriod", JSON.stringify({
-        type: periodType,
-        from: document.getElementById("customFrom").value || "",
-        to: document.getElementById("customTo").value || ""
-      }));
-    } catch (e) {}
-  }
-  const periodPref = getPeriodPref();
-  let periodType = periodPref?.type || "month";
+  let role = null, businessId = null;
+  let shopsById = {}, shopStart = {};
+  let sales = [], expenses = [], receipts = [], creditTx = [], supplierTx = [], adjustments = [], drugs = [], batches = [];
+  let shopFilter = "all";
+  const pref = (() => { try { return JSON.parse(localStorage.getItem("mcDashPeriod")) || {}; } catch (e) { return {}; } })();
+  let periodType = pref.type || "day";
 
-  function computePeriodRange() {
+  const startOfDay = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+  const endOfDay = d => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
+  const tsDate = t => (t && t.toDate) ? t.toDate() : new Date();
+  const userDate = (s, ts) => { if (s) { const d = new Date(s + "T12:00:00"); if (!isNaN(d)) return d; } return tsDate(ts); };
+  const expAmt = e => Number(e.totalAmount != null ? e.totalAmount : e.amount) || 0;
+  const dmy = d => d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase().replace(/ /g, "-");
+
+  function rangeFor() {
     const now = new Date();
-    let from, to;
-    if (periodType === "all") {
-      from = new Date(2000, 0, 1);
-      to = new Date(2099, 11, 31, 23, 59, 59, 999);
-    } else if (periodType === "today") {
-      from = new Date(now); from.setHours(0, 0, 0, 0);
-      to = new Date(now); to.setHours(23, 59, 59, 999);
-    } else if (periodType === "week") {
-      from = new Date(now); from.setDate(now.getDate() - now.getDay()); from.setHours(0, 0, 0, 0);
-      to = new Date(from); to.setDate(from.getDate() + 6); to.setHours(23, 59, 59, 999);
-    } else if (periodType === "month") {
-      from = new Date(now.getFullYear(), now.getMonth(), 1);
-      to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-    } else if (periodType === "year") {
-      from = new Date(now.getFullYear(), 0, 1);
-      to = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
-    } else {
-      const fromStr = document.getElementById("customFrom").value;
-      const toStr = document.getElementById("customTo").value;
-      from = fromStr ? new Date(fromStr + "T00:00:00") : new Date(2000, 0, 1);
-      to = toStr ? new Date(toStr + "T23:59:59") : new Date();
+    if (periodType === "day") return { from: startOfDay(now), to: endOfDay(now) };
+    if (periodType === "week") { const f = startOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay())); return { from: f, to: endOfDay(new Date(f.getFullYear(), f.getMonth(), f.getDate() + 6)) }; }
+    if (periodType === "month") return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0)) };
+    if (periodType === "year") return { from: new Date(now.getFullYear(), 0, 1), to: endOfDay(new Date(now.getFullYear(), 11, 31)) };
+    if (periodType === "custom") {
+      const f = $("customFrom").value, t = $("customTo").value;
+      return { from: f ? new Date(f + "T00:00:00") : new Date(2000, 0, 1), to: t ? new Date(t + "T23:59:59") : endOfDay(now) };
     }
-    return { from, to };
-  }
-  function isInRange(ts, from, to) {
-    if (!ts) return false;
-    const d = ts.toDate();
-    return d >= from && d <= to;
-  }
-  function formatRangeLabel(from, to) {
-    const f = d => d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-    return `${f(from)} → ${f(to)}`;
+    return { from: new Date(2000, 0, 1), to: endOfDay(new Date(now.getFullYear() + 1, 11, 31)) };
   }
 
-  document.querySelectorAll("#periodPills .pill-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll("#periodPills .pill-btn").forEach(b => b.classList.remove("selected"));
-      btn.classList.add("selected");
-      periodType = btn.dataset.period;
-      document.getElementById("customRange").classList.toggle("hidden", periodType !== "custom");
-      savePeriodPref();
-      renderAll();
-    });
-  });
-  document.getElementById("customFrom").addEventListener("change", () => { savePeriodPref(); renderAll(); });
-  document.getElementById("customTo").addEventListener("change", () => { savePeriodPref(); renderAll(); });
-
-  // Reflect the restored preference in the UI (markup hard-codes "Month" as selected).
-  if (periodPref?.type && periodPref.type !== "month") {
-    document.querySelectorAll("#periodPills .pill-btn").forEach(b => {
-      b.classList.toggle("selected", b.dataset.period === periodType);
-    });
-  }
-  if (periodType === "custom") {
-    document.getElementById("customFrom").value = periodPref?.from || "";
-    document.getElementById("customTo").value = periodPref?.to || "";
-    document.getElementById("customRange").classList.remove("hidden");
-  }
-
-  function daysUntil(dateStr) {
-    if (!dateStr || isNaN(new Date(dateStr))) return 36500; // no expiry date = never expires
-    const today = new Date(); today.setHours(0,0,0,0);
-    return Math.round((new Date(dateStr) - today) / 86400000);
-  }
-  function fmt(n) { return Math.round(n).toLocaleString(); }
-
-  function showError(label, err) {
-    const card = document.getElementById("errorCard");
-    const note = document.getElementById("errorNote");
-    card.style.display = "block";
-    note.textContent = `Couldn't load ${label}: ${err.message}. Some figures below may be incomplete — try reloading.`;
-    const badge = document.getElementById("netBadge");
-    badge.textContent = "error";
-    badge.className = "badge error";
-  }
-
-  // Cost of goods for one sale line. Newer sales store it (taken from the
-  // batches actually sold). If it's missing/0 (e.g. no batch covered the sale),
-  // estimate from the drug's current wholesale price so profit isn't overstated.
+  // cost of goods for a sale line: stored value, else estimated from the drug's wholesale price
   function saleCost(s) {
     const stored = Number(s.costOfGoods || 0);
-    if (stored > 0) return stored;
+    if (stored !== 0) return stored;
     const d = drugs.find(x => x.id === s.drugId);
     if (!d || !d.baseUnitsPerStock) return 0;
     return ((s.baseQtyDeducted || 0) / d.baseUnitsPerStock) * (d.wholesale || 0);
   }
+  const purchaseCash = r => { const items = Array.isArray(r.items) ? r.items : []; return items.length ? items.filter(i => !i.onCredit).reduce((a, i) => a + (i.lineTotalCost || 0), 0) : (r.totalAmount || 0); };
+  const cashAdjDelta = a => { const v = Number(a.amount) || 0; return (a.type === "owner_withdrawal" || a.type === "cash_shortage") ? -v : v; };
 
-  function renderAll() {
-    const { from, to } = computePeriodRange();
-    document.getElementById("periodRangeLabel").textContent = formatRangeLabel(from, to);
-    const salesThisMonth = sales.filter(s => isInRange(s.createdAt, from, to));
-    const expensesThisMonth = expenses.filter(e => isInRange(e.createdAt, from, to));
-    const totalSales = salesThisMonth.reduce((sum, s) => sum + (s.total || 0), 0);
-    const totalExpenses = expensesThisMonth.reduce((sum, e) => sum + (Number(e.totalAmount != null ? e.totalAmount : e.amount) || 0), 0);
-    const totalCost = salesThisMonth.reduce((sum, s) => sum + saleCost(s), 0);
-    const grossProfit = totalSales - totalCost;
-    const stockValue = drugs.reduce((sum, d) => {
-      const stockUnitsWorth = d.baseUnitsPerStock ? (d.currentStockBase / d.baseUnitsPerStock) * (d.wholesale || 0) : 0;
-      return sum + stockUnitsWorth;
-    }, 0);
-    const lowStockCount = drugs.filter(d => d.active !== false && d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock)).length;
-    const expiredCount = batches.filter(b => daysUntil(b.expiryDate) < 0 && Number(b.quantity || 0) > 0).length;
-    const balancesById = {};
-    creditTxns.forEach(t => { balancesById[t.customerId] = (balancesById[t.customerId] || 0) + (t.balanceChange || 0); });
-    const totalCreditOwed = Object.values(balancesById).filter(b => b > 0).reduce((sum, b) => sum + b, 0);
+  function render() {
+    if (!role) return;
+    const inShop = x => shopFilter === "all" || x.shopId === shopFilter;
+    const { from, to } = rangeFor();
+    const within = d => d >= from && d <= to;
 
-    document.getElementById("statSales").textContent = fmt(totalSales);
-    document.getElementById("statExpenses").textContent = fmt(totalExpenses);
-    document.getElementById("statGross").textContent = fmt(grossProfit);
-    document.getElementById("statNetProfit").textContent = fmt(grossProfit - totalExpenses);
-    document.getElementById("statNetProfit").style.color = (grossProfit - totalExpenses) < 0 ? "var(--danger)" : "";
-    document.getElementById("statStockValue").textContent = fmt(stockValue);
-    document.getElementById("statLowStock").textContent = lowStockCount;
-    document.getElementById("statExpired").textContent = expiredCount;
-    document.getElementById("statCreditOwed").textContent = fmt(totalCreditOwed);
-
-    if (currentRole !== "owner") return; // operator has no per-shop breakdown
-
-    const shopIds = Object.keys(shopsById);
-    const container = document.getElementById("shopBreakdown");
-    if (shopIds.length === 0) {
-      container.innerHTML = '<div class="empty">No shops yet — add one on the Shops page.</div>';
-      return;
+    // ---------- period activity (for one shop or all) ----------
+    function activity(shopId) {
+      const f = x => shopId === "all" ? true : x.shopId === shopId;
+      const S = sales.filter(f).filter(s => within(tsDate(s.createdAt)));
+      const E = expenses.filter(f).filter(e => within(userDate(e.date, e.createdAt)));
+      const P = receipts.filter(r => r.type === "PURCHASE" && f(r)).filter(r => within(tsDate(r.createdAt)));
+      const CP = creditTx.filter(f).filter(t => t.type === "PAYMENT" && within(tsDate(t.createdAt)));
+      const SP = supplierTx.filter(f).filter(t => t.type === "PAYMENT" && within(tsDate(t.createdAt)));
+      const AD = adjustments.filter(f).filter(a => within(userDate(a.date, a.createdAt)));
+      const revenue = S.reduce((a, s) => a + (s.total || 0), 0);
+      const cogs = S.reduce((a, s) => a + saleCost(s), 0);
+      const exp = E.reduce((a, e) => a + expAmt(e), 0);
+      const credit = S.filter(s => s.paymentStatus === "CREDIT").reduce((a, s) => a + (s.total || 0), 0);
+      const cashMove = (revenue - credit) + CP.reduce((a, t) => a + (t.amount || 0), 0) + AD.reduce((a, x) => a + cashAdjDelta(x), 0)
+        - P.reduce((a, r) => a + purchaseCash(r), 0) - SP.reduce((a, t) => a + (t.amount || 0), 0) - exp;
+      return { revenue, profit: revenue - cogs - exp, exp, cashMove };
     }
-    container.innerHTML = shopIds.map(id => {
-      const name = shopsById[id];
-      const shopSalesDocs = salesThisMonth.filter(s => s.shopId === id);
-      const shopSales = shopSalesDocs.reduce((sum, s) => sum + (s.total || 0), 0);
-      const shopExpenses = expensesThisMonth.filter(e => e.shopId === id).reduce((sum, e) => sum + (Number(e.totalAmount != null ? e.totalAmount : e.amount) || 0), 0);
-      const shopGross = shopSalesDocs.reduce((sum, s) => sum + (s.total || 0) - saleCost(s), 0);
-      const net = shopGross - shopExpenses;
-      const shopLowStock = drugs.filter(d => d.shopId === id && d.active !== false && d.reorderLevel && d.currentStockBase <= (d.reorderLevel * d.baseUnitsPerStock)).length;
-      const shopExpiring = batches.filter(b => b.shopId === id && daysUntil(b.expiryDate) >= 0 && daysUntil(b.expiryDate) <= 30 && Number(b.quantity || 0) > 0).length;
-      return `
-        <a class="shop-card" href="inventory.html" onclick="localStorage.setItem('mc_activeShopId','${id}')">
-          <div class="shop-name">${name} <span class="go">›</span></div>
-          <div class="shop-row"><span>Sales</span><span class="v good">${fmt(shopSales)}</span></div>
-          <div class="shop-row"><span>Expenses</span><span class="v">${fmt(shopExpenses)}</span></div>
-          <div class="shop-row"><span>Gross profit</span><span class="v ${shopGross >= 0 ? "good" : "bad"}">${fmt(shopGross)}</span></div>
-          <div class="shop-row"><span>Net profit</span><span class="v ${net >= 0 ? "good" : "bad"}">${fmt(net)}</span></div>
-          <div class="shop-row"><span>Low stock items</span><span class="v">${shopLowStock}</span></div>
-          <div class="shop-row"><span>Expiring ≤30d</span><span class="v">${shopExpiring}</span></div>
-        </a>`;
-    }).join("");
+    // ---------- real cash (all time) ----------
+    function realCash(shopId) {
+      const f = x => shopId === "all" ? true : x.shopId === shopId;
+      const start = shopId === "all" ? Object.keys(shopStart).reduce((a, k) => a + (shopStart[k] || 0), 0) : (shopStart[shopId] || 0);
+      return start
+        + sales.filter(f).filter(s => s.paymentStatus !== "CREDIT").reduce((a, s) => a + (s.total || 0), 0)
+        + creditTx.filter(f).filter(t => t.type === "PAYMENT").reduce((a, t) => a + (t.amount || 0), 0)
+        + adjustments.filter(f).reduce((a, x) => a + cashAdjDelta(x), 0)
+        - receipts.filter(r => r.type === "PURCHASE" && f(r)).reduce((a, r) => a + purchaseCash(r), 0)
+        - supplierTx.filter(f).filter(t => t.type === "PAYMENT").reduce((a, t) => a + (t.amount || 0), 0)
+        - expenses.filter(f).reduce((a, e) => a + expAmt(e), 0);
+    }
+
+    $("rangeNote").textContent = periodType === "all" ? "All time" : dmy(from) + " → " + dmy(to);
+    const act = activity(shopFilter);
+    $("vSales").textContent = fmt(act.revenue);
+    $("vProfit").textContent = fmt(act.profit); $("tProfit").classList.toggle("neg", act.profit < 0);
+    $("vExpenses").textContent = fmt(act.exp);
+    $("vCashMove").textContent = fmt(act.cashMove);
+    $("vCount").textContent = receipts.filter(r => r.type === "SALE" && inShop(r)).filter(r => within(tsDate(r.createdAt))).length.toLocaleString();
+    $("realCash").textContent = "UGX " + fmt(realCash(shopFilter));
+
+    // ---------- at a glance ----------
+    const D = drugs.filter(inShop).filter(d => d.active !== false);
+    $("vMeds").textContent = D.length.toLocaleString();
+    $("vStockValue").textContent = fmt(D.reduce((a, d) => a + ((d.currentStockBase || 0) / (d.baseUnitsPerStock || 1)) * (d.wholesale || 0), 0));
+    const low = D.filter(d => Number(d.reorderLevel) > 0 && (d.currentStockBase || 0) <= Number(d.reorderLevel) * Number(d.baseUnitsPerStock || 1)).length;
+    $("vLow").textContent = low; $("vToBuy").textContent = low;
+    const today = startOfDay(new Date());
+    const B = batches.filter(inShop).filter(b => b.quantity > 0 && b.expiryDate && !isNaN(new Date(b.expiryDate)));
+    const dleft = b => Math.round((new Date(b.expiryDate) - today) / 86400000);
+    $("vExpired").textContent = B.filter(b => dleft(b) < 0).length;
+    $("vExp30").textContent = B.filter(b => dleft(b) >= 0 && dleft(b) <= 30).length;
+    $("tExpired").classList.toggle("red", B.some(b => dleft(b) < 0));
+    $("tExp30").classList.toggle("amber", B.some(b => dleft(b) >= 0 && dleft(b) <= 30));
+
+    // ---------- debts ----------
+    const custBal = {};
+    creditTx.filter(inShop).forEach(t => { const k = t.shopId + "|" + t.customerId; custBal[k] = (custBal[k] || 0) + (t.balanceChange || 0); });
+    $("vOwedToYou").textContent = fmt(Object.values(custBal).reduce((a, v) => a + Math.max(0, v), 0));
+
+    // what suppliers are demanding: balance per supplier, plus the next due date (oldest unpaid credit purchase first)
+    const sup = {};
+    supplierTx.filter(inShop).forEach(t => { const k = t.shopId + "|" + (t.supplierName || "Unknown"); (sup[k] = sup[k] || { name: t.supplierName || "Unknown", shopId: t.shopId, tx: [] }).tx.push(t); });
+    const supRows = Object.values(sup).map(s => {
+      const credits = s.tx.filter(t => t.type === "CREDIT_PURCHASE").sort((a, b) => tsDate(a.createdAt) - tsDate(b.createdAt));
+      const paid = s.tx.filter(t => t.type !== "CREDIT_PURCHASE").reduce((a, t) => a + (t.amount || 0), 0);
+      const owed = credits.reduce((a, t) => a + (t.amount || 0), 0) - paid;
+      let left = paid, due = "";
+      for (const c of credits) { if (left >= (c.amount || 0)) { left -= (c.amount || 0); continue; } due = c.dueDate || ""; break; }
+      return { name: s.name, shopId: s.shopId, owed, due };
+    }).filter(r => r.owed > 0.5).sort((a, b) => b.owed - a.owed);
+    $("vYouOwe").textContent = fmt(supRows.reduce((a, r) => a + r.owed, 0));
+    $("tOweSup").classList.toggle("red", supRows.length > 0);
+    $("supCard").classList.toggle("hidden", supRows.length === 0);
+    $("supList").innerHTML = supRows.slice(0, 6).map(r => {
+      const over = r.due && new Date(r.due + "T23:59:59") < new Date();
+      const dueTxt = r.due ? (over ? "OVERDUE since " : "Due ") + new Date(r.due + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "No due date set";
+      return '<div class="sup-row"><div><b>' + esc(r.name) + '</b><div class="d ' + (over ? "over" : "") + '">' + esc(dueTxt) + (shopFilter === "all" && Object.keys(shopsById).length > 1 ? " · " + esc(shopsById[r.shopId] || "") : "") + "</div></div><b>" + fmt(r.owed) + "</b></div>";
+    }).join("") + (supRows.length > 6 ? '<div class="d" style="text-align:center; padding-top:6px;"><a href="suppliers.html" style="color:var(--accent);">+ ' + (supRows.length - 6) + " more suppliers</a></div>" : "");
+
+    // ---------- owner: shop comparison ----------
+    const ids = Object.keys(shopsById);
+    $("shopsCard").classList.toggle("hidden", !(role === "owner" && ids.length > 1));
+    if (role === "owner" && ids.length > 1) {
+      $("shopRows").innerHTML = ids.map(id => {
+        const a = activity(id);
+        return '<div class="shop-row" onclick="focusShop(\'' + id + '\')"><div><b>' + esc(shopsById[id]) + "</b></div><div>" + fmt(a.revenue) + "</div><div>" + fmt(a.profit) + "</div><div>" + fmt(realCash(id)) + "</div></div>";
+      }).join("");
+    }
   }
+
+  window.focusShop = function (id) { shopFilter = id; $("shopPick").value = id; try { localStorage.setItem("mc_activeShopId", id); localStorage.setItem("mcDashShop", id); } catch (e) {} render(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+
+  // ---------- backup reminder ----------
+  (function () {
+    let t = 0; try { t = Number(localStorage.getItem("mcLastBackup") || 0); } catch (e) {}
+    const days = t ? Math.floor((Date.now() - t) / 86400000) : null;
+    if (days === null || days >= 7) { $("backupMsg").textContent = days === null ? "You haven't backed up yet." : "Last backup was " + days + " days ago."; $("backupBanner").classList.remove("hidden"); }
+  })();
+
+  // ---------- controls ----------
+  $("period").value = periodType;
+  $("customRange").classList.toggle("hidden", periodType !== "custom");
+  if (periodType === "custom") { $("customFrom").value = pref.from || ""; $("customTo").value = pref.to || ""; }
+  const savePref = () => { try { localStorage.setItem("mcDashPeriod", JSON.stringify({ type: periodType, from: $("customFrom").value || "", to: $("customTo").value || "" })); } catch (e) {} };
+  $("period").addEventListener("change", () => { periodType = $("period").value; $("customRange").classList.toggle("hidden", periodType !== "custom"); savePref(); render(); });
+  ["customFrom", "customTo"].forEach(id => $(id).addEventListener("change", () => { savePref(); render(); }));
+  $("shopPick").addEventListener("change", () => { shopFilter = $("shopPick").value; try { localStorage.setItem("mcDashShop", shopFilter); } catch (e) {} render(); });
 
   onAuthStateChanged(auth, async (user) => {
     if (!user) { window.location.href = "login.html"; return; }
-
-    let profile;
-    try {
-      const userSnap = await getDoc(doc(db, "users", user.uid));
-      if (!userSnap.exists()) { window.location.href = "login.html"; return; }
-      profile = userSnap.data();
+    const snap = await getDoc(doc(db, "users", user.uid));
+    if (!snap.exists()) { window.location.href = "login.html"; return; }
+    const profile = snap.data();
     if (profile.active === false) { await auth.signOut(); window.location.href = "login.html?disabled=1"; return; }
-    } catch (err) {
-      showError("your profile", err);
-      return;
-    }
-    currentRole = profile.role;
-    currentBusinessId = profile.businessId;
+    role = profile.role; businessId = profile.businessId;
 
-    const badge = document.getElementById("netBadge");
-    function markLoaded(fromCache) {
-      badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
-      badge.className = "badge " + (fromCache ? "offline" : "online");
-    }
-
-    // ---- Build the query filters for each collection based on role.
-    // Owner: businessId only (sees every shop in the business).
-    // Operator: businessId + shopId (their one assigned shop, per the rules
-    // — they structurally can't read any other shop's data). ----
+    const D = d => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) });
     let filters;
-    if (currentRole === "owner") {
-      document.getElementById("shopBreakdownCard").classList.remove("hidden");
-      filters = [where("businessId", "==", currentBusinessId)];
-
-      onSnapshot(query(collection(db, "shops"), where("businessId", "==", currentBusinessId)),
-        (snap) => {
-          shopsById = {};
-          snap.docs.forEach(d => { shopsById[d.id] = d.data().name; });
-          renderAll();
-        },
-        (err) => showError("your shops", err)
-      );
+    if (role === "owner") {
+      $("shopIndicator").textContent = "Your business — all shops";
+      $("shopPickWrap").classList.remove("hidden");
+      try { shopFilter = localStorage.getItem("mcDashShop") || "all"; } catch (e) {}
+      filters = [where("businessId", "==", businessId)];
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
+        shopsById = {}; shopStart = {};
+        s.docs.forEach(d => { shopsById[d.id] = d.data().name; shopStart[d.id] = Number(d.data().startingCash) || 0; });
+        const ids = Object.keys(shopsById);
+        $("shopPick").innerHTML = '<option value="all">All shops</option>' + ids.map(id => '<option value="' + esc(id) + '">' + esc(shopsById[id]) + "</option>").join("");
+        if (!ids.includes(shopFilter)) shopFilter = "all";
+        $("shopPick").value = shopFilter;
+        $("shopPickWrap").classList.toggle("hidden", ids.length < 2);
+        render();
+      });
     } else {
-      currentShopId = profile.shopId;
-      document.getElementById("overviewTitle").textContent = "Your Shop";
-      document.getElementById("overviewNote").textContent = "Sales/Expenses figures are for the period below, for your shop. Stock and expiry figures are always current right now, whatever period you pick.";
-      filters = [where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId)];
+      shopFilter = profile.shopId;
+      filters = [where("businessId", "==", businessId), where("shopId", "==", profile.shopId)];
+      getDoc(doc(db, "shops", profile.shopId)).then(s => {
+        if (s.exists()) { shopsById[profile.shopId] = s.data().name; shopStart[profile.shopId] = Number(s.data().startingCash) || 0; $("shopIndicator").textContent = "Shop: " + s.data().name + " · " + profile.name; render(); }
+      }).catch(() => {});
     }
-
-    onSnapshot(query(collection(db, "sales"), ...filters), { includeMetadataChanges: true },
-      (snap) => { sales = snap.docs.map(d => d.data()); markLoaded(snap.metadata.fromCache); renderAll(); },
-      (err) => showError("sales", err)
-    );
-    onSnapshot(query(collection(db, "expenses"), ...filters),
-      (snap) => { expenses = snap.docs.map(d => d.data()); renderAll(); },
-      (err) => showError("expenses", err)
-    );
-    onSnapshot(query(collection(db, "drugs"), ...filters),
-      (snap) => { drugs = snap.docs.map(d => ({ id: d.id, ...d.data() })); renderAll(); },
-      (err) => showError("inventory", err)
-    );
-    onSnapshot(query(collection(db, "batches"), ...filters),
-      (snap) => { batches = snap.docs.map(d => d.data()); renderAll(); },
-      (err) => showError("batches", err)
-    );
-    onSnapshot(query(collection(db, "credit_transactions"), ...filters),
-      (snap) => { creditTxns = snap.docs.map(d => d.data()); renderAll(); },
-      (err) => showError("credit records", err)
-    );
+    const watch = (name, setter) => onSnapshot(query(collection(db, name), ...filters), { includeMetadataChanges: true }, s => {
+      setter(s.docs.map(D));
+      if (name === "sales") { const b = $("netBadge"); b.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)"; b.className = "badge " + (s.metadata.fromCache ? "offline" : "online"); }
+      render();
+    });
+    watch("sales", v => sales = v); watch("expenses", v => expenses = v); watch("receipts", v => receipts = v);
+    watch("credit_transactions", v => creditTx = v); watch("supplier_transactions", v => supplierTx = v);
+    watch("cash_adjustments", v => adjustments = v); watch("drugs", v => drugs = v); watch("batches", v => batches = v);
   });
 </script>
 </body>

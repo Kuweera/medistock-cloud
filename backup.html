@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStock Cloud — Backup &amp; Export</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  .hidden{display:none !important;}
+  .meta{font-size:12.5px; color:var(--muted); line-height:1.55; margin:6px 0;}
+  .big-btn{width:100%; padding:14px; margin-top:10px; border-radius:11px; border:none; background:var(--accent); color:#fff; font-size:15px; font-weight:700; cursor:pointer;}
+  .big-btn.sec{background:transparent; color:var(--accent); border:1px solid var(--accent); font-weight:600; font-size:14px; padding:12px;}
+  .big-btn:disabled{opacity:.55;}
+  .warnbox{border:1px solid var(--danger); background:rgba(229,83,75,.10); border-radius:10px; padding:10px 12px; font-size:13px; line-height:1.5;}
+  .okbox{border:1px solid var(--accent2); background:rgba(42,191,160,.10); border-radius:10px; padding:10px 12px; font-size:13px; line-height:1.5;}
+  .prog{font-size:12.5px; color:var(--muted); line-height:1.7; margin-top:8px;}
+  .prog .e{color:var(--danger);}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Multi-Shop Edition · Backup &amp; Export</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="location.href='dashboard.html'">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html" class="active">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+
+<div class="card">
+  <h2>🗄️ Backup your records</h2>
+  <p class="meta">A backup is a safety copy of your business records, saved as a file on <b>this phone</b>. It works without internet, using what is already saved on the phone. If you stay offline for days or weeks, make a backup every few days and keep a copy somewhere else too (WhatsApp to yourself, Google Drive, a memory card).</p>
+  <div id="lastBackup" class="okbox">Checking…</div>
+  <button class="big-btn" id="fullBtn" onclick="exportBackup()">Export full backup</button>
+  <div class="prog" id="prog"></div>
+  <button class="big-btn sec hidden" id="shareBtn" onclick="shareBackup()">Send / share the backup file</button>
+</div>
+
+<div class="card">
+  <h2>📊 Export to Excel (CSV)</h2>
+  <p class="meta">Spreadsheet files you can open in Excel, Google Sheets or WPS.</p>
+  <button class="big-btn sec" onclick="exportCsv('sales')">Sales (every item sold)</button>
+  <button class="big-btn sec" onclick="exportCsv('stock')">Stock list (current quantities &amp; prices)</button>
+  <button class="big-btn sec" onclick="exportCsv('expenses')">Expenses</button>
+  <button class="big-btn sec" onclick="exportCsv('credit')">Customers who owe you</button>
+  <div class="prog" id="csvProg"></div>
+</div>
+
+<div class="card">
+  <h2>ℹ️ Good to know</h2>
+  <p class="meta">• The backup contains only what this phone has saved so far. Open the app with internet from time to time so everything is up to date and uploaded.</p>
+  <p class="meta">• Unsent changes are not lost by exporting — they stay on the phone until they upload.</p>
+  <p class="meta">• This file is a safety copy and a readable record of everything. It is not a one-tap restore: if records are ever lost, keep this file safe and it can be used to rebuild them.</p>
+</div>
+
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import { getFirestore, doc, getDoc as _getDoc, getDocs as _getDocs, collection, enableIndexedDbPersistence, query, where, getDocFromCache, getDocsFromCache } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDoc(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 4000); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDocs(q) {
+    if (navigator.onLine === false) { try { return await getDocsFromCache(q); } catch (e) {} }
+    try { return await _slowRace(_getDocs(q), 6000); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocsFromCache(q); } catch (e2) { throw e; } }
+  }
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {});
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  let role = null, businessId = null, myShopId = null, who = "", scopeName = "";
+  let lastFile = null;
+
+  const COLLECTIONS = ["shops", "drugs", "batches", "sales", "receipts", "expenses", "credit_accounts", "credit_transactions", "suppliers", "supplier_transactions", "cash_adjustments", "stock_adjustments", "stock_transactions"];
+
+  // Firestore timestamps -> readable ISO text
+  function plain(v) {
+    if (v == null) return v;
+    if (typeof v.toDate === "function") return v.toDate().toISOString();
+    if (Array.isArray(v)) return v.map(plain);
+    if (typeof v === "object") { const o = {}; Object.keys(v).forEach(k => { o[k] = plain(v[k]); }); return o; }
+    return v;
+  }
+  async function fetchCollection(name) {
+    const filters = role === "owner" ? [where("businessId", "==", businessId)] : [where("businessId", "==", businessId), where("shopId", "==", myShopId)];
+    const snap = await getDocs(query(collection(db, name), ...filters));
+    return { rows: snap.docs.map(d => ({ id: d.id, ...plain(d.data({ serverTimestamps: "estimate" })) })), fromCache: snap.metadata && snap.metadata.fromCache };
+  }
+
+  function refreshLast() {
+    const t = Number(localStorage.getItem("mcLastBackup") || 0), box = $("lastBackup");
+    if (!t) { box.className = "warnbox"; box.textContent = "You have never made a backup on this phone. Make one now."; return; }
+    const days = Math.floor((Date.now() - t) / 86400000);
+    box.className = days >= 7 ? "warnbox" : "okbox";
+    box.textContent = "Last backup: " + new Date(t).toLocaleString() + (days === 0 ? " (today)" : " (" + days + " day" + (days === 1 ? "" : "s") + " ago)") + (days >= 7 ? " — time for a new one." : "");
+  }
+
+  function download(name, text, type) {
+    const blob = new Blob([text], { type });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    return blob;
+  }
+
+  window.exportBackup = async function () {
+    const btn = $("fullBtn"), prog = $("prog");
+    btn.disabled = true; prog.innerHTML = "Collecting records…"; $("shareBtn").classList.add("hidden");
+    const out = { app: "MediStock Cloud", exportedAt: new Date().toISOString(), exportedBy: who, scope: scopeName, role, businessId, collections: {} };
+    const lines = []; let cached = false;
+    try { const b = await getDoc(doc(db, "businesses", businessId)); if (b.exists()) out.business = plain(b.data()); } catch (e) {}
+    for (const name of COLLECTIONS) {
+      try {
+        const r = await fetchCollection(name);
+        out.collections[name] = r.rows; if (r.fromCache) cached = true;
+        lines.push("✓ " + name.replace(/_/g, " ") + ": " + r.rows.length);
+      } catch (e) {
+        out.collections[name] = [];
+        lines.push('<span class="e">✗ ' + name.replace(/_/g, " ") + ": could not read (" + esc(e.code || e.message) + ")</span>");
+      }
+      prog.innerHTML = lines.join("<br>");
+    }
+    const day = new Date().toISOString().slice(0, 10);
+    const text = JSON.stringify(out);
+    const fileName = "MediStock-Backup-" + (scopeName || "business").replace(/[^A-Za-z0-9]+/g, "-") + "-" + day + ".json";
+    const blob = download(fileName, text, "application/json");
+    lastFile = new File([blob], fileName, { type: "application/json" });
+    try { localStorage.setItem("mcLastBackup", String(Date.now())); } catch (e) {}
+    refreshLast();
+    prog.innerHTML = lines.join("<br>") + "<br><b>Saved to your phone: " + esc(fileName) + " (" + Math.round(text.length / 1024).toLocaleString() + " KB)</b>" +
+      (cached ? "<br>Note: some records came from the phone's saved copy (no live connection), so anything not yet synced to the server is included too." : "");
+    if (navigator.canShare && lastFile && navigator.canShare({ files: [lastFile] })) $("shareBtn").classList.remove("hidden");
+    btn.disabled = false;
+  };
+  window.shareBackup = async function () {
+    if (!lastFile) return;
+    try { await navigator.share({ files: [lastFile], title: "MediStock backup" }); } catch (e) {}
+  };
+
+  // ---------- CSV (opens in Excel / Sheets) ----------
+  const cell = v => { const s = v == null ? "" : String(v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const csv = (headers, rows) => "\ufeff" + [headers.map(cell).join(",")].concat(rows.map(r => r.map(cell).join(","))).join("\r\n");
+  const when = v => { const d = v ? new Date(v) : null; return d && !isNaN(d) ? d.toISOString().replace("T", " ").slice(0, 16) : ""; };
+
+  window.exportCsv = async function (kind) {
+    const prog = $("csvProg"); prog.textContent = "Preparing…";
+    try {
+      const get = async n => (await fetchCollection(n)).rows;
+      const shops = {}; (await get("shops")).forEach(s => { shops[s.id] = s.name; });
+      const day = new Date().toISOString().slice(0, 10);
+      let text, name;
+      if (kind === "sales") {
+        const rc = {}; (await get("receipts")).forEach(r => { rc[r.id] = r.displayNumber; });
+        const rows = (await get("sales")).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).map(s => [when(s.createdAt), rc[s.receiptId] || "", shops[s.shopId] || "", s.drugName, s.drugClass || "", s.qty, s.unitLevel, s.pricePerUnit, s.total, s.costOfGoods || 0, (s.total || 0) - (s.costOfGoods || 0), s.paymentStatus || "", s.cashier || ""]);
+        text = csv(["Date", "Receipt", "Shop", "Drug", "Class", "Qty", "Unit level", "Price per unit", "Total", "Cost of goods", "Profit", "Payment", "Cashier"], rows); name = "Sales";
+      } else if (kind === "stock") {
+        const rows = (await get("drugs")).filter(d => d.active !== false).sort((a, b) => String(a.name).localeCompare(String(b.name))).map(d => {
+          const per = Number(d.baseUnitsPerStock) || 1, cur = Number(d.currentStockBase) || 0;
+          return [shops[d.shopId] || "", d.name, d.drugClass || "", d.dosageForm || "", d.supplier || "", cur, d.baseUnit, Math.round(cur / per * 100) / 100, d.stockUnit, d.wholesale || 0, d.retailStock || 0, d.retailIntermediate || 0, d.retailBase || 0, d.reorderLevel || 0, Math.round(cur / per * (d.wholesale || 0))];
+        });
+        text = csv(["Shop", "Drug", "Class", "Form", "Supplier", "Stock (smallest unit)", "Smallest unit", "Stock (bulk units)", "Bulk unit", "Cost per bulk unit", "Retail per bulk unit", "Retail per middle unit", "Retail per smallest unit", "Reorder level", "Stock value at cost"], rows); name = "Stock";
+      } else if (kind === "expenses") {
+        const rows = (await get("expenses")).sort((a, b) => String(a.date || a.createdAt).localeCompare(String(b.date || b.createdAt))).flatMap(e => {
+          const items = Array.isArray(e.items) && e.items.length ? e.items : [{ category: "", item: "", amount: e.totalAmount != null ? e.totalAmount : e.amount }];
+          return items.map(i => [e.date || when(e.createdAt), shops[e.shopId] || "", i.category || "", i.item || i.description || "", i.amount, e.note || "", e.cashier || ""]);
+        });
+        text = csv(["Date", "Shop", "Category", "Item", "Amount", "Note", "Recorded by"], rows); name = "Expenses";
+      } else {
+        const acct = await get("credit_accounts"), tx = await get("credit_transactions"), bal = {};
+        tx.forEach(t => { bal[t.customerId] = (bal[t.customerId] || 0) + (t.balanceChange || 0); });
+        const rows = acct.filter(a => (bal[a.id] || 0) > 0.5).sort((a, b) => (bal[b.id] || 0) - (bal[a.id] || 0)).map(a => [shops[a.shopId] || "", a.name, a.phone || "", Math.round(bal[a.id] || 0), a.creditLimit || ""]);
+        text = csv(["Shop", "Customer", "Phone", "Owes", "Credit limit"], rows); name = "Customers-owing";
+      }
+      download("MediStock-" + name + "-" + day + ".csv", text, "text/csv");
+      prog.textContent = "✓ Saved to your phone: MediStock-" + name + "-" + day + ".csv";
+    } catch (e) { prog.innerHTML = '<span class="e">Could not export: ' + esc(e.code || e.message) + "</span>"; }
+  };
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+    const snap = await getDoc(doc(db, "users", user.uid));
+    if (!snap.exists()) { window.location.href = "login.html"; return; }
+    const profile = snap.data();
+    if (profile.active === false) { await auth.signOut(); window.location.href = "login.html?disabled=1"; return; }
+    role = profile.role; businessId = profile.businessId; myShopId = profile.shopId; who = role === "owner" ? user.email : profile.name;
+    if (role === "owner") {
+      $("shopIndicator").textContent = "Backs up every shop in your business";
+      try { const b = await getDoc(doc(db, "businesses", businessId)); scopeName = b.exists() ? (b.data().name || "business") : "business"; } catch (e) { scopeName = "business"; }
+    } else {
+      try { const s = await getDoc(doc(db, "shops", myShopId)); scopeName = s.exists() ? s.data().name : "shop"; } catch (e) { scopeName = "shop"; }
+      $("shopIndicator").textContent = "Backs up your shop: " + scopeName;
+    }
+    $("netBadge").textContent = navigator.onLine === false ? "offline" : "online"; $("netBadge").className = "badge " + (navigator.onLine === false ? "offline" : "online");
+    refreshLast();
+  });
+</script>
+</body>
+</html>

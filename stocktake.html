@@ -42,6 +42,7 @@
   .result-item:active{background:var(--border);}
   .result-name{font-weight:600; font-size:14px;}
   .result-sub{font-size:12px; color:var(--muted);}
+  .rchip{background:var(--bg); border:1px solid var(--border); color:var(--text); padding:6px 11px; border-radius:999px; font-size:12px; cursor:pointer;}
   .stock-line{font-size:14px; margin-bottom:10px;}
   .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
   .link{color:var(--accent); font-size:13px; text-decoration:none;}
@@ -157,8 +158,16 @@
   <div class="stock-line" id="stocktakeSystem">System stock: —</div>
   <label>Physical count (base units)</label>
   <input id="stocktakePhysical" type="number" min="0">
-  <label>Reason</label>
-  <input id="stocktakeReason" value="Physical stock count">
+  <label>Reason for the change <span style="color:var(--danger);">(required)</span></label>
+  <div class="chips" id="reasonChips" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;">
+    <button type="button" class="rchip" data-r="Counted again and found a different quantity">Recount</button>
+    <button type="button" class="rchip" data-r="Damaged / broken">Damaged</button>
+    <button type="button" class="rchip" data-r="Expired and removed">Expired</button>
+    <button type="button" class="rchip" data-r="Lost / missing / stolen">Missing</button>
+    <button type="button" class="rchip" data-r="Found extra stock">Found extra</button>
+    <button type="button" class="rchip" data-r="Opening quantity was entered wrongly">Wrong entry</button>
+  </div>
+  <textarea id="stocktakeReason" rows="2" placeholder="Why is the stock different? (you must give a reason)" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px; font-family:inherit;"></textarea>
   <button class="btn-primary" id="saveStocktakeBtn">Save Stock Adjustment</button>
   <div id="saveStatus" style="font-size:13px; margin-top:8px;"></div>
 </div>
@@ -200,7 +209,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
   import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-  import { getFirestore, doc, getDoc as _getDoc, getDocs as _getDocs, collection, addDoc, writeBatch, onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where, getDocFromCache, getDocsFromCache } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc as _getDoc, getDocs as _getDocs, collection, addDoc, writeBatch, onSnapshot, enableIndexedDbPersistence, serverTimestamp, increment, query, where, getDocFromCache, getDocsFromCache } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
   // ---- offline-friendly reads: use the phone's saved copy when offline or when the connection is slow ----
   const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
   async function getDoc(ref) {
@@ -265,6 +274,7 @@
       </div>`).join("") || '<div class="empty">No medicines found.</div>';
   }
   document.getElementById("stocktakeSearch").addEventListener("input", renderResults);
+  document.querySelectorAll("#reasonChips .rchip").forEach(b => b.addEventListener("click", () => { document.getElementById("stocktakeReason").value = b.dataset.r; }));
 
   window.selectStocktakeDrug = function (id) {
     selectedDrug = allDrugs.find(d => d.id === id);
@@ -280,7 +290,7 @@
     document.getElementById("stocktakeSystem").textContent =
       `System stock: ${selectedDrug.currentStockBase.toLocaleString()} ${selectedDrug.baseUnit}(s) = ${parts.join(", ") || "0"}`;
     document.getElementById("stocktakePhysical").value = selectedDrug.currentStockBase;
-    document.getElementById("stocktakeReason").value = "Physical stock count";
+    document.getElementById("stocktakeReason").value = "";
     document.getElementById("saveStatus").textContent = "";
   };
 
@@ -291,13 +301,14 @@
     const diff = physical - selectedDrug.currentStockBase;
     if (diff === 0) { statusEl.textContent = "No difference — nothing to adjust."; statusEl.style.color = "var(--muted)"; return; }
 
-    const reason = document.getElementById("stocktakeReason").value.trim() || "Physical stock count";
+    const reason = document.getElementById("stocktakeReason").value.trim();
+    if (reason.length < 3) { statusEl.textContent = "A reason is required — say why the stock is different."; statusEl.style.color = "var(--danger)"; document.getElementById("stocktakeReason").focus(); return; }
     if (!confirm(`${selectedDrug.name}\nSystem: ${selectedDrug.currentStockBase} ${selectedDrug.baseUnit}(s)\nPhysical: ${physical} ${selectedDrug.baseUnit}(s)\nDifference: ${diff > 0 ? "+" : ""}${diff}\n\nRecord this adjustment?`)) return;
 
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
       const wb = writeBatch(db);
-      wb.update(doc(db, "drugs", selectedDrug.id), { currentStockBase: physical });
+      wb.update(doc(db, "drugs", selectedDrug.id), { currentStockBase: increment(diff) });
       wb.set(doc(collection(db, "stock_transactions")), {
         businessId: currentBusinessId, shopId: currentShopId, ownerUid: currentUser.uid,
         drugId: selectedDrug.id, type: "EDIT_RESYNC", baseUnitsChange: diff,
