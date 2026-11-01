@@ -198,7 +198,7 @@
 <div class="card hidden" id="bulkImportCard">
   <h2>Bulk Import</h2>
   <div class="hint" style="margin-bottom:8px;">
-    Import from a JSON file saved on your phone, or paste JSON directly below.
+    Import from a JSON file saved on your phone: a MediStock Pro backup, a MediStock Cloud backup, or a plain list of drugs. You can also paste a short list below.
     Same field names as MediStock Pro's export (name, stockUnit, hasIntermediate,
     intermediateUnit, intermediatePerStock, baseUnit, basePerIntermediate, wholesale,
     retailStock, openStock, openIntermediate, openBase, drugClass, dosageForm).
@@ -666,6 +666,13 @@
   }
 
   // ---- Bulk import ----
+  // Accepts a plain list of drugs OR a whole MediStock Pro backup file ({ drugs: [...], sales: [...], ... }).
+  function mcDrugsFromJson(data) {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.drugs)) return data.drugs;                                   // MediStock Pro backup
+    if (data && data.collections && Array.isArray(data.collections.drugs)) return data.collections.drugs; // MediStock Cloud backup
+    throw new Error("Expected a list of drugs, a MediStock Pro backup, or a MediStock Cloud backup.");
+  }
   window.runBulkImport = async function () {
     const statusEl = document.getElementById("importStatus");
     if (!currentShopId) {
@@ -675,8 +682,10 @@
     }
     let items;
     try {
-      items = JSON.parse(document.getElementById("importJsonBox").value);
-      if (!Array.isArray(items)) throw new Error("Expected a JSON array.");
+      const typed = document.getElementById("importJsonBox").value.trim();
+      if (typed) items = mcDrugsFromJson(JSON.parse(typed));
+      else if (window.mcPendingImport) items = window.mcPendingImport;
+      else throw new Error("Choose a file or paste JSON first.");
     } catch (err) {
       statusEl.textContent = "Invalid JSON: " + err.message;
       statusEl.style.color = "var(--danger)";
@@ -687,14 +696,18 @@
     let done = 0, failed = 0;
     for (const s of items) {
       try {
+        if (!s.hasIntermediate && Number(s.baseUnitsPerStock) > 0) { s.intermediatePerStock = 1; s.basePerIntermediate = Number(s.baseUnitsPerStock); }
         const baseUnitsPerStock = PackagingEngine.baseUnitsPerStock(s.intermediatePerStock, s.basePerIntermediate);
-        const currentStockBase = PackagingEngine.openingStockToBase(
-          s.openStock || 0, baseUnitsPerStock, s.openIntermediate || 0, s.basePerIntermediate, s.openBase || 0
-        );
+        const hasOpen = s.openStock != null || s.openIntermediate != null || s.openBase != null;
+        const currentStockBase = (!hasOpen && Number.isFinite(Number(s.currentStockBase)))
+          ? Number(s.currentStockBase)
+          : PackagingEngine.openingStockToBase(
+              s.openStock || 0, baseUnitsPerStock, s.openIntermediate || 0, s.basePerIntermediate, s.openBase || 0
+            );
         window.mcQueue(addDoc(collection(db, "drugs"), {
           businessId: currentBusinessId, shopId: currentShopId, ownerUid: currentUser.uid,
           name: s.name, generic: s.generic || "", drugClass: s.drugClass || "", dosageForm: s.dosageForm || "",
-          supplier: s.supplier || "", active: true,
+          supplier: s.supplier || "", active: s.active !== false,
           stockUnit: s.stockUnit, hasIntermediate: !!s.hasIntermediate,
           intermediateUnit: s.hasIntermediate ? s.intermediateUnit : null,
           baseUnit: s.baseUnit, intermediatePerStock: s.intermediatePerStock || 1,
@@ -711,7 +724,7 @@
     }
     statusEl.textContent = `Imported ${done} of ${items.length}${failed ? ` (${failed} failed)` : ""}.`;
     statusEl.style.color = failed ? "var(--warn)" : "var(--accent2)";
-    if (done > 0) document.getElementById("importJsonBox").value = "";
+    if (done > 0) { document.getElementById("importJsonBox").value = ""; window.mcPendingImport = null; }
   };
 
   let editHandoffApplied = false;
@@ -985,15 +998,27 @@
   document.getElementById("importFilePicker").addEventListener("change", (e) => {
     const file = e.target.files[0];
     const statusEl = document.getElementById("importStatus");
+    window.mcPendingImport = null;
+    document.getElementById("importJsonBox").value = "";
     if (!file) return;
+    statusEl.textContent = "Reading " + file.name + "…";
+    statusEl.style.color = "var(--muted)";
     const reader = new FileReader();
     reader.onload = () => {
-      document.getElementById("importJsonBox").value = reader.result;
-      statusEl.textContent = `Loaded ${file.name} — tap Import to continue.`;
-      statusEl.style.color = "var(--muted)";
+      try {
+        // Big files are kept in memory, never pasted into the text box (that freezes the phone).
+        const items = mcDrugsFromJson(JSON.parse(reader.result));
+        window.mcPendingImport = items;
+        const inactive = items.filter(x => x.active === false).length;
+        statusEl.textContent = `Loaded ${items.length} drug(s) from ${file.name}` + (inactive ? ` (${inactive} deactivated)` : "") + " — tap Import to continue.";
+        statusEl.style.color = "var(--muted)";
+      } catch (err) {
+        statusEl.textContent = "That file isn't usable: " + err.message;
+        statusEl.style.color = "var(--danger)";
+      }
     };
     reader.onerror = () => {
-      statusEl.textContent = "Couldn't read that file.";
+      statusEl.textContent = "Couldn't read that file" + (reader.error ? " (" + reader.error.name + ")" : "") + ". Save it to Downloads on the phone and choose it again.";
       statusEl.style.color = "var(--danger)";
     };
     reader.readAsText(file);
