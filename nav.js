@@ -20,6 +20,7 @@
     ["users.html", "Users"],
     ["shops.html", "Shops"],
     ["backup.html", "Backup & Export"],
+    ["migrate.html", "Import from Pro"],
     ["settings.html", "Settings"]
   ];
   var FB = "https://www.gstatic.com/firebasejs/12.19.0/";

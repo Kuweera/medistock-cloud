@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2abfa0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MediStock">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<title>MediStock Cloud — Import from Pro</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  .hidden{display:none !important;}
+  .meta{font-size:12.5px; color:var(--muted); line-height:1.55; margin:6px 0;}
+  .big-btn{width:100%; padding:14px; margin-top:10px; border-radius:11px; border:none; background:var(--accent); color:#fff; font-size:15px; font-weight:700; cursor:pointer;}
+  .big-btn.sec{background:transparent; color:var(--accent); border:1px solid var(--accent); font-weight:600; font-size:14px; padding:12px;}
+  .big-btn:disabled{opacity:.55;}
+  .warnbox{border:1px solid var(--danger); background:rgba(229,83,75,.10); border-radius:10px; padding:10px 12px; font-size:13px; line-height:1.5;}
+  .okbox{border:1px solid var(--accent2); background:rgba(42,191,160,.10); border-radius:10px; padding:10px 12px; font-size:13px; line-height:1.5;}
+  .prog{font-size:12.5px; color:var(--muted); line-height:1.7; margin-top:8px;}
+  .prog .e{color:var(--danger);}
+  .hidden{display:none !important;}
+  .bar{height:12px; border-radius:99px; background:var(--border); overflow:hidden; margin:6px 0;}
+  .barfill{height:100%; width:0; background:var(--accent2); transition:width .3s;}
+  .meta{font-size:13px; color:var(--muted); line-height:1.55;}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Multi-Shop Edition · Import from MediStock Pro</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="location.href='dashboard.html'">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+
+<div id="blocked" class="card hidden"><h2>Owner only</h2><p class="meta">Only the business owner can import records from MediStock Pro. Please log in with the owner account.</p></div>
+
+<div id="main" class="hidden">
+<div class="card">
+  <h2>📥 Import from MediStock Pro</h2>
+  <p class="meta">Brings your whole MediStock Pro history into this app: drugs and stock, batches and expiry dates, sales and receipts, purchases, credit customers and their payments, expenses, cash records, stock-taking records and pick lists.</p>
+  <div class="warnbox">Before you start: make a backup on the Backup &amp; Export page, stay online, and keep this screen open until it says <b>Finished</b>. It is safe to run again: records already imported are skipped, never doubled.</div>
+  <label for="shopPick">Import into this shop</label>
+  <select id="shopPick"></select>
+  <label for="proFile">MediStock Pro backup file (.json)</label>
+  <input type="file" id="proFile" accept=".json,application/json">
+  <div class="prog" id="fileMsg"></div>
+</div>
+
+<div class="card hidden" id="previewCard">
+  <h2>What will be imported</h2>
+  <div id="preview"></div>
+  <div class="prog" id="notes"></div>
+  <button class="big-btn" id="startBtn" onclick="startImport()">Start import</button>
+</div>
+
+<div class="card hidden" id="progCard">
+  <h2>Progress</h2>
+  <div class="bar"><div class="barfill" id="barFill"></div></div>
+  <div class="prog" id="progText">Starting…</div>
+  <div class="prog" id="logBox"></div>
+</div>
+
+<div class="card">
+  <h2>ℹ️ What is not copied</h2>
+  <p class="meta">• Pro's logins and settings (shop name, phone) are not copied; this app has its own. • Pro's per-sale stock lines are not copied because every sale already carries them. • Pro never tracked what you owe suppliers, so there are no supplier debts to bring across.</p>
+</div>
+</div>
+
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){ panel.classList.contains('open') ? closeNav() : openNav(); });
+    overlay && overlay.addEventListener('click', closeNav);
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'🌓 Theme: Auto', light:'☀️ Theme: Light', dark:'🌙 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+
+<script>
+/* ===== Converter: MediStock Pro backup -> MediStock Cloud records. Pure function, no Firebase inside. =====
+   Every record gets a fixed id (pro-<shop>-<collection>-<proId>), so running it twice never doubles anything. */
+function mcPlanImport(pro, ctx, ex) {
+  var ops = [], stats = {}, notes = [], sums = { sales: 0, credit: 0, expenses: 0, stockBase: 0 };
+  function list(n) { return Array.isArray(pro[n]) ? pro[n] : []; }
+  function idOf(c, n) { return "pro-" + ctx.shopId + "-" + c + "-" + n; }
+  function st(c) { return stats[c] || (stats[c] = { planned: 0, existing: 0, skipped: 0 }); }
+  function iso(v) { if (!v) return null; var d = new Date(v); return isNaN(d.getTime()) ? null : d.toISOString(); }
+  function day(v) { var s = iso(v); return s ? s.slice(0, 10) : ""; }
+  function has(c, id) { return !!(ex.ids[c] && ex.ids[c].has(id)); }
+  function add(c, id, data, ts) {
+    var s = st(c); s.planned++;
+    if (has(c, id)) { s.existing++; return false; }
+    ops.push({ coll: c, id: id, data: data, ts: ts || ["createdAt"] }); return true;
+  }
+  function shop(extra) { var o = { businessId: ctx.businessId, shopId: ctx.shopId }; for (var k in extra) o[k] = extra[k]; return o; }
+  function num(v) { v = Number(v); return isFinite(v) ? v : 0; }
+
+  // ---- pick lists (shared by everyone) ----
+  [["drug_classes", "drug_classes"], ["dosage_forms", "dosage_forms"], ["expense_categories", "expense_categories"]].forEach(function (p) {
+    var seen = {};
+    list(p[0]).forEach(function (x) {
+      var n = String((x && x.name) || "").trim();
+      if (n && n.indexOf("/") >= 0) { notes.push("\u201c" + n + "\u201d contains a slash, so it is not added to the pick list (the drugs keep it)."); return; }
+      if (!n || seen[n]) return; seen[n] = 1;
+      add(p[1], n, { name: n }, []);
+    });
+  });
+  // classes/forms/categories used by drugs and expenses but missing from the lists
+  list("drugs").forEach(function (d) {
+    var c = String(d.drugClass || "").trim(); if (c && c.indexOf("/") < 0 && !has("drug_classes", c) && !ops.some(function (o) { return o.coll === "drug_classes" && o.id === c; })) add("drug_classes", c, { name: c }, []);
+    var f = String(d.dosageForm || "").trim(); if (f && f.indexOf("/") < 0 && !has("dosage_forms", f) && !ops.some(function (o) { return o.coll === "dosage_forms" && o.id === f; })) add("dosage_forms", f, { name: f }, []);
+  });
+
+  // ---- drugs ----
+  var drugMap = {}, drugInfo = {};
+  list("drugs").forEach(function (d) {
+    var key = String(d.name || "").trim().toLowerCase();
+    var exId = ex.drugsByName[key];
+    var id = exId || idOf("drugs", d.id);
+    drugMap[d.id] = id; drugInfo[d.id] = d;
+    var s = st("drugs"); s.planned++;
+    if (exId) { s.existing++; return; }
+    var hasInter = !!d.hasIntermediate;
+    var ips = hasInter ? (num(d.intermediatePerStock) || 1) : 1;
+    var bpi = hasInter ? num(d.basePerIntermediate) : (num(d.baseUnitsPerStock) || num(d.basePerIntermediate) || 1);
+    var stock = num(d.currentStockBase); sums.stockBase += stock;
+    ops.push({ coll: "drugs", id: id, ts: ["createdAt"], data: shop({
+      ownerUid: ctx.uid, name: d.name, generic: d.generic || "", drugClass: d.drugClass || "", dosageForm: d.dosageForm || "",
+      supplier: d.supplier || "", active: d.active !== false, stockUnit: d.stockUnit, hasIntermediate: hasInter,
+      intermediateUnit: hasInter ? d.intermediateUnit : null, baseUnit: d.baseUnit, intermediatePerStock: ips,
+      basePerIntermediate: bpi, baseUnitsPerStock: ips * bpi, wholesale: num(d.wholesale), retailStock: num(d.retailStock),
+      retailIntermediate: num(d.retailIntermediate), retailBase: num(d.retailBase), reorderLevel: num(d.reorderLevel),
+      targetStock: num(d.targetStock), currentStockBase: stock, createdAt: iso(d.createdAt) || new Date().toISOString() }) });
+  });
+  function dm(pid) { return pid != null && drugMap[pid] ? drugMap[pid] : null; }
+
+  // ---- suppliers ----
+  var supSeen = {};
+  list("suppliers").forEach(function (x) {
+    var n = String(x.name || "").trim(), k = n.toLowerCase();
+    if (!n || supSeen[k]) return; supSeen[k] = 1;
+    var s = st("suppliers"); s.planned++;
+    if (ex.suppliersByName[k]) { s.existing++; return; }
+    ops.push({ coll: "suppliers", id: idOf("suppliers", x.id != null ? x.id : k.replace(/[^a-z0-9]+/g, "-")), ts: ["createdAt"], data: shop({ name: n, phone: x.phone || "", createdAt: new Date().toISOString() }) });
+  });
+
+  // ---- credit customers ----
+  var custMap = {}, custName = {};
+  list("credit_accounts").forEach(function (c) {
+    var id = idOf("credit_accounts", c.id); custMap[c.id] = id; custName[c.id] = c.name;
+    add("credit_accounts", id, shop({ name: c.name, phone: c.phone || "", creditLimit: num(c.creditLimit), note: c.note || "", active: c.active !== false, createdAt: iso(c.createdAt) || new Date().toISOString() }));
+  });
+  function cm(pid) { return pid != null && custMap[pid] ? custMap[pid] : null; }
+
+  // ---- batches ----
+  var batchMap = {};
+  list("batches").forEach(function (b) {
+    var did = dm(b.drugId); var id = idOf("batches", b.id); batchMap[b.id] = id;
+    if (!did) { st("batches").skipped++; notes.push("A batch was skipped because its drug is missing."); return; }
+    var d = drugInfo[b.drugId] || {};
+    add("batches", id, shop({ drugId: did, drugName: d.name || "", batchNumber: b.batchNumber || b.internalBatchId || "", expiryDate: b.expiryDate || "",
+      quantity: num(b.remainingBase), purchasePricePerStockUnit: num(b.purchasePricePerStockUnit), supplier: b.supplier || "",
+      purchaseDate: iso(b.purchaseDate) || new Date().toISOString(), createdAt: iso(b.purchaseDate) || new Date().toISOString() }), ["purchaseDate", "createdAt"]);
+  });
+
+  // ---- receipts ----
+  var rcptMap = {};
+  list("receipts").forEach(function (r) {
+    var id = idOf("receipts", r.id); rcptMap[r.id] = id;
+    var isSale = r.type === "SALE";
+    var items = (r.items || []).map(function (it) {
+      if (isSale) return { drugId: dm(it.drugId), drugName: it.drugName, qty: it.qty, unitLabel: it.unitLabel || "", unitLevel: it.level || it.unitLevel || "base",
+        pricePerUnit: num(it.price != null ? it.price : it.pricePerUnit), total: num(it.total), baseQtyNeeded: num(it.baseQty != null ? it.baseQty : it.baseQtyNeeded),
+        stockUnit: it.stockUnit || "", intermediateUnit: it.intermediateUnit || null, baseUnit: it.baseUnit || "",
+        baseUnitsPerStock: num(it.baseUnitsPerStock), basePerIntermediate: num(it.basePerIntermediate) };
+      return { drugId: dm(it.drugId), drugName: it.drugName, addedBase: num(it.addedBase), baseUnit: it.baseUnit || "", stockUnit: it.stockUnit || "",
+        intermediateUnit: it.intermediateUnit || null, baseUnitsPerStock: num(it.baseUnitsPerStock), basePerIntermediate: num(it.basePerIntermediate),
+        costPerStockUnit: num(it.costPerStockUnit), lineTotalCost: num(it.lineTotalCost), supplier: it.supplier || "", batchNumber: it.batchNumber || "",
+        expiryDate: it.expiryDate || "", onCredit: !!it.onCredit };
+    });
+    var data = shop({ type: isSale ? "SALE" : "PURCHASE", displayNumber: (isSale ? "S-" : "P-") + r.displayNumber, createdAt: iso(r.date) || new Date().toISOString(),
+      cashier: r.cashier || ctx.who, itemCount: num(r.itemCount) || items.length, totalAmount: num(r.totalAmount), items: items });
+    if (isSale) { data.paymentStatus = r.paymentStatus || "PAID"; data.customerId = cm(r.customerId); data.customerName = r.customerName || ""; }
+    add("receipts", id, data);
+  });
+
+  // ---- sales ----
+  list("sales").forEach(function (s) {
+    sums.sales += num(s.total);
+    var did = dm(s.drugId); if (!did) notes.push("A sale line refers to a drug that is not in the file (kept without a drug link).");
+    var d = {
+      ownerUid: ctx.uid, drugId: did, drugName: s.drugName, drugClass: s.drugClass || "", unitLevel: s.unitLevel || "base", qty: num(s.quantity),
+      baseQtyDeducted: num(s.baseQty), pricePerUnit: num(s.unitPrice), total: num(s.total), costOfGoods: num(s.costOfGoods),
+      receiptId: rcptMap[s.receiptId] || null, cashier: s.cashier || ctx.who, paymentStatus: s.paymentStatus || "PAID", customerId: cm(s.customerId),
+      createdAt: iso(s.date) || new Date().toISOString() };
+    if (s.note) d.note = s.note;
+    add("sales", idOf("sales", s.id), shop(d));
+  });
+
+  // ---- credit transactions ----
+  list("credit_transactions").forEach(function (t) {
+    sums.credit += num(t.balanceChange);
+    var d = { customerId: cm(t.customerId), customerName: custName[t.customerId] || "", type: t.type, amount: num(t.amount), paidAmount: num(t.paidAmount),
+      balanceChange: num(t.balanceChange), description: t.description || "", cashier: ctx.who, createdAt: iso(t.date) || new Date().toISOString() };
+    if (t.dueDate) d.dueDate = t.dueDate;
+    if (t.receiptId != null && rcptMap[t.receiptId]) d.receiptId = rcptMap[t.receiptId];
+    add("credit_transactions", idOf("credit_transactions", t.id), shop(d));
+  });
+
+  // ---- expenses ----
+  list("expenses").forEach(function (e) {
+    var items = (e.items || []).map(function (i) { return { item: i.item || "", category: i.category || e.category || "Other", qty: i.qty != null ? i.qty : 1, unit: i.unit || "", amount: num(i.amount) }; });
+    var total = num(e.amount != null ? e.amount : e.totalAmount); sums.expenses += total;
+    add("expenses", idOf("expenses", e.id), shop({ ownerUid: ctx.uid, date: day(e.date) || day(e.createdAt), note: e.note || "", items: items, totalAmount: total,
+      cashier: ctx.who, createdAt: iso(e.createdAt) || iso(e.date) || new Date().toISOString() }));
+  });
+
+  // ---- cash adjustments ----
+  list("cash_adjustments").forEach(function (a) {
+    add("cash_adjustments", idOf("cash_adjustments", a.id), shop({ type: a.type, amount: num(a.amount), reason: a.reason || "", date: day(a.date), cashier: ctx.who, createdAt: iso(a.date) || new Date().toISOString() }));
+  });
+
+  // ---- stock taking ----
+  list("stock_adjustments").forEach(function (a) {
+    var d = drugInfo[a.drugId] || {};
+    add("stock_adjustments", idOf("stock_adjustments", a.id), shop({ ownerUid: ctx.uid, drugId: dm(a.drugId), drugName: a.drugName || d.name || "", baseUnit: d.baseUnit || "",
+      previousBase: num(a.previousBase), physicalBase: num(a.physicalBase), differenceBase: num(a.differenceBase), reason: a.reason || "", createdAt: iso(a.date) || new Date().toISOString() }));
+  });
+
+  // ---- stock movements (sales are skipped: every sale already carries its own stock line) ----
+  list("stock_transactions").forEach(function (t) {
+    if (t.type === "SALE") { st("stock_transactions").skipped++; return; }
+    var d = { drugId: dm(t.drugId), type: t.type, baseUnitsChange: num(t.baseUnitsChange), note: t.note || "", cashier: t.user || ctx.who, createdAt: iso(t.date) || new Date().toISOString() };
+    if (drugInfo[t.drugId]) d.drugName = drugInfo[t.drugId].name;
+    if (t.batchId != null && batchMap[t.batchId]) d.batchId = batchMap[t.batchId];
+    add("stock_transactions", idOf("stock_transactions", t.id), shop(d));
+  });
+
+  return { ops: ops, stats: stats, notes: Array.from(new Set(notes)), sums: sums };
+}
+</script>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+  import { getFirestore, doc, getDoc, getDocs, collection, writeBatch, enableIndexedDbPersistence, query, where, Timestamp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
+    authDomain: "medistock-cloud-93b83.firebaseapp.com",
+    projectId: "medistock-cloud-93b83",
+    storageBucket: "medistock-cloud-93b83.firebasestorage.app",
+    messagingSenderId: "615610747921",
+    appId: "1:615610747921:web:94b6627b64a250362335b0"
+  };
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {});
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const fmt = n => Math.round(n).toLocaleString();
+  const SHOP_COLLS = ["drugs", "suppliers", "credit_accounts", "batches", "receipts", "sales", "credit_transactions", "expenses", "cash_adjustments", "stock_adjustments", "stock_transactions"];
+  const GLOBAL_COLLS = ["drug_classes", "dosage_forms", "expense_categories"];
+  const LABELS = { drugs: "Drugs", suppliers: "Suppliers", credit_accounts: "Credit customers", batches: "Batches", receipts: "Receipts", sales: "Sales lines", credit_transactions: "Credit records", expenses: "Expenses", cash_adjustments: "Cash records", stock_adjustments: "Stock-taking records", stock_transactions: "Stock movements", drug_classes: "Drug classes", dosage_forms: "Dosage forms", expense_categories: "Expense categories" };
+  let user = null, businessId = null, who = "", proData = null, running = false;
+
+  function proFileSummary(d) { return d && typeof d === "object" && !Array.isArray(d) && Array.isArray(d.drugs); }
+
+  async function loadExisting(shopId) {
+    const ex = { ids: {}, drugsByName: {}, suppliersByName: {} };
+    for (const c of SHOP_COLLS) {
+      const snap = await getDocs(query(collection(db, c), where("businessId", "==", businessId), where("shopId", "==", shopId)));
+      ex.ids[c] = new Set(snap.docs.map(d => d.id));
+      if (c === "drugs") snap.docs.forEach(d => { ex.drugsByName[String(d.data().name || "").trim().toLowerCase()] = d.id; });
+      if (c === "suppliers") snap.docs.forEach(d => { ex.suppliersByName[String(d.data().name || "").trim().toLowerCase()] = d.id; });
+    }
+    for (const c of GLOBAL_COLLS) { const snap = await getDocs(collection(db, c)); ex.ids[c] = new Set(snap.docs.map(d => d.id)); }
+    return ex;
+  }
+
+  function ctx() { return { businessId, shopId: $("shopPick").value, uid: user.uid, who }; }
+
+  async function buildPreview() {
+    if (!proData) return;
+    $("fileMsg").textContent = "Checking what this shop already has…";
+    try {
+      const ex = await loadExisting($("shopPick").value);
+      const plan = window.mcPlanImport(proData, ctx(), ex);
+      window.mcPlan = plan;
+      const rows = Object.keys(plan.stats).sort((a, b) => (LABELS[a] ? Object.keys(LABELS).indexOf(a) : 99) - (LABELS[b] ? Object.keys(LABELS).indexOf(b) : 99)).map(c => {
+        const s = plan.stats[c], toAdd = s.planned - s.existing;
+        return `<div class="breakdown-line"><span>${esc(LABELS[c] || c)}</span><span class="v">${fmt(toAdd)} to add${s.existing ? " · " + fmt(s.existing) + " already here" : ""}${s.skipped ? " · " + fmt(s.skipped) + " not copied" : ""}</span></div>`;
+      }).join("");
+      $("preview").innerHTML = rows +
+        `<div class="breakdown-line"><span>Total sales in the file</span><span class="v">${fmt(plan.sums.sales)}</span></div>` +
+        `<div class="breakdown-line"><span>Customers owe (from credit records)</span><span class="v">${fmt(plan.sums.credit)}</span></div>` +
+        `<div class="breakdown-line"><span>Expenses in the file</span><span class="v">${fmt(plan.sums.expenses)}</span></div>`;
+      $("notes").innerHTML = plan.notes.map(esc).join("<br>");
+      $("previewCard").classList.remove("hidden");
+      $("startBtn").disabled = plan.ops.length === 0;
+      $("startBtn").textContent = plan.ops.length ? "Start import (" + fmt(plan.ops.length) + " records)" : "Nothing new to import";
+      $("fileMsg").textContent = "✓ MediStock Pro backup read: " + (proData.appVersion || "") + ", exported " + (proData.exportedAt ? new Date(proData.exportedAt).toLocaleString() : "");
+    } catch (e) {
+      $("fileMsg").innerHTML = '<span class="e">Could not check the shop: ' + esc(e.code || e.message) + "</span>";
+    }
+  }
+
+  $("shopPick").addEventListener("change", buildPreview);
+  $("proFile").addEventListener("change", e => {
+    const file = e.target.files[0]; proData = null; $("previewCard").classList.add("hidden");
+    if (!file) return;
+    $("fileMsg").textContent = "Reading " + file.name + "…";
+    const r = new FileReader();
+    r.onload = () => {
+      try {
+        const d = JSON.parse(r.result);
+        if (!proFileSummary(d)) throw new Error("This is not a MediStock Pro backup (it has no list of drugs).");
+        proData = d; buildPreview();
+      } catch (err) { $("fileMsg").innerHTML = '<span class="e">' + esc(err.message) + "</span>"; }
+    };
+    r.onerror = () => { $("fileMsg").innerHTML = '<span class="e">Could not read that file. Save it in Downloads on the phone and choose it again.</span>'; };
+    r.readAsText(file);
+  });
+
+  const toWrite = op => {
+    const data = {};
+    for (const k in op.data) { const v = op.data[k]; data[k] = v === undefined ? null : v; }
+    (op.ts || []).forEach(f => { if (typeof data[f] === "string") data[f] = Timestamp.fromDate(new Date(data[f])); });
+    return data;
+  };
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  async function commitWithRetry(wb) {
+    let lastErr;
+    for (let a = 1; a <= 4; a++) {
+      if (navigator.onLine === false) { $("progText").textContent = "Offline — waiting for internet…"; while (navigator.onLine === false) await sleep(1500); }
+      try {
+        await Promise.race([wb.commit(), new Promise((_, rej) => setTimeout(() => rej(new Error("slow connection")), 90000))]);
+        return;
+      } catch (e) { lastErr = e; if (e && (e.code === "permission-denied" || e.code === "invalid-argument")) throw e; await sleep(1500 * a); }
+    }
+    throw lastErr;
+  }
+
+  window.startImport = async function () {
+    if (running || !window.mcPlan || !proData) return;
+    const plan = window.mcPlan, total = plan.ops.length;
+    const shopName = $("shopPick").selectedOptions[0].textContent;
+    if (!confirm("Import " + total.toLocaleString() + " records from MediStock Pro into " + shopName + "?\n\nHave you made a backup on the Backup & Export page?")) return;
+    running = true; $("startBtn").disabled = true; $("progCard").classList.remove("hidden"); $("logBox").innerHTML = "";
+    $("shopPick").disabled = true; $("proFile").disabled = true;
+    const bar = $("barFill"), txt = $("progText"), CH = 300; let done = 0, lastColl = "";
+    try {
+      for (let i = 0; i < total; i += CH) {
+        const chunk = plan.ops.slice(i, i + CH);
+        const wb = writeBatch(db);
+        chunk.forEach(op => wb.set(doc(db, op.coll, op.id), toWrite(op)));
+        const c = chunk[0].coll; txt.textContent = "Saving " + (LABELS[c] || c).toLowerCase() + "… " + fmt(done) + " of " + fmt(total);
+        await commitWithRetry(wb);
+        done += chunk.length; bar.style.width = Math.round(done / total * 100) + "%";
+        if (c !== lastColl) { lastColl = c; }
+      }
+      txt.textContent = "Checking everything arrived…";
+      const ex = await loadExisting($("shopPick").value);
+      const lines = []; let bad = 0;
+      Object.keys(plan.stats).forEach(c => {
+        const wanted = plan.ops.filter(o => o.coll === c).map(o => o.id);
+        const missing = wanted.filter(id => !ex.ids[c].has(id)).length;
+        if (missing) bad++;
+        lines.push((missing ? '<span class="e">✗ ' : "✓ ") + esc(LABELS[c] || c) + ": " + fmt(wanted.length - missing) + " of " + fmt(wanted.length) + " saved" + (missing ? "</span>" : ""));
+      });
+      $("logBox").innerHTML = lines.join("<br>");
+      txt.innerHTML = bad ? '<span class="e">Finished with gaps — run the import again to fill them in.</span>' : "<b>✓ Finished.</b> Open Dashboard and Business History to see your records. Compare the totals with MediStock Pro.";
+    } catch (e) {
+      const code = e && (e.code || e.message);
+      txt.innerHTML = '<span class="e">Stopped after ' + fmt(done) + " of " + fmt(total) + " records: " + esc(code) + "</span>" +
+        (e && e.code === "permission-denied" ? '<br><span class="e">The database refused a write. Check that the latest firestore.rules are published, then run the import again — it carries on where it stopped.</span>' : "<br>Check your internet and run the import again — it carries on where it stopped.");
+    } finally { running = false; $("shopPick").disabled = false; $("proFile").disabled = false; $("startBtn").disabled = false; }
+  };
+
+  onAuthStateChanged(auth, async (u) => {
+    if (!u) { window.location.href = "login.html"; return; }
+    user = u;
+    const snap = await getDoc(doc(db, "users", u.uid));
+    if (!snap.exists()) { window.location.href = "login.html"; return; }
+    const p = snap.data();
+    if (p.active === false) { await auth.signOut(); window.location.href = "login.html?disabled=1"; return; }
+    businessId = p.businessId; who = p.role === "owner" ? u.email : p.name;
+    $("netBadge").textContent = navigator.onLine === false ? "offline" : "online"; $("netBadge").className = "badge " + (navigator.onLine === false ? "offline" : "online");
+    if (p.role !== "owner") { $("blocked").classList.remove("hidden"); return; }
+    try {
+      const shops = await getDocs(query(collection(db, "shops"), where("businessId", "==", businessId)));
+      $("shopPick").innerHTML = shops.docs.map(d => `<option value="${esc(d.id)}">${esc(d.data().name || d.id)}</option>`).join("");
+      if (!shops.docs.length) { $("fileMsg").textContent = "Create a shop first on the Shops page."; }
+    } catch (e) { $("fileMsg").textContent = "Could not load your shops: " + (e.code || e.message); }
+    $("shopIndicator").textContent = "Owner tool — imports into one shop at a time";
+    $("main").classList.remove("hidden");
+  });
+</script>
+</body>
+</html>
