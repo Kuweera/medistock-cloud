@@ -478,16 +478,30 @@ function mcPlanImport(pro, ctx, ex) {
     return data;
   };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-  async function commitWithRetry(wb) {
+  async function commitWithRetry(wb, attempts) {
     let lastErr;
-    for (let a = 1; a <= 4; a++) {
+    for (let a = 1; a <= (attempts || 3); a++) {
       if (navigator.onLine === false) { $("progText").textContent = "Offline — waiting for internet…"; while (navigator.onLine === false) await sleep(1500); }
       try {
         await Promise.race([wb.commit(), new Promise((_, rej) => setTimeout(() => rej(new Error("slow connection")), 90000))]);
         return;
-      } catch (e) { lastErr = e; if (e && (e.code === "permission-denied" || e.code === "invalid-argument")) throw e; await sleep(1500 * a); }
+      } catch (e) { lastErr = e; if (e && (e.code === "permission-denied" || e.code === "invalid-argument" || e.code === "failed-precondition")) throw e; await sleep(1500 * a); }
     }
     throw lastErr;
+  }
+
+  const failures = [];
+  const errText = e => (e && (e.code || "error")) + (e && e.message && e.message !== e.code ? " — " + e.message : "");
+  async function writeSplit(ops, first) {
+    try {
+      const wb = writeBatch(db);
+      ops.forEach(op => wb.set(doc(db, op.coll, op.id), toWrite(op)));
+      await commitWithRetry(wb, first ? 3 : 1);
+    } catch (e) {
+      if (ops.length === 1) { failures.push({ op: ops[0], err: e }); if (failures.length > 25) throw e; return; }
+      const mid = ops.length >> 1;                       // find the bad record by halving the group
+      await writeSplit(ops.slice(0, mid), false); await writeSplit(ops.slice(mid), false);
+    }
   }
 
   window.startImport = async function () {
@@ -497,14 +511,12 @@ function mcPlanImport(pro, ctx, ex) {
     if (!confirm("Import " + total.toLocaleString() + " records from MediStock Pro into " + shopName + "?\n\nHave you made a backup on the Backup & Export page?")) return;
     running = true; $("startBtn").disabled = true; $("progCard").classList.remove("hidden"); $("logBox").innerHTML = "";
     $("shopPick").disabled = true; $("proFile").disabled = true;
-    const bar = $("barFill"), txt = $("progText"), CH = 300; let done = 0, lastColl = "";
+    const bar = $("barFill"), txt = $("progText"), CH = 100; let done = 0, lastColl = ""; failures.length = 0;
     try {
       for (let i = 0; i < total; i += CH) {
         const chunk = plan.ops.slice(i, i + CH);
-        const wb = writeBatch(db);
-        chunk.forEach(op => wb.set(doc(db, op.coll, op.id), toWrite(op)));
         const c = chunk[0].coll; txt.textContent = "Saving " + (LABELS[c] || c).toLowerCase() + "… " + fmt(done) + " of " + fmt(total);
-        await commitWithRetry(wb);
+        await writeSplit(chunk, true);
         done += chunk.length; bar.style.width = Math.round(done / total * 100) + "%";
         if (c !== lastColl) { lastColl = c; }
       }
@@ -517,11 +529,16 @@ function mcPlanImport(pro, ctx, ex) {
         if (missing) bad++;
         lines.push((missing ? '<span class="e">✗ ' : "✓ ") + esc(LABELS[c] || c) + ": " + fmt(wanted.length - missing) + " of " + fmt(wanted.length) + " saved" + (missing ? "</span>" : ""));
       });
+      if (failures.length) {
+        lines.push('<br><span class="e"><b>' + failures.length + " record(s) were refused by the database:</b></span>");
+        failures.slice(0, 6).forEach(f => lines.push('<span class="e">' + esc(f.op.coll) + " " + esc(f.op.id) + ": " + esc(errText(f.err)) + "</span>"));
+        bad++;
+      }
       $("logBox").innerHTML = lines.join("<br>");
       txt.innerHTML = bad ? '<span class="e">Finished with gaps — run the import again to fill them in.</span>' : "<b>✓ Finished.</b> Open Dashboard and Business History to see your records. Compare the totals with MediStock Pro.";
     } catch (e) {
-      const code = e && (e.code || e.message);
-      txt.innerHTML = '<span class="e">Stopped after ' + fmt(done) + " of " + fmt(total) + " records: " + esc(code) + "</span>" +
+            txt.innerHTML = '<span class="e">Stopped after ' + fmt(done) + " of " + fmt(total) + " records: " + esc(errText(e)) + "</span>" +
+        (failures.length ? "<br>" + failures.slice(0, 4).map(f => '<span class="e">' + esc(f.op.coll) + " " + esc(f.op.id) + ": " + esc(errText(f.err)) + "</span>").join("<br>") : "") +
         (e && e.code === "permission-denied" ? '<br><span class="e">The database refused a write. Check that the latest firestore.rules are published, then run the import again — it carries on where it stopped.</span>' : "<br>Check your internet and run the import again — it carries on where it stopped.");
     } finally { running = false; $("shopPick").disabled = false; $("proFile").disabled = false; $("startBtn").disabled = false; }
   };
