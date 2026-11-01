@@ -3,6 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2abfa0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MediStock">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
 <title>MediStock Cloud — Inventory</title>
 <style>
   :root{
@@ -341,7 +348,7 @@
   <div class="hint" style="color:var(--warn);">Use this only for a drug's very first stock. Once you're recording batches for it on the Batches page, add all further stock there instead — adding it in both places would count it twice.</div>
   <div class="hint" id="openingPreview" style="font-size:13px; color:var(--text);">Total opening stock = 0 base unit(s)</div>
   </div>
-  <div id="lockNote" class="hint hidden" style="margin-top:14px; padding:10px; border:1px solid var(--warn); border-radius:10px; color:var(--text); font-size:12.5px; line-height:1.5;">🔒 <b>Stock quantity and packaging are locked</b> once a drug has been saved. To correct the quantity, use <a href="stocktake.html" style="color:var(--accent);">Stock Taking</a> — a reason is required and every change is recorded. (If the packaging itself was entered wrongly, deactivate this drug and add it again.)</div>
+  <div id="lockNote" class="hint hidden" style="margin-top:14px; padding:10px; border:1px solid var(--warn); border-radius:10px; color:var(--text); font-size:12.5px; line-height:1.5;">🔒 <b>Stock quantity is locked</b> once a drug has been saved. To correct the quantity, use <a href="stocktake.html" style="color:var(--accent);">Stock Taking</a> — a reason is required and every change is recorded.<br>✏️ <b>Packaging can still be corrected</b> above (units and how many are in each). The quantity you hold does not change — only how it is counted into packets, strips and loose units.</div>
 
   <button class="btn-primary" onclick="saveDrug()">Save Drug</button>
   <button class="btn-toggle" style="margin-top:8px;" onclick="closeForm()">Cancel</button>
@@ -571,9 +578,8 @@
   };
 
   // ---- lock: after the first save, stock quantity + packaging can only change through Stock Taking ----
-  const LOCK_IDS = ["f_stockUnit", "f_baseUnit", "f_hasIntermediate", "f_intermediateUnit", "f_intermediatePerStock", "f_basePerIntermediate", "f_basePerStockDirect"];
   function setLocked(on) {
-    LOCK_IDS.forEach(id => { document.getElementById(id).disabled = on; });
+    // only the opening STOCK QUANTITY is locked; packaging can always be corrected
     document.getElementById("openingBlock").classList.toggle("hidden", on);
     document.getElementById("lockNote").classList.toggle("hidden", !on);
   }
@@ -871,8 +877,8 @@
     };
 
     if (editingId) {
-      // locked fields are never rewritten when editing: quantity changes go through Stock Taking (with a reason)
-      ["currentStockBase", "stockUnit", "hasIntermediate", "intermediateUnit", "baseUnit", "intermediatePerStock", "basePerIntermediate", "baseUnitsPerStock"].forEach(k => delete record[k]);
+      // the stock quantity is never rewritten when editing: quantity changes go through Stock Taking (with a reason)
+      delete record.currentStockBase;
     }
 
     try {
