@@ -233,10 +233,24 @@
   import { getFirestore, doc, getDoc as _getDoc, collection, onSnapshot, enableIndexedDbPersistence, writeBatch, serverTimestamp, query, where, getDocFromCache, increment } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
   // ---- offline-friendly reads: use the phone's saved copy when offline or when the connection is slow ----
   const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
-  async function getDoc(ref) {
+  async function getDocServerFirst(ref) {
     if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
     try { return await _slowRace(_getDoc(ref), 2500); }
     catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  // Cache-first: the phone's saved copy answers at once (no waiting for the internet); the server copy refreshes it in the background.
+  async function getDoc(ref) {
+    try {
+      const c = await getDocFromCache(ref);
+      if (c.exists()) {
+        _getDoc(ref).then(fresh => {
+          // a deactivated account is still signed out as soon as the fresh copy arrives
+          if (ref.path.indexOf("users/") === 0 && fresh.exists() && fresh.data().active === false) auth.signOut().then(() => { window.location.href = "login.html?disabled=1"; });
+        }).catch(() => {});
+        return c;
+      }
+    } catch (e) {}
+    return getDocServerFirst(ref);
   }
 
   const firebaseConfig = {

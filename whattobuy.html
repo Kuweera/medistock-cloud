@@ -190,15 +190,34 @@
   import { getFirestore, doc, getDoc as _getDoc, getDocs as _getDocs, collection, onSnapshot, enableIndexedDbPersistence, query, where, getDocFromCache, getDocsFromCache } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
   // ---- offline-friendly reads: use the phone's saved copy when offline or when the connection is slow ----
   const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
-  async function getDoc(ref) {
+  async function getDocServerFirst(ref) {
     if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
     try { return await _slowRace(_getDoc(ref), 2500); }
     catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  // Cache-first: the phone's saved copy answers at once (no waiting for the internet); the server copy refreshes it in the background.
+  async function getDoc(ref) {
+    try {
+      const c = await getDocFromCache(ref);
+      if (c.exists()) {
+        _getDoc(ref).then(fresh => {
+          // a deactivated account is still signed out as soon as the fresh copy arrives
+          if (ref.path.indexOf("users/") === 0 && fresh.exists() && fresh.data().active === false) auth.signOut().then(() => { window.location.href = "login.html?disabled=1"; });
+        }).catch(() => {});
+        return c;
+      }
+    } catch (e) {}
+    return getDocServerFirst(ref);
   }
   async function getDocs(q) {
     if (navigator.onLine === false) { try { return await getDocsFromCache(q); } catch (e) {} }
     try { return await _slowRace(_getDocs(q), 2500); }
     catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocsFromCache(q); } catch (e2) { throw e; } }
+  }
+  // For small, rarely-changing lists (shops): use the phone's copy if it has any, refresh in the background.
+  async function getDocsFast(q) {
+    try { const c = await getDocsFromCache(q); if (!c.empty) { _getDocs(q).catch(() => {}); return c; } } catch (e) {}
+    return getDocs(q);
   }
 
   const firebaseConfig = {
@@ -339,7 +358,7 @@
 
     let currentShopId;
     if (profile.role === "owner") {
-      const shopsSnap = await getDocs(query(collection(db, "shops"), where("businessId", "==", currentBusinessId)));
+      const shopsSnap = await getDocsFast(query(collection(db, "shops"), where("businessId", "==", currentBusinessId)));
       const activeId = localStorage.getItem("mc_activeShopId");
       const foundShop = shopsSnap.docs.find(d => d.id === activeId);
       const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
