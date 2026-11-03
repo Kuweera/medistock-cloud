@@ -264,7 +264,7 @@
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   let role = null, businessId = null, myShopId = null, who = "", scopeName = "";
-  let lastFile = null, lastUri = null, lastName = "";
+  let lastFile = null, lastText = "", lastName = "";
 
   const COLLECTIONS = ["shops", "drugs", "batches", "sales", "receipts", "expenses", "credit_accounts", "credit_transactions", "suppliers", "supplier_transactions", "cash_adjustments", "stock_adjustments", "stock_transactions"];
 
@@ -305,24 +305,25 @@
     return p || null;
   };
   const pluginList = () => { try { return (CAP.PluginHeaders || []).map(h => h.name).join(", ") || "none listed"; } catch (e) { return "unknown"; } };
-  async function nativeShare(name, uri) {
-    const SH = plug("Share");
-    if (!SH) return "the Share plugin is missing";
-    try { await SH.share({ title: name, url: uri, dialogTitle: "Save or send " + name }); return ""; }
-    catch (e) { const m = String((e && (e.message || e.code)) || e); return /cancel/i.test(m) ? "" : m; }
+  async function shareNative(name, text) {
+    const FS = plug("Filesystem"), SH = plug("Share");
+    if (!FS || !SH) return "the share plugins are missing. Plugins in this app: " + pluginList();
+    try {
+      const r = await FS.writeFile({ path: name, data: text, directory: "CACHE", encoding: "utf8" });
+      await SH.share({ title: name, url: r.uri, dialogTitle: "Save or send " + name });
+      return "";
+    } catch (e) { const m = String((e && (e.message || e.code)) || e); return /cancel/i.test(m) ? "" : m; }
   }
   async function download(name, text, type) {
     if (isNative) {
-      const FS = plug("Filesystem");
-      if (!FS) throw new Error("the file plugin is missing. Plugins in this app: " + pluginList() + ". If Filesystem is not listed, this APK is an old build.");
-      let saved = "";
-      try { await FS.writeFile({ path: "MediStock/" + name, data: text, directory: "DOCUMENTS", encoding: "utf8", recursive: true }); saved = "Documents/MediStock/" + name; } catch (e) {}
-      let r;
-      try { r = await FS.writeFile({ path: name, data: text, directory: "CACHE", encoding: "utf8" }); }
-      catch (e) { throw new Error("could not write the file (" + String((e && (e.message || e.code)) || e) + ")"); }
-      lastUri = r.uri;
-      const shareError = await nativeShare(name, r.uri);
-      return { saved, shareError };
+      lastText = text; lastName = name;
+      const MS = plug("MediaSaver");
+      let saved = "", saveError = "";
+      try { if (!MS) throw new Error("this app build has no save plugin - install the newest APK"); const r = await MS.save({ name, data: text, mime: type }); saved = r.path; }
+      catch (e) { saveError = String((e && (e.message || e.code)) || e); }
+      let shareError = "";
+      if (!saved) shareError = await shareNative(name, text);   // could not save directly: open the share window instead
+      return { saved, saveError, shareError };
     }
     const blob = new Blob([text], { type });
     const a = document.createElement("a");
@@ -359,13 +360,13 @@
     if (res.blob) lastFile = new File([res.blob], fileName, { type: "application/json" });
     try { localStorage.setItem("mcLastBackup", String(Date.now())); } catch (e) {}
     refreshLast();
-    prog.innerHTML = lines.join("<br>") + "<br><b>" + (isNative ? (res.shareError ? "Share window failed: " + esc(res.shareError) + ". " : "") + (res.saved ? "Saved in " + esc(res.saved) + ". Use the share window to also keep a copy elsewhere." : "Backup ready (" + esc(fileName) + "): choose where to save it in the share window, or tap the button below.") : "Saved to your phone: " + esc(fileName)) + " (" + Math.round(text.length / 1024).toLocaleString() + " KB)</b>" +
+    prog.innerHTML = lines.join("<br>") + "<br><b>" + (isNative ? (res.saved ? "Saved to your phone: " + esc(res.saved) + ". Open your Files app > Downloads > MediStock." : "Could not save to the phone (" + esc(res.saveError) + ")." + (res.shareError ? " Share also failed: " + esc(res.shareError) : " Use the share window to save or send it.")) : "Saved to your phone: " + esc(fileName)) + " (" + Math.round(text.length / 1024).toLocaleString() + " KB)</b>" +
       (cached ? "<br>Note: some records came from the phone's saved copy (no live connection), so anything not yet synced to the server is included too." : "");
-    if (isNative ? lastUri : (navigator.canShare && lastFile && navigator.canShare({ files: [lastFile] }))) $("shareBtn").classList.remove("hidden");
+    if (isNative ? true : (navigator.canShare && lastFile && navigator.canShare({ files: [lastFile] }))) $("shareBtn").classList.remove("hidden");
     btn.disabled = false;
   };
   window.shareBackup = async function () {
-    if (isNative) { if (lastUri) { const er = await nativeShare(lastName, lastUri); if (er) $("prog").innerHTML += '<br><span class="e">Share failed: ' + esc(er) + "</span>"; } return; }
+    if (isNative) { if (lastText) { const er = await shareNative(lastName, lastText); if (er) $("prog").innerHTML += '<br><span class="e">Share failed: ' + esc(er) + "</span>"; } return; }
     if (!lastFile) return;
     try { await navigator.share({ files: [lastFile], title: "MediStock backup" }); } catch (e) {}
   };
@@ -406,7 +407,7 @@
       }
       const fn = "MediStock-" + name + "-" + day + ".csv";
       const res = await download(fn, text, "text/csv");
-      prog.textContent = isNative ? "✓ " + (res.saved ? "Saved in " + res.saved : "Ready: " + fn) + " (choose where to keep or send it in the share window)" : "✓ Saved to your phone: " + fn;
+      prog.textContent = isNative ? (res.saved ? "✓ Saved to your phone: " + res.saved : "Could not save to the phone (" + res.saveError + "). " + (res.shareError ? "Share failed: " + res.shareError : "Use the share window.")) : "✓ Saved to your phone: " + fn;
     } catch (e) { prog.innerHTML = '<span class="e">Could not export: ' + esc(e.code || e.message) + "</span>"; }
   };
 
