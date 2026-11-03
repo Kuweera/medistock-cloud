@@ -58,7 +58,7 @@ export async function startCore(opts) {
   // not made by its own copy ("custom Object object"), so everything written is rebuilt here first.
   function loc(v) {
     if (v === null || typeof v !== "object") return v;
-    if (Array.isArray(v)) return v.map(loc);
+    if (Array.isArray(v)) { var arr = []; for (var i = 0; i < v.length; i++) arr.push(loc(v[i])); return arr; }   // NOT v.map: map would build the array with the frame's own Array
     var tag = Object.prototype.toString.call(v);
     if (tag === "[object Date]") return new Date(v.getTime());
     var proto = Object.getPrototypeOf(v);
