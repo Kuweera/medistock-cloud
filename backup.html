@@ -294,20 +294,26 @@
   // plugins and the phone's share window opens (save to Drive / Files, or send by WhatsApp). In Chrome it downloads as before.
   const CAP = (() => { try { return window.top.Capacitor || window.Capacitor; } catch (e) { return window.Capacitor; } })();
   const isNative = !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform());
+  // A page loaded from the web gets native plugins by asking for them by name.
+  const plug = n => { try { return (CAP.registerPlugin && CAP.registerPlugin(n)) || (CAP.Plugins && CAP.Plugins[n]) || null; } catch (e) { return (CAP.Plugins && CAP.Plugins[n]) || null; } };
   async function nativeShare(name, uri) {
-    const SH = CAP.Plugins && CAP.Plugins.Share;
-    if (SH) { try { await SH.share({ title: name, url: uri, dialogTitle: "Save or send " + name }); } catch (e) {} }
+    const SH = plug("Share");
+    if (!SH) return "the Share plugin is missing";
+    try { await SH.share({ title: name, url: uri, dialogTitle: "Save or send " + name }); return ""; }
+    catch (e) { const m = String((e && (e.message || e.code)) || e); return /cancel/i.test(m) ? "" : m; }
   }
   async function download(name, text, type) {
     if (isNative) {
-      const FS = CAP.Plugins && CAP.Plugins.Filesystem;
-      if (!FS || !(CAP.Plugins && CAP.Plugins.Share)) throw new Error("this app version cannot save files - install the newest MediStock Cloud app");
+      const FS = plug("Filesystem");
+      if (!FS) throw new Error("the file plugin is missing - install the newest MediStock Cloud APK");
       let saved = "";
       try { await FS.writeFile({ path: "MediStock/" + name, data: text, directory: "DOCUMENTS", encoding: "utf8", recursive: true }); saved = "Documents/MediStock/" + name; } catch (e) {}
-      const r = await FS.writeFile({ path: name, data: text, directory: "CACHE", encoding: "utf8" });
+      let r;
+      try { r = await FS.writeFile({ path: name, data: text, directory: "CACHE", encoding: "utf8" }); }
+      catch (e) { throw new Error("could not write the file (" + String((e && (e.message || e.code)) || e) + ")"); }
       lastUri = r.uri;
-      await nativeShare(name, r.uri);
-      return { saved };
+      const shareError = await nativeShare(name, r.uri);
+      return { saved, shareError };
     }
     const blob = new Blob([text], { type });
     const a = document.createElement("a");
@@ -344,13 +350,13 @@
     if (res.blob) lastFile = new File([res.blob], fileName, { type: "application/json" });
     try { localStorage.setItem("mcLastBackup", String(Date.now())); } catch (e) {}
     refreshLast();
-    prog.innerHTML = lines.join("<br>") + "<br><b>" + (isNative ? (res.saved ? "Saved in " + esc(res.saved) + ". Use the share window to also keep a copy elsewhere." : "Backup ready (" + esc(fileName) + "): choose where to save it in the share window, or tap the button below.") : "Saved to your phone: " + esc(fileName)) + " (" + Math.round(text.length / 1024).toLocaleString() + " KB)</b>" +
+    prog.innerHTML = lines.join("<br>") + "<br><b>" + (isNative ? (res.shareError ? "Share window failed: " + esc(res.shareError) + ". " : "") + (res.saved ? "Saved in " + esc(res.saved) + ". Use the share window to also keep a copy elsewhere." : "Backup ready (" + esc(fileName) + "): choose where to save it in the share window, or tap the button below.") : "Saved to your phone: " + esc(fileName)) + " (" + Math.round(text.length / 1024).toLocaleString() + " KB)</b>" +
       (cached ? "<br>Note: some records came from the phone's saved copy (no live connection), so anything not yet synced to the server is included too." : "");
     if (isNative ? lastUri : (navigator.canShare && lastFile && navigator.canShare({ files: [lastFile] }))) $("shareBtn").classList.remove("hidden");
     btn.disabled = false;
   };
   window.shareBackup = async function () {
-    if (isNative) { if (lastUri) await nativeShare(lastName, lastUri); return; }
+    if (isNative) { if (lastUri) { const er = await nativeShare(lastName, lastUri); if (er) $("prog").innerHTML += '<br><span class="e">Share failed: ' + esc(er) + "</span>"; } return; }
     if (!lastFile) return;
     try { await navigator.share({ files: [lastFile], title: "MediStock backup" }); } catch (e) {}
   };
