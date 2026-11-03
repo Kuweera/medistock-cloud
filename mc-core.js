@@ -54,6 +54,21 @@ export async function startCore(opts) {
   MC.goLogin = function (u) { location.href = u; };
 
   // ------------------------------------------------------------------ helpers
+  // Screens live in frames, which have their OWN copy of JavaScript's basic Object/Date. Firebase refuses data that is
+  // not made by its own copy ("custom Object object"), so everything written is rebuilt here first.
+  function loc(v) {
+    if (v === null || typeof v !== "object") return v;
+    if (Array.isArray(v)) return v.map(loc);
+    var tag = Object.prototype.toString.call(v);
+    if (tag === "[object Date]") return new Date(v.getTime());
+    var proto = Object.getPrototypeOf(v);
+    if (tag === "[object Object]" && (proto === null || Object.getPrototypeOf(proto) === null)) {
+      var o = {}; Object.keys(v).forEach(function (k) { o[k] = loc(v[k]); }); return o;
+    }
+    return v;   // Firebase's own things (Timestamp, increment(), references...) pass through untouched
+  }
+  function locArgs(a) { return Array.prototype.map.call(a, loc); }
+
   var getPath = function (o, p) { var c = o; var parts = String(p).split("."); for (var i = 0; i < parts.length; i++) { if (c == null) return undefined; c = c[parts[i]]; } return c; };
   function isTs(v) { return v && typeof v === "object" && typeof v.toMillis === "function" && typeof v.seconds === "number" && typeof v.nanoseconds === "number"; }
   function ser(v) {
@@ -368,7 +383,30 @@ export async function startCore(opts) {
     api.enableIndexedDbPersistence = function () { return Promise.resolve(); };
     api.onAuthStateChanged = function (a, cb, er) { return track(AU.onAuthStateChanged(a, cb, er)); };
 
-    api.where = function (f, op, v) { var c = FS.where(f, op, v); WM.set(c, [f, op, v]); return c; };
+    // ---- writes: same Firebase calls, data rebuilt in this window's own Object/Date first
+    api.setDoc = function (ref, data, o) { return o === undefined ? FS.setDoc(ref, loc(data)) : FS.setDoc(ref, loc(data), loc(o)); };
+    api.addDoc = function (ref, data) { return FS.addDoc(ref, loc(data)); };
+    api.updateDoc = function (ref) { return FS.updateDoc.apply(null, [ref].concat(locArgs(Array.prototype.slice.call(arguments, 1)))); };
+    api.writeBatch = function (d) {
+      var b = FS.writeBatch(d), w = {};
+      w.set = function (r, data, o) { if (o === undefined) b.set(r, loc(data)); else b.set(r, loc(data), loc(o)); return w; };
+      w.update = function (r) { b.update.apply(b, [r].concat(locArgs(Array.prototype.slice.call(arguments, 1)))); return w; };
+      w.delete = function (r) { b.delete(r); return w; };
+      w.commit = function () { return b.commit(); };
+      return w;
+    };
+    api.runTransaction = function (d, fn, o) {
+      return FS.runTransaction(d, function (tx) {
+        var w = {};
+        w.get = function (r) { return tx.get(r); };
+        w.set = function (r, data, op) { if (op === undefined) tx.set(r, loc(data)); else tx.set(r, loc(data), loc(op)); return w; };
+        w.update = function (r) { tx.update.apply(tx, [r].concat(locArgs(Array.prototype.slice.call(arguments, 1)))); return w; };
+        w.delete = function (r) { tx.delete(r); return w; };
+        return fn(w);
+      }, o);
+    };
+
+    api.where = function (f, op, v) { v = loc(v); var c = FS.where(f, op, v); WM.set(c, [f, op, v]); return c; };
     api.collection = function (d) {
       var r = FS.collection.apply(null, arguments);
       return r;

@@ -29,7 +29,7 @@
 
   // Moving between screens: inside the app shell this just switches screens (nothing reloads).
   window.mcGo = function (u) {
-    if (MC && MC.go) MC.go(u); else if (window.top !== window) window.top.location.href = u; else window.location.href = u;
+    if (MC && MC.go) MC.go(u, window); else if (window.top !== window) window.top.location.href = u; else window.location.href = u;
   };
   document.addEventListener("click", function (e) {
     var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;

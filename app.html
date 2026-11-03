@@ -136,8 +136,10 @@
     window.MC = MC;
     if (window.__mcInstall) MC.deferredInstall = window.__mcInstall;
     MC.goLogin = (u) => { location.href = u; };
-    MC.go = (u) => {
+    MC.go = (u, from) => {
       const { page, q } = parse(u);
+      // a screen kept alive in the background must not steer the app (e.g. a delayed "owners only" redirect)
+      if (from && page !== "login.html") { const r = F.of(from); if (r && r !== active && r !== F.loading) return; }
       if (page === "login.html" || !/\.html$/.test(page) || page === "app.html") { location.href = (page === "app.html" ? "app.html" : u); return; }
       const h = page + q;
       if (location.hash.replace(/^#/, "") !== h) location.hash = h; else show(page, q);
