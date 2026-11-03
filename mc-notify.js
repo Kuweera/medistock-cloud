@@ -15,8 +15,21 @@
 
   var CHANNEL = "mc-alerts", ICON = "ic_stat_notify", COLOR = "#2BBFA0";
   var DIGEST_HOUR = 8, UNSYNCED_HOURS = 24, MAX_SCHEDULED = 60, DIGEST_DAYS = 3;
-  var LN = null;
-  if (native) { try { LN = Cap.registerPlugin("LocalNotifications"); } catch (e) { N.lastError = "plugin: " + (e && e.message); } }
+  var LN = null, listening = false;
+  // A page loaded from the web only gets plugins through Capacitor.Plugins (registerPlugin is not there), so look both ways, and again later if needed.
+  function initLN() {
+    if (LN) return LN;
+    var c = window.Capacitor, p = null;
+    try { p = c && c.Plugins && c.Plugins.LocalNotifications; } catch (e) {}
+    if (!p) { try { if (c && typeof c.registerPlugin === "function") p = c.registerPlugin("LocalNotifications"); } catch (e) {} }
+    if (!p) { var names = ""; try { names = (c && c.PluginHeaders || []).map(function (h) { return h.name; }).join(", "); } catch (e) {} N.lastError = "the notifications plugin is not in this app build. Plugins: " + (names || "none"); return null; }
+    LN = p; N.lastError = "";
+    if (!listening) {
+      listening = true;
+      try { LN.addListener("localNotificationActionPerformed", function (ev) { var x = ev && ev.notification && ev.notification.extra; openTarget(x && x.target); }); } catch (e) { N.lastError = "listener: " + (e && e.message); }
+    }
+    return LN;
+  }
 
   function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} return null; }
   function uid() { return (window.MC && MC.user && MC.user.uid) || "x"; }
@@ -28,9 +41,7 @@
     if (window.MC && MC.go && MC.__routed) { try { MC.go(t); } catch (e) {} } else pendingTarget = t;
   }
   N.takePending = function () { var t = pendingTarget; pendingTarget = null; return t; };
-  if (LN) {
-    try { LN.addListener("localNotificationActionPerformed", function (ev) { var x = ev && ev.notification && ev.notification.extra; openTarget(x && x.target); }); } catch (e) {}
-  }
+  if (native) initLN();
 
   // ------------------------------------------------------------ reading the phone's own data
   function rows(coll) {
@@ -203,7 +214,7 @@
 
   N.start = async function () {
     if (N.started) return; N.started = true;
-    if (!LN) return;
+    if (!initLN()) { N.started = false; return; }
     try {
       try { await LN.createChannel({ id: CHANNEL, name: "MediStock alerts", description: "Low stock, expiring drugs, credit due and sync reminders", importance: 4, visibility: 1, vibration: true, lights: true }); } catch (e) {}
       var p = await LN.checkPermissions();
@@ -219,12 +230,15 @@
   };
 
   N.status = async function () {
+    if (native) initLN();
     var out = { native: native, permission: N.permission, scheduled: N.scheduled || 0, error: N.lastError };
     if (LN) { try { var p = await LN.checkPermissions(); out.permission = N.permission = p.display; var pn = await LN.getPending(); out.pending = pn.notifications.length; } catch (e) { out.error = String(e && e.message || e); } }
     return out;
   };
   N.test = async function () {
-    if (!LN) return "Alerts work only in the MediStock Cloud app.";
+    if (native) initLN();
+    if (!native) return "Alerts work only in the MediStock Cloud app.";
+    if (!LN) return "Alerts cannot start: " + N.lastError;
     var p = await LN.checkPermissions();
     if (p.display !== "granted") p = await LN.requestPermissions();
     N.permission = p.display;
