@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>if(window.top===window){location.replace("app.html#"+location.pathname.split("/").pop()+location.search);}</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="manifest" href="manifest.json">
@@ -129,7 +130,7 @@
 </header>
 <div class="nav-bar">
   <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
-  <div class="nav-bar-brand" onclick="location.href='dashboard.html'">🏠 Home</div>
+  <div class="nav-bar-brand" onclick="mcGo('dashboard.html')">🏠 Home</div>
   <span class="badge" id="netBadge">checking…</span>
 </div>
 <div class="nav-overlay" id="navOverlay"></div>
@@ -196,9 +197,7 @@
   })();
 </script>
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
-  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-  import { getFirestore, doc, getDoc as _getDoc, getDocs as _getDocs, deleteDoc, writeBatch, collection, addDoc, onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where, getDocFromCache, getDocsFromCache, increment } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, getDocs: _getDocs, deleteDoc, writeBatch, collection, addDoc, onSnapshot, enableIndexedDbPersistence, serverTimestamp, query, where, getDocFromCache, getDocsFromCache, increment } = window.top.MC.api(window);
   // ---- offline-friendly reads: use the phone's saved copy when offline or when the connection is slow ----
   const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
   async function getDocServerFirst(ref) {
@@ -213,7 +212,7 @@
       if (c.exists()) {
         _getDoc(ref).then(fresh => {
           // a deactivated account is still signed out as soon as the fresh copy arrives
-          if (ref.path.indexOf("users/") === 0 && fresh.exists() && fresh.data().active === false) auth.signOut().then(() => { window.location.href = "login.html?disabled=1"; });
+          if (ref.path.indexOf("users/") === 0 && fresh.exists() && fresh.data().active === false) auth.signOut().then(() => { window.mcGo("login.html?disabled=1"); });
         }).catch(() => {});
         return c;
       }
@@ -349,12 +348,12 @@
   }
 
   onAuthStateChanged(auth, async (user) => {
-    if (!user) { window.location.href = "login.html"; return; }
+    if (!user) { window.mcGo("login.html"); return; }
     currentUser = user;
     const userSnap = await getDoc(doc(db, "users", user.uid));
-    if (!userSnap.exists()) { window.location.href = "login.html"; return; }
+    if (!userSnap.exists()) { window.mcGo("login.html"); return; }
     const profile = userSnap.data();
-    if (profile.active === false) { await auth.signOut(); window.location.href = "login.html?disabled=1"; return; }
+    if (profile.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
     currentBusinessId = profile.businessId;
     cashierName = profile.role === "owner" ? user.email : profile.name;
 

@@ -25,6 +25,25 @@
   ];
   var FB = "https://www.gstatic.com/firebasejs/12.19.0/";
   var body = document.body || document.documentElement;
+  var MC = (window.top !== window && window.top.MC) ? window.top.MC : null;
+
+  // Moving between screens: inside the app shell this just switches screens (nothing reloads).
+  window.mcGo = function (u) {
+    if (MC && MC.go) MC.go(u); else if (window.top !== window) window.top.location.href = u; else window.location.href = u;
+  };
+  document.addEventListener("click", function (e) {
+    var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+    if (!a || !MC || e.defaultPrevented || e.metaKey || e.ctrlKey || a.target === "_blank" || a.hasAttribute("download")) return;
+    var h = a.getAttribute("href");
+    if (!h || /^(https?:|mailto:|tel:|#|javascript:|blob:)/i.test(h) || !/\.html(\?|$)/i.test(h)) return;
+    e.preventDefault(); window.mcGo(h);
+  }, true);
+  // dark/light chosen on one screen applies to the screens kept open behind it
+  window.addEventListener("storage", function (e) {
+    if (e.key !== "mcThemePreference") return;
+    var pref = e.newValue || "auto", dark = pref === "dark" || (pref === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  });
 
   // ---------- menu ----------
   var panel = document.getElementById("navPanel");
@@ -57,19 +76,25 @@
 
   // ---------- install as an app (home-screen icon, opens full screen, works offline) ----------
   var deferredInstall = null;
+  function checkShellInstall() { if (MC && MC.deferredInstall && installBtn) installBtn.style.display = ""; }
+  setTimeout(checkShellInstall, 600);
+  window.addEventListener("mc-show", checkShellInstall);
   window.addEventListener("beforeinstallprompt", function (e) {
     e.preventDefault(); deferredInstall = e;
     if (installBtn) installBtn.style.display = "";
   });
   window.addEventListener("appinstalled", function () { deferredInstall = null; if (installBtn) installBtn.style.display = "none"; });
   if (installBtn) installBtn.addEventListener("click", function () {
+    if (!deferredInstall && MC && MC.deferredInstall) {
+      var ev = MC.deferredInstall; MC.deferredInstall = null; ev.prompt(); installBtn.style.display = "none"; return;
+    }
     if (!deferredInstall) return;
     deferredInstall.prompt();
     deferredInstall.userChoice.then(function () { deferredInstall = null; installBtn.style.display = "none"; });
   });
 
   // ---------- sync status: a small note under the online/offline badge, on the green bar ----------
-  var pending = 0, problem = null, bootPending = false, dbHandle = null;
+  var pending = 0, problem = null, bootPending = false;
   var bar = document.querySelector(".nav-bar");
   var pill = document.createElement("div");
   pill.id = "syncPill";
@@ -84,7 +109,7 @@
   function paint() {
     var show = true;
     if (problem) { pill.style.background = "#e5534b"; pill.style.color = "#fff"; pill.textContent = "\u26a0 A change was not saved \u2014 tap"; }
-    else if (pending > 0 || bootPending) { pill.style.background = "#f0b429"; pill.style.color = "#222"; pill.textContent = "\u23f3 Changes waiting to sync" + (pending > 1 ? " (" + pending + ")" : ""); }
+    else if (pending > 0 || bootPending || (MC && MC.pendingDocs && MC.pendingDocs() > 0)) { pill.style.background = "#f0b429"; pill.style.color = "#222"; pill.textContent = "\u23f3 Changes waiting to sync" + (function () { var n = Math.max(pending, MC && MC.pendingDocs ? MC.pendingDocs() : 0); return n > 1 ? " (" + n + ")" : ""; })(); }
     else show = false;
     pill.style.display = show ? "block" : "none";
     if (bar) bar.style.paddingBottom = show ? "20px" : "";
@@ -103,43 +128,19 @@
     });
   };
 
-  function getDb() {
-    return Promise.all([import(FB + "firebase-app.js"), import(FB + "firebase-firestore.js")]).then(function (m) {
-      var apps = m[0].getApps();
-      if (!apps.length) return null;
-      return { fs: m[1], db: m[1].getFirestore(apps[0]) };
-    });
-  }
-  function waitDb(tries) {
-    return getDb().then(function (x) {
-      if (x || tries <= 0) return x;
-      return new Promise(function (r) { setTimeout(r, 500); }).then(function () { return waitDb(tries - 1); });
-    });
-  }
-  waitDb(40).then(function (x) {
-    if (!x) return;
-    dbHandle = x; bootPending = true; paint();
-    x.fs.waitForPendingWrites(x.db).then(function () { bootPending = false; paint(); }, function () { bootPending = false; paint(); });
-  }).catch(function () {});
+  if (MC && MC.onSync) { MC.onSync(paint); paint(); }
 
   // ---------- log out (warns if anything hasn't reached the server yet) ----------
   if (out) out.addEventListener("click", async function () {
-    var unsynced = pending > 0;
-    try {
-      var x = dbHandle || await waitDb(4);
-      if (x) {
-        var ok = await Promise.race([x.fs.waitForPendingWrites(x.db).then(function () { return true; }), new Promise(function (r) { setTimeout(function () { r(false); }, 1500); })]);
-        if (!ok) unsynced = true;
-      }
-    } catch (e) {}
+    var unsynced = pending > 0 || (MC && MC.pendingDocs && MC.pendingDocs() > 0);
+    try { if (MC && MC.waitForPendingWrites) { var ok = await MC.waitForPendingWrites(1500); if (!ok) unsynced = true; } } catch (e) {}
     var msg = unsynced
       ? "Some changes have NOT reached the server yet. Logging out now can lose them.\n\nStay signed in until the \u201cwaiting to sync\u201d note disappears.\n\nLog out anyway?"
       : "Log out of MediStock?";
     if (!confirm(msg)) return;
     try {
-      var m = await import(FB + "firebase-auth.js");
-      await m.getAuth().signOut();
-      location.href = "login.html";
+      if (MC && MC.logout) await MC.logout();
+      window.top.location.href = "login.html";
     } catch (e) {
       alert("Couldn't log out: " + (e && e.message ? e.message : e));
     }
@@ -297,5 +298,5 @@
   })();
 
   // ---------- keep the app available with no internet ----------
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function () {});
+  if (window.top === window && "serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function () {});
 })();

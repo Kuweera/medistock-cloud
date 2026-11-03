@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>if(window.top===window){location.replace("app.html#"+location.pathname.split("/").pop()+location.search);}</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="manifest" href="manifest.json">
@@ -135,7 +136,7 @@
 </header>
 <div class="nav-bar">
   <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
-  <div class="nav-bar-brand" onclick="location.href='dashboard.html'">🏠 Home</div>
+  <div class="nav-bar-brand" onclick="mcGo('dashboard.html')">🏠 Home</div>
   <span class="badge" id="netBadge">checking…</span>
 </div>
 <div class="nav-overlay" id="navOverlay"></div>
@@ -388,9 +389,7 @@ function mcPlanImport(pro, ctx, ex) {
 </script>
 
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
-  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-  import { getFirestore, doc, getDoc, getDocs, collection, writeBatch, enableIndexedDbPersistence, query, where, Timestamp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc, getDocs, collection, writeBatch, enableIndexedDbPersistence, query, where, Timestamp } = window.top.MC.api(window);
 
   const firebaseConfig = {
     apiKey: "AIzaSyBXwKfb9yg3HAQFIPG6q3SYHU9C7FQvkNY",
@@ -544,12 +543,12 @@ function mcPlanImport(pro, ctx, ex) {
   };
 
   onAuthStateChanged(auth, async (u) => {
-    if (!u) { window.location.href = "login.html"; return; }
+    if (!u) { window.mcGo("login.html"); return; }
     user = u;
     const snap = await getDoc(doc(db, "users", u.uid));
-    if (!snap.exists()) { window.location.href = "login.html"; return; }
+    if (!snap.exists()) { window.mcGo("login.html"); return; }
     const p = snap.data();
-    if (p.active === false) { await auth.signOut(); window.location.href = "login.html?disabled=1"; return; }
+    if (p.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
     businessId = p.businessId; who = p.role === "owner" ? u.email : p.name;
     $("netBadge").textContent = navigator.onLine === false ? "offline" : "online"; $("netBadge").className = "badge " + (navigator.onLine === false ? "offline" : "online");
     if (p.role !== "owner") { $("blocked").classList.remove("hidden"); return; }

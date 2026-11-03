@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2abfa0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MediStock">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<title>MediStock Cloud</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0d1614; overflow: hidden; }
+  html[data-theme="light"], html[data-theme="light"] body { background: #f4f7f5; }
+  #frames iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; display: none; background: transparent; }
+  #splash { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    background: #0d1614; color: #e7f2ee; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; z-index: 5; transition: opacity .2s; }
+  #splash img { width: 84px; height: 84px; border-radius: 20px; }
+  #splash .t { font-size: 18px; font-weight: 700; }
+  #splash .s { font-size: 13px; color: #9fb6ae; min-height: 18px; text-align: center; padding: 0 24px; }
+  #splash .b { width: 180px; height: 4px; background: #2a3934; border-radius: 2px; overflow: hidden; }
+  #splash .b i { display: block; height: 100%; width: 0; background: #2bbfa0; transition: width .25s; }
+  #splash.gone { opacity: 0; pointer-events: none; }
+  #bar { position: fixed; top: 0; left: 0; height: 3px; width: 0; background: #2bbfa0; z-index: 4; opacity: 0; transition: width .3s, opacity .2s; }
+</style>
+<script>
+  (function () {
+    try {
+      var pref = localStorage.getItem("mcThemePreference") || "auto";
+      var dark = pref === "dark" || (pref === "auto" && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+<div id="bar"></div>
+<div id="frames"></div>
+<div id="splash">
+  <img src="mc-icon-192.png" alt="">
+  <div class="t">MediStock Cloud</div>
+  <div class="b"><i id="splashBar"></i></div>
+  <div class="s" id="splashMsg">Opening…</div>
+</div>
+
+<script type="module">
+  import { startCore } from "./mc-core.js";
+
+  const framesEl = document.getElementById("frames");
+  const bar = document.getElementById("bar");
+  const splash = document.getElementById("splash");
+  const MAX = (navigator.deviceMemory && navigator.deviceMemory <= 2) ? 3 : 5;   // fewer kept-alive screens on cheap phones
+  const frames = new Map();   // page -> { page, q, el, stale, last, cleanup }
+  let active = null, seq = 0, MC = null;
+
+  const F = { of(win) { for (const r of frames.values()) { if (r.el.contentWindow === win) return r; } return F.loading && F.loading.el.contentWindow === win ? F.loading : null; } };
+
+  function parse(u) {
+    const m = String(u).replace(/^\.?\//, "").match(/^([^?#]*)(\?[^#]*)?/);
+    return { page: m[1] || "dashboard.html", q: m[2] || "" };
+  }
+  function barOn() { bar.style.opacity = "1"; bar.style.width = "60%"; }
+  function barOff() { bar.style.width = "100%"; setTimeout(() => { bar.style.opacity = "0"; bar.style.width = "0"; }, 200); }
+
+  function activate(rec) {
+    frames.forEach(r => { if (r !== rec) r.el.style.display = "none"; });
+    rec.el.style.display = "block"; rec.el.style.visibility = "visible";
+    active = rec; rec.last = Date.now();
+    try { rec.el.contentWindow.dispatchEvent(new Event("mc-show")); } catch (e) {}
+    try { rec.el.contentWindow.focus(); } catch (e) {}
+    // keep only a few screens alive on low-memory phones
+    if (frames.size > MAX) {
+      const victims = [...frames.values()].filter(r => r !== rec).sort((a, b) => a.last - b.last);
+      while (frames.size > MAX && victims.length) drop(victims.shift());
+    }
+  }
+  function drop(rec) {
+    try { if (rec.cleanup) rec.cleanup(); } catch (e) {}
+    try { rec.el.remove(); } catch (e) {}
+    frames.delete(rec.page);
+  }
+
+  function show(page, q) {
+    const rec = frames.get(page);
+    if (rec && rec.q === q && !rec.stale) { activate(rec); return; }
+    const my = ++seq;
+    barOn();
+    const el = document.createElement("iframe");
+    el.setAttribute("title", page);
+    el.style.display = "block"; el.style.visibility = "hidden";
+    const fresh = { page, q, el, stale: false, last: Date.now(), cleanup: null };
+    F.loading = fresh;
+    framesEl.appendChild(el);
+    let done = false;
+    const finish = () => {
+      if (done) return; done = true;
+      setTimeout(() => {
+        if (F.loading === fresh) F.loading = null;
+        const old = frames.get(page);
+        if (old && old !== fresh) drop(old);
+        frames.set(page, fresh);
+        if (my === seq) { activate(fresh); barOff(); hideSplash(); }
+        else { fresh.el.style.display = "none"; }
+      }, 90);
+    };
+    el.addEventListener("load", finish);
+    setTimeout(finish, 6000);
+    el.src = page + q;
+  }
+
+  function route() {
+    const h = location.hash.replace(/^#/, "");
+    const p = parse(h || "dashboard.html");
+    show(p.page, p.q);
+  }
+  window.addEventListener("hashchange", route);
+
+  let splashHidden = false;
+  function hideSplash() { if (splashHidden) return; splashHidden = true; splash.classList.add("gone"); setTimeout(() => splash.remove(), 400); }
+
+  try { if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {}); } catch (e) {}
+
+  window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); if (MC) MC.deferredInstall = e; else window.__mcInstall = e; });
+  window.addEventListener("storage", e => { if (e.key === "mcThemePreference") { try { const pref = e.newValue || "auto"; const dark = pref === "dark" || (pref === "auto" && matchMedia("(prefers-color-scheme: dark)").matches); document.documentElement.setAttribute("data-theme", dark ? "dark" : "light"); } catch (x) {} } });
+
+  (async () => {
+    const msg = document.getElementById("splashMsg"), sb = document.getElementById("splashBar");
+    try {
+      MC = await startCore({ frames: F });
+    } catch (err) {
+      msg.textContent = "Couldn't start: " + (err && err.message ? err.message : err) + " — reconnect and reopen the app.";
+      return;
+    }
+    window.MC = MC;
+    if (window.__mcInstall) MC.deferredInstall = window.__mcInstall;
+    MC.goLogin = (u) => { location.href = u; };
+    MC.go = (u) => {
+      const { page, q } = parse(u);
+      if (page === "login.html" || !/\.html$/.test(page) || page === "app.html") { location.href = (page === "app.html" ? "app.html" : u); return; }
+      const h = page + q;
+      if (location.hash.replace(/^#/, "") !== h) location.hash = h; else show(page, q);
+    };
+    MC.onShopsChanged = () => { frames.forEach(r => { if (r !== active) r.stale = true; }); };
+    if (MC.needLogin) { location.replace("login.html" + (MC.disabled ? "?disabled=1" : "")); return; }
+
+    // first launch on this phone (or after an update) has to read everything once: show progress
+    const [r0, t0] = MC.coreCounts();
+    if (r0 < t0) msg.textContent = "Getting your shop data ready (only slow the first time)…";
+    MC.onProgress((r, t) => { sb.style.width = (t ? Math.round(100 * r / t) : 100) + "%"; msg.textContent = "Getting your shop data ready… " + r + "/" + t; });
+    await MC.coreReady(15000);
+    sb.style.width = "100%";
+    route();
+    setTimeout(hideSplash, 4000);
+  })();
+</script>
+</body>
+</html>
