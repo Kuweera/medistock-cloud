@@ -45,6 +45,7 @@
   <div class="s" id="splashMsg">Opening…</div>
 </div>
 
+<script src="mc-notify.js"></script>
 <script type="module">
   import { startCore } from "./mc-core.js";
 
@@ -154,6 +155,8 @@
     await MC.coreReady(15000);
     sb.style.width = "100%";
     route();
+    MC.__routed = true;
+    try { if (window.MCNotify) { MCNotify.start(); const t = MCNotify.takePending(); if (t) setTimeout(() => MC.go(t), 300); } } catch (e) {}
     setTimeout(hideSplash, 4000);
   })();
 </script>

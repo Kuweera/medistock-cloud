@@ -179,6 +179,14 @@
 </div>
 
 <div class="card">
+  <h2>🔔 Alerts</h2>
+  <p class="meta">Alerts for low stock, expiring drugs, credit due and unsynced changes work in the MediStock Cloud app. Tap an alert to open that screen.</p>
+  <div id="alertStatus" class="okbox">Checking…</div>
+  <button class="big-btn sec" onclick="testAlert()">Send a test alert</button>
+  <button class="big-btn sec" onclick="recheckAlerts()">Check alerts now</button>
+</div>
+
+<div class="card">
   <h2>ℹ️ Good to know</h2>
   <p class="meta">• The backup contains only what this phone has saved so far. Open the app with internet from time to time so everything is up to date and uploaded.</p>
   <p class="meta">• Unsent changes are not lost by exporting — they stay on the phone until they upload.</p>
@@ -370,6 +378,21 @@
     if (!lastFile) return;
     try { await navigator.share({ files: [lastFile], title: "MediStock backup" }); } catch (e) {}
   };
+
+
+  // ---------- alerts ----------
+  const NF = () => { try { return window.top.MCNotify; } catch (e) { return window.MCNotify; } };
+  async function showAlertStatus() {
+    const box = $("alertStatus"), n = NF();
+    if (!n || !n.native) { box.className = "warnbox"; box.textContent = "Alerts work only in the MediStock Cloud app (not in the browser)."; return; }
+    const st = await n.status();
+    const ok = st.permission === "granted";
+    box.className = ok ? "okbox" : "warnbox";
+    box.textContent = ok ? "Alerts are ON. " + (st.pending || 0) + " scheduled." + (st.error ? " (" + st.error + ")" : "") : "Alerts are OFF: allow notifications for MediStock in the phone settings." + (st.error ? " (" + st.error + ")" : "");
+  }
+  window.testAlert = async function () { const n = NF(); if (!n) return; const m = await n.test(); await showAlertStatus(); $("alertStatus").textContent += " " + m; };
+  window.recheckAlerts = async function () { const n = NF(); if (!n) return; await n.rescan(); await showAlertStatus(); };
+  setTimeout(showAlertStatus, 1500);
 
   // ---------- CSV (opens in Excel / Sheets) ----------
   const cell = v => { const s = v == null ? "" : String(v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };

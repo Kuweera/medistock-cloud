@@ -441,7 +441,8 @@
   let currentShopId = null;
   let allDrugs = [];
   let editingId = null;
-  let lowStockOnly = false;
+  let lowStockOnly = new URLSearchParams(location.search).get("low") === "1";   // opened from a low-stock alert
+  { const b = document.getElementById("lowStockBtn"); if (b) b.classList.toggle("on", lowStockOnly); }
   let showInactive = false;
   const openBatchHistory = new Set();
   const batchCache = {};

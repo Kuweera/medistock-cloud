@@ -220,7 +220,7 @@ export async function startCore(opts) {
       if (ch.length) metaChanged = true;
       fireSync();
     }
-    if (dataChanged) { e.ver++; e.dirty = true; scheduleSave(); if (e.coll === "shops" && e.ready && MC.onShopsChanged) MC.onShopsChanged(); }
+    if (dataChanged) { e.ver++; e.dirty = true; scheduleSave(); if (MC.onData) { try { MC.onData(e); } catch (x) {} } if (e.coll === "shops" && e.ready && MC.onShopsChanged) MC.onShopsChanged(); }
     markReady(e);
     if (dataChanged || metaChanged) notify(e, dataChanged, metaChanged);
   }
