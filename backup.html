@@ -264,7 +264,7 @@
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   let role = null, businessId = null, myShopId = null, who = "", scopeName = "";
-  let lastFile = null;
+  let lastFile = null, lastUri = null, lastName = "";
 
   const COLLECTIONS = ["shops", "drugs", "batches", "sales", "receipts", "expenses", "credit_accounts", "credit_transactions", "suppliers", "supplier_transactions", "cash_adjustments", "stock_adjustments", "stock_transactions"];
 
@@ -290,13 +290,31 @@
     box.textContent = "Last backup: " + new Date(t).toLocaleString() + (days === 0 ? " (today)" : " (" + days + " day" + (days === 1 ? "" : "s") + " ago)") + (days >= 7 ? " — time for a new one." : "");
   }
 
-  function download(name, text, type) {
+  // In the Android app a normal browser download does nothing, so the file is written with the app's file
+  // plugins and the phone's share window opens (save to Drive / Files, or send by WhatsApp). In Chrome it downloads as before.
+  const CAP = (() => { try { return window.top.Capacitor || window.Capacitor; } catch (e) { return window.Capacitor; } })();
+  const isNative = !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform());
+  async function nativeShare(name, uri) {
+    const SH = CAP.Plugins && CAP.Plugins.Share;
+    if (SH) { try { await SH.share({ title: name, url: uri, dialogTitle: "Save or send " + name }); } catch (e) {} }
+  }
+  async function download(name, text, type) {
+    if (isNative) {
+      const FS = CAP.Plugins && CAP.Plugins.Filesystem;
+      if (!FS || !(CAP.Plugins && CAP.Plugins.Share)) throw new Error("this app version cannot save files - install the newest MediStock Cloud app");
+      let saved = "";
+      try { await FS.writeFile({ path: "MediStock/" + name, data: text, directory: "DOCUMENTS", encoding: "utf8", recursive: true }); saved = "Documents/MediStock/" + name; } catch (e) {}
+      const r = await FS.writeFile({ path: name, data: text, directory: "CACHE", encoding: "utf8" });
+      lastUri = r.uri;
+      await nativeShare(name, r.uri);
+      return { saved };
+    }
     const blob = new Blob([text], { type });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = name;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-    return blob;
+    return { blob };
   }
 
   window.exportBackup = async function () {
@@ -319,16 +337,20 @@
     const day = new Date().toISOString().slice(0, 10);
     const text = JSON.stringify(out);
     const fileName = "MediStock-Backup-" + (scopeName || "business").replace(/[^A-Za-z0-9]+/g, "-") + "-" + day + ".json";
-    const blob = download(fileName, text, "application/json");
-    lastFile = new File([blob], fileName, { type: "application/json" });
+    let res;
+    try { res = await download(fileName, text, "application/json"); }
+    catch (e) { prog.innerHTML = lines.join("<br>") + '<br><span class="e">Could not save the backup: ' + esc(e.message || e.code) + "</span>"; btn.disabled = false; return; }
+    lastName = fileName;
+    if (res.blob) lastFile = new File([res.blob], fileName, { type: "application/json" });
     try { localStorage.setItem("mcLastBackup", String(Date.now())); } catch (e) {}
     refreshLast();
-    prog.innerHTML = lines.join("<br>") + "<br><b>Saved to your phone: " + esc(fileName) + " (" + Math.round(text.length / 1024).toLocaleString() + " KB)</b>" +
+    prog.innerHTML = lines.join("<br>") + "<br><b>" + (isNative ? (res.saved ? "Saved in " + esc(res.saved) + ". Use the share window to also keep a copy elsewhere." : "Backup ready (" + esc(fileName) + "): choose where to save it in the share window, or tap the button below.") : "Saved to your phone: " + esc(fileName)) + " (" + Math.round(text.length / 1024).toLocaleString() + " KB)</b>" +
       (cached ? "<br>Note: some records came from the phone's saved copy (no live connection), so anything not yet synced to the server is included too." : "");
-    if (navigator.canShare && lastFile && navigator.canShare({ files: [lastFile] })) $("shareBtn").classList.remove("hidden");
+    if (isNative ? lastUri : (navigator.canShare && lastFile && navigator.canShare({ files: [lastFile] }))) $("shareBtn").classList.remove("hidden");
     btn.disabled = false;
   };
   window.shareBackup = async function () {
+    if (isNative) { if (lastUri) await nativeShare(lastName, lastUri); return; }
     if (!lastFile) return;
     try { await navigator.share({ files: [lastFile], title: "MediStock backup" }); } catch (e) {}
   };
@@ -367,8 +389,9 @@
         const rows = acct.filter(a => (bal[a.id] || 0) > 0.5).sort((a, b) => (bal[b.id] || 0) - (bal[a.id] || 0)).map(a => [shops[a.shopId] || "", a.name, a.phone || "", Math.round(bal[a.id] || 0), a.creditLimit || ""]);
         text = csv(["Shop", "Customer", "Phone", "Owes", "Credit limit"], rows); name = "Customers-owing";
       }
-      download("MediStock-" + name + "-" + day + ".csv", text, "text/csv");
-      prog.textContent = "✓ Saved to your phone: MediStock-" + name + "-" + day + ".csv";
+      const fn = "MediStock-" + name + "-" + day + ".csv";
+      const res = await download(fn, text, "text/csv");
+      prog.textContent = isNative ? "✓ " + (res.saved ? "Saved in " + res.saved : "Ready: " + fn) + " (choose where to keep or send it in the share window)" : "✓ Saved to your phone: " + fn;
     } catch (e) { prog.innerHTML = '<span class="e">Could not export: ' + esc(e.code || e.message) + "</span>"; }
   };
 
