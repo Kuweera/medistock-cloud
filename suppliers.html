@@ -307,6 +307,7 @@
   });
 
   window.openAccount = function (name) {
+    mcPos.save("acct");
     currentAccountName = name;
     const s = allSuppliers.find(x => x.name === name) || { name };
     const b = supplierBalance(name);
@@ -406,7 +407,7 @@
     if (!s) { alert("Add a purchase or transaction for this supplier first, then deactivation becomes available."); return; }
     try {
       window.mcQueue(updateDoc(doc(db, "suppliers", s.id), { active: s.active === false ? true : false }));
-      document.getElementById("accountCard").classList.add("hidden");
+      document.getElementById("accountCard").classList.add("hidden"); mcPos.restore("acct");
     } catch (err) {
       alert("Failed: " + err.message);
     }
@@ -424,7 +425,7 @@
     if (!confirm(`Delete "${name}"? This supplier has no transaction history, so this can't be undone but won't affect any other records.`)) return;
     try {
       if (s) window.mcQueue(deleteDoc(doc(db, "suppliers", s.id)));
-      document.getElementById("accountCard").classList.add("hidden");
+      document.getElementById("accountCard").classList.add("hidden"); mcPos.restore("acct");
     } catch (err) {
       alert("Failed: " + err.message);
     }
@@ -437,7 +438,7 @@
     if (!userSnap.exists()) { window.mcGo("login.html"); return; }
     const profile = userSnap.data();
     if (profile.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
-    cashierName = profile.role === "owner" ? user.email : profile.name;
+    cashierName = profile.name || user.email;
     currentBusinessId = profile.businessId;
 
     if (profile.role === "owner") {

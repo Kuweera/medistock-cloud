@@ -152,11 +152,20 @@
 
 <div id="ownerContent" style="display:none;">
   <div class="card">
+    <h2>Your Name</h2>
+    <div class="desc">Shown as the cashier on receipts and records when you sell.</div>
+    <label>Your full name</label>
+    <input type="text" id="ownerName" placeholder="e.g. Arnest K.">
+    <button class="btn-primary" onclick="saveOwnerName()">Save My Name</button>
+    <div class="status-line" id="ownerNameStatus"></div>
+  </div>
+
+  <div class="card">
     <h2>Business Details</h2>
     <div class="desc">Applies across every shop in your business.</div>
     <label>Business name</label>
     <input type="text" id="bizName">
-    <label>Phone (optional)</label>
+    <label>Business phone (required)</label>
     <input type="tel" id="bizPhone">
     <label>Currency label</label>
     <input type="text" id="bizCurrency" placeholder="e.g. UGX">
@@ -242,6 +251,18 @@
 
   let currentBusinessId = null;
 
+  window.saveOwnerName = async function () {
+    const st = document.getElementById("ownerNameStatus"), nm = document.getElementById("ownerName").value.trim();
+    if (nm.length < 2) { st.textContent = "Enter your name."; st.style.color = "var(--danger)"; return; }
+    try {
+      st.textContent = "Saving…"; st.style.color = "var(--muted)";
+      const u = auth.currentUser;
+      await updateDoc(doc(db, "users", u.uid), { name: nm });
+      try { const k = "mcProfile:" + u.uid, p = JSON.parse(localStorage.getItem(k) || "null"); if (p) { p.name = nm; localStorage.setItem(k, JSON.stringify(p)); } if (window.top.MC.profile) window.top.MC.profile.name = nm; } catch (e) {}
+      st.textContent = "Saved. Your name now appears on receipts. Close and reopen the app once to use it everywhere."; st.style.color = "var(--accent2)";
+    } catch (err) { st.textContent = "Failed: " + err.message; st.style.color = "var(--danger)"; }
+  };
+
   window.saveBusiness = async function () {
     const statusEl = document.getElementById("bizStatus");
     const name = document.getElementById("bizName").value.trim();
@@ -250,12 +271,18 @@
       statusEl.style.color = "var(--danger)";
       return;
     }
+    const phoneVal = document.getElementById("bizPhone").value.trim();
+    if (phoneVal.replace(/[^0-9]/g, "").length < 7) {
+      statusEl.textContent = "A business phone number is required (it is printed on receipts).";
+      statusEl.style.color = "var(--danger)";
+      return;
+    }
     try {
       statusEl.textContent = "Saving…";
       statusEl.style.color = "var(--muted)";
       await updateDoc(doc(db, "businesses", currentBusinessId), {
         name,
-        phone: document.getElementById("bizPhone").value.trim() || null,
+        phone: phoneVal,
         currency: document.getElementById("bizCurrency").value.trim() || null,
         reorderDays: Number(document.getElementById("bizReorderDays").value) || null
       });
@@ -321,6 +348,7 @@
       return;
     }
     document.getElementById("ownerContent").style.display = "block";
+    document.getElementById("ownerName").value = (profile.name && profile.name !== user.email) ? profile.name : "";
 
     const bizSnap = await getDoc(doc(db, "businesses", currentBusinessId));
     if (bizSnap.exists()) {

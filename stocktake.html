@@ -164,8 +164,9 @@
 <div class="card hidden" id="stocktakeFormCard">
   <h2 id="stocktakeDrugTitle">—</h2>
   <div class="stock-line" id="stocktakeSystem">System stock: —</div>
-  <label>Physical count (base units)</label>
-  <input id="stocktakePhysical" type="number" min="0">
+  <label>What you counted on the shelf <span style="color:var(--muted); font-weight:400;">(fill in each box; leave 0 if none)</span></label>
+  <div id="physicalFields" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+  <div class="stock-line" id="physicalTotal" style="margin-top:6px;"></div>
   <label>Reason for the change <span style="color:var(--danger);">(required)</span></label>
   <div class="chips" id="reasonChips" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;">
     <button type="button" class="rchip" data-r="Counted again and found a different quantity">Recount</button>
@@ -287,6 +288,36 @@
     }
   };
 
+  // Shows a quantity the way it is packaged: "1 Packet, 5 Strips, 8 Tablets" (names come from the drug's own units)
+  const plural = (n, u) => n + " " + u + (n === 1 ? "" : "s");
+  function packText(d, base) {
+    base = Math.max(0, Math.round(Number(base) || 0));
+    const b = PackagingEngine.baseToBreakdown(base, d.baseUnitsPerStock, d.hasIntermediate ? d.basePerIntermediate : 0);
+    const parts = [];
+    if (b.stockUnits) parts.push(plural(b.stockUnits, d.stockUnit || "unit"));
+    if (d.hasIntermediate && b.intermediateUnits) parts.push(plural(b.intermediateUnits, d.intermediateUnit || "unit"));
+    if (b.looseBase) parts.push(plural(b.looseBase, d.baseUnit || "unit"));
+    return parts.join(", ") || "0 " + (d.baseUnit || "units");
+  }
+  // the boxes the user fills in: one per packaging level this drug has
+  function levels(d) {
+    const L = [{ key: "s", name: d.stockUnit || "Pack", per: Number(d.baseUnitsPerStock) || 1 }];
+    if (d.hasIntermediate && Number(d.basePerIntermediate) > 0) L.push({ key: "i", name: d.intermediateUnit || "Middle unit", per: Number(d.basePerIntermediate) });
+    L.push({ key: "b", name: d.baseUnit || "Unit", per: 1 });
+    return L;
+  }
+  function physicalBase() {
+    if (!selectedDrug) return 0;
+    let t = 0;
+    levels(selectedDrug).forEach(l => { const el = document.getElementById("phys_" + l.key); t += Math.max(0, Math.floor(Number(el && el.value) || 0)) * l.per; });
+    return t;
+  }
+  function updateTotal() {
+    if (!selectedDrug) return;
+    const p = physicalBase(), diff = p - selectedDrug.currentStockBase;
+    document.getElementById("physicalTotal").textContent = "You counted: " + packText(selectedDrug, p) + (diff === 0 ? " — same as the system." : diff > 0 ? " — " + packText(selectedDrug, diff) + " MORE than the system." : " — " + packText(selectedDrug, -diff) + " LESS than the system.");
+  }
+
   function renderResults() {
     const q = (document.getElementById("stocktakeSearch").value || "").toLowerCase();
     const box = document.getElementById("stocktakeResults");
@@ -295,26 +326,27 @@
     box.innerHTML = ds.slice(0, 15).map(d => `
       <div class="result-item" onclick="selectStocktakeDrug('${d.id}')">
         <div class="result-name">${d.name}</div>
-        <div class="result-sub">System: ${d.currentStockBase.toLocaleString()} ${d.baseUnit}(s)</div>
+        <div class="result-sub">System: ${packText(d, d.currentStockBase)}</div>
       </div>`).join("") || '<div class="empty">No medicines found.</div>';
   }
   document.getElementById("stocktakeSearch").addEventListener("input", renderResults);
   document.querySelectorAll("#reasonChips .rchip").forEach(b => b.addEventListener("click", () => { document.getElementById("stocktakeReason").value = b.dataset.r; }));
 
   window.selectStocktakeDrug = function (id) {
+    mcPos.save("st");
     selectedDrug = allDrugs.find(d => d.id === id);
     if (!selectedDrug) return;
     document.getElementById("stocktakeFormCard").classList.remove("hidden");
     document.getElementById("stocktakeFormCard").scrollIntoView({ behavior: "smooth", block: "start" });
     document.getElementById("stocktakeDrugTitle").textContent = selectedDrug.name;
-    const b = PackagingEngine.baseToBreakdown(selectedDrug.currentStockBase, selectedDrug.baseUnitsPerStock, selectedDrug.basePerIntermediate);
-    const parts = [];
-    if (b.stockUnits) parts.push(`${b.stockUnits} ${selectedDrug.stockUnit}(s)`);
-    if (selectedDrug.hasIntermediate && b.intermediateUnits) parts.push(`${b.intermediateUnits} ${selectedDrug.intermediateUnit}(s)`);
-    if (b.looseBase) parts.push(`${b.looseBase} ${selectedDrug.baseUnit}(s)`);
-    document.getElementById("stocktakeSystem").textContent =
-      `System stock: ${selectedDrug.currentStockBase.toLocaleString()} ${selectedDrug.baseUnit}(s) = ${parts.join(", ") || "0"}`;
-    document.getElementById("stocktakePhysical").value = selectedDrug.currentStockBase;
+    document.getElementById("stocktakeSystem").textContent = "System stock: " + packText(selectedDrug, selectedDrug.currentStockBase);
+    const cur = PackagingEngine.baseToBreakdown(selectedDrug.currentStockBase, selectedDrug.baseUnitsPerStock, selectedDrug.hasIntermediate ? selectedDrug.basePerIntermediate : 0);
+    const start = { s: cur.stockUnits, i: cur.intermediateUnits, b: cur.looseBase };
+    document.getElementById("physicalFields").innerHTML = levels(selectedDrug).map(l =>
+      `<div style="flex:1; min-width:90px;"><div style="font-size:12px; color:var(--muted); margin-bottom:3px;">${l.name}(s)</div><input id="phys_${l.key}" type="number" inputmode="numeric" min="0" value="${start[l.key] || 0}" style="width:100%; box-sizing:border-box;"></div>`).join("");
+    levels(selectedDrug).forEach(l => document.getElementById("phys_" + l.key).addEventListener("input", updateTotal));
+    updateTotal();
+    mcPos.focus("phys_" + levels(selectedDrug)[levels(selectedDrug).length - 1].key);
     document.getElementById("stocktakeReason").value = "";
     document.getElementById("saveStatus").textContent = "";
   };
@@ -322,13 +354,13 @@
   document.getElementById("saveStocktakeBtn").addEventListener("click", async () => {
     const statusEl = document.getElementById("saveStatus");
     if (!selectedDrug) return;
-    const physical = Math.max(0, Math.floor(Number(document.getElementById("stocktakePhysical").value) || 0));
+    const physical = physicalBase();
     const diff = physical - selectedDrug.currentStockBase;
     if (diff === 0) { statusEl.textContent = "No difference — nothing to adjust."; statusEl.style.color = "var(--muted)"; return; }
 
     const reason = document.getElementById("stocktakeReason").value.trim();
     if (reason.length < 3) { statusEl.textContent = "A reason is required — say why the stock is different."; statusEl.style.color = "var(--danger)"; document.getElementById("stocktakeReason").focus(); return; }
-    if (!confirm(`${selectedDrug.name}\nSystem: ${selectedDrug.currentStockBase} ${selectedDrug.baseUnit}(s)\nPhysical: ${physical} ${selectedDrug.baseUnit}(s)\nDifference: ${diff > 0 ? "+" : ""}${diff}\n\nRecord this adjustment?`)) return;
+    if (!confirm(`${selectedDrug.name}\nSystem: ${packText(selectedDrug, selectedDrug.currentStockBase)}\nYou counted: ${packText(selectedDrug, physical)}\nDifference: ${diff > 0 ? "+" : "−"}${packText(selectedDrug, Math.abs(diff))}\n\nRecord this adjustment?`)) return;
 
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
@@ -351,6 +383,7 @@
       statusEl.textContent = "Stock adjustment recorded.";
       statusEl.style.color = "var(--accent2)";
       renderResults();
+      setTimeout(() => { document.getElementById("stocktakeFormCard").classList.add("hidden"); selectedDrug = null; mcPos.restore("st"); }, 1100);   // back to where you were in the list
     } catch (err) {
       statusEl.textContent = "Failed: " + err.message;
       statusEl.style.color = "var(--danger)";
@@ -364,9 +397,11 @@
       .slice(0, 20);
     box.innerHTML = rows.map(x => {
       const dateStr = x.createdAt ? x.createdAt.toDate().toLocaleString() : "just now";
+      const dr = allDrugs.find(d => d.id === x.drugId);
+      const amt = dr ? packText(dr, Math.abs(x.differenceBase)) : Math.abs(x.differenceBase) + " " + (x.baseUnit || "unit") + "(s)";
       return `
         <div class="adj-item">
-          <b>${x.drugName}</b> · <span class="adj-diff ${x.differenceBase > 0 ? "pos" : "neg"}">${x.differenceBase > 0 ? "+" : ""}${x.differenceBase} ${x.baseUnit || "base"}(s)</span>
+          <b>${x.drugName}</b> · <span class="adj-diff ${x.differenceBase > 0 ? "pos" : "neg"}">${x.differenceBase > 0 ? "+" : "−"}${amt}</span>
           <br><span style="color:var(--muted);">${dateStr} · ${x.reason || ""}</span>
         </div>`;
     }).join("") || '<div class="empty">No stock adjustments yet.</div>';
@@ -380,7 +415,7 @@
     if (!userSnap.exists()) { window.mcGo("login.html"); return; }
     const profile = userSnap.data();
     if (profile.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
-    cashierName = profile.role === "owner" ? user.email : profile.name;
+    cashierName = profile.name || user.email;
     currentBusinessId = profile.businessId;
 
     if (profile.role === "owner") {
@@ -403,6 +438,7 @@
     onSnapshot(drugsQ, (snap) => {
       allDrugs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderResults();
+      renderHistory();
     });
 
     const adjQ = query(collection(db, "stock_adjustments"), where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId));

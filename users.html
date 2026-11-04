@@ -432,10 +432,7 @@
     $("credBox").innerHTML = '<div class="cred"><div><b>' + esc(title) + "</b></div>Shop Code: <b>" + esc(shopCode) + "</b><br>Operator ID: <b>" + esc(opId) + "</b><br>PIN: <b>" + esc(pin) +
       '</b><div class="hint2">Write these down or send them now — the PIN is not shown again.</div>' +
       '<div class="op-actions"><button class="btn-small btn-secondary" id="shareCred">Share / Copy</button><button class="btn-small btn-secondary" id="hideCred">Done</button></div></div>';
-    $("shareCred").onclick = async () => {
-      try { if (navigator.share) await navigator.share({ text }); else { await navigator.clipboard.writeText(text); alert("Copied."); } }
-      catch (e) { try { await navigator.clipboard.writeText(text); alert("Copied."); } catch (e2) { prompt("Copy this:", text); } }
-    };
+    $("shareCred").onclick = () => { window.top.mcShareText(text, "Login for " + name); };
     $("hideCred").onclick = () => { $("credBox").innerHTML = ""; };
     window.scrollTo({ top: 0, behavior: "smooth" });
   }

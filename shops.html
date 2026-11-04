@@ -278,6 +278,7 @@
 
   window.switchShop = function (id) {
     localStorage.setItem("mc_activeShopId", id);
+    try { window.top.MC.shopSwitched(); } catch (e) {}
     renderList();
   };
 

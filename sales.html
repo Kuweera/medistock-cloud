@@ -349,7 +349,7 @@
   let cashierName = "";
   let currentBusinessId = null;
   let currentShopId = null;
-  let currentShopName = "";
+  let currentShopName = "", currentShopLocation = "";
   let businessName = "";
   let businessPhone = "";
   let allDrugs = [];
@@ -475,6 +475,7 @@
     document.getElementById("searchBox").value = "";
     document.getElementById("results").innerHTML = "";
     document.getElementById("configureCard").classList.remove("hidden");
+    mcPos.focus("qty");   // the form is on screen and ready to type
     document.getElementById("configDrugName").textContent = selectedDrug.name;
     document.getElementById("configDrugStock").textContent = "Checking batches…";
     window.scrollTo({ top: document.getElementById("configureCard").offsetTop - 10, behavior: "smooth" });
@@ -568,6 +569,7 @@
     selectedDrug = null;
     editingCartIndex = null;
     document.getElementById("configureCard").classList.add("hidden");
+    mcPos.restore("cart");   // after editing a cart line, go back to where you were in the cart
   };
 
   window.addToCart = function () {
@@ -600,6 +602,7 @@
   };
 
   window.editCartItem = function (idx) {
+    mcPos.save("cart");   // come back to this place in the cart afterwards
     selectDrug(cart[idx].drugId, idx);
   };
 
@@ -720,6 +723,7 @@
     const lines = [];
     lines.push(businessName || "MediStock Cloud");
     if (currentShopName) lines.push(currentShopName);
+    if (currentShopLocation) lines.push(currentShopLocation);
     if (businessPhone) lines.push(businessPhone);
     lines.push("");
     lines.push(`Receipt: S-${receiptNo}`);
@@ -933,30 +937,15 @@
   window.shareReceipt = async function () {
     if (!lastReceiptData) return;
     const text = document.getElementById("receiptText").textContent;
-    if (navigator.share) {
-      try { await navigator.share({ title: `Receipt S-${lastReceiptData.receiptNo}`, text }); }
-      catch (e) { /* user cancelled share sheet — not an error */ }
-    } else {
-      try {
-        await navigator.clipboard.writeText(text);
-        alert("Sharing isn't available on this browser — the receipt text was copied instead, so you can paste it into WhatsApp or any app.");
-      } catch (e) {
-        alert("Sharing isn't available on this browser.");
-      }
-    }
+    window.top.mcShareText(text, `Receipt S-${lastReceiptData.receiptNo}`);
   };
 
-  window.saveReceiptToPhone = function () {
+  window.saveReceiptToPhone = async function () {
     if (!lastReceiptData) return;
     const text = document.getElementById("receiptText").textContent;
-    const blob = new Blob([text], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `Receipt-S-${lastReceiptData.receiptNo}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    alert(await window.top.mcSaveText(`Receipt-S-${lastReceiptData.receiptNo}.txt`, text, "text/plain"));
   };
+
 
   async function loadFrequentlySold() {
     const snap = await getDocsFast(query(
@@ -1046,7 +1035,7 @@
     currentRole = profile.role;
     currentOperatorId = profile.operatorId || "";
     currentBusinessId = profile.businessId;
-    cashierName = profile.role === "owner" ? user.email : profile.name;
+    cashierName = profile.name || user.email;
 
     const bizSnap = await getDoc(doc(db, "businesses", currentBusinessId));
     if (bizSnap.exists()) { businessName = bizSnap.data().name || ""; businessPhone = bizSnap.data().phone || ""; }
@@ -1058,6 +1047,7 @@
       const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
       currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
       currentShopName = resolvedShopDoc ? resolvedShopDoc.data().name : "";
+      currentShopLocation = resolvedShopDoc ? (resolvedShopDoc.data().location || "") : "";
       document.getElementById("shopIndicator").textContent = resolvedShopDoc
         ? `Working in: ${currentShopName}`
         : "No shop set up yet — go to Shops to add one.";
@@ -1065,6 +1055,7 @@
       currentShopId = profile.shopId;
       const shopSnap = await getDoc(doc(db, "shops", currentShopId));
       currentShopName = shopSnap.exists() ? shopSnap.data().name : "";
+      currentShopLocation = shopSnap.exists() ? (shopSnap.data().location || "") : "";
       document.getElementById("shopIndicator").textContent = shopSnap.exists()
         ? `Shop: ${currentShopName}` : "(unknown shop)";
     }
