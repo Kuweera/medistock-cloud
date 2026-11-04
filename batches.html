@@ -355,7 +355,7 @@
     const profile = userSnap.data();
     if (profile.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
     currentBusinessId = profile.businessId;
-    cashierName = profile.role === "owner" ? user.email : profile.name;
+    cashierName = profile.name || user.email;
 
     if (profile.role === "owner") {
       const shopsSnap = await getDocsFast(query(collection(db, "shops"), where("businessId", "==", currentBusinessId)));

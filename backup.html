@@ -440,7 +440,7 @@
     if (!snap.exists()) { window.mcGo("login.html"); return; }
     const profile = snap.data();
     if (profile.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
-    role = profile.role; businessId = profile.businessId; myShopId = profile.shopId; who = role === "owner" ? user.email : profile.name;
+    role = profile.role; businessId = profile.businessId; myShopId = profile.shopId; who = profile.name || user.email;
     if (role === "owner") {
       $("shopIndicator").textContent = "Backs up every shop in your business";
       try { const b = await getDoc(doc(db, "businesses", businessId)); scopeName = b.exists() ? (b.data().name || "business") : "business"; } catch (e) { scopeName = "business"; }
