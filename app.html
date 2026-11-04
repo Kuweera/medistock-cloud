@@ -46,6 +46,7 @@
 </div>
 
 <script src="mc-notify.js"></script>
+<script src="mc-share.js"></script>
 <script type="module">
   import { startCore } from "./mc-core.js";
 
@@ -145,6 +146,8 @@
       const h = page + q;
       if (location.hash.replace(/^#/, "") !== h) location.hash = h; else show(page, q);
     };
+    // the owner picked another shop: every screen kept alive in the background must reload for the new shop
+    MC.shopSwitched = () => { frames.forEach(r => { if (r !== active) r.stale = true; }); };
     MC.onShopsChanged = () => { frames.forEach(r => { if (r !== active) r.stale = true; }); };
     if (MC.needLogin) { location.replace("login.html" + (MC.disabled ? "?disabled=1" : "")); return; }
 
