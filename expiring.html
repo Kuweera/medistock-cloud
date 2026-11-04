@@ -412,10 +412,7 @@
       const rows = lastShown.filter(i => group(i) === key).sort((a, b) => a.days - b.days);
       if (rows.length) text += "\n" + title.toUpperCase() + "\n" + rows.map(line).join("\n") + "\n";
     });
-    try {
-      if (navigator.share) await navigator.share({ text });
-      else { await navigator.clipboard.writeText(text); alert("List copied."); }
-    } catch (e) { if (e && e.name !== "AbortError") { try { await navigator.clipboard.writeText(text); alert("List copied."); } catch (e2) { prompt("Copy this list:", text); } } }
+    window.top.mcShareText(text, "Expiring drugs" + (shopName ? " — " + shopName : ""));
   };
 
   // ----- controls -----
@@ -442,7 +439,7 @@
     const profile = snap.data();
     if (profile.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
     role = profile.role; businessId = profile.businessId;
-    cashierName = role === "owner" ? user.email : profile.name;
+    cashierName = profile.name || user.email;
 
     let filters;
     if (role === "owner") {

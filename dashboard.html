@@ -112,7 +112,8 @@
   .qa{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 4px; text-align:center; text-decoration:none; color:var(--text); font-size:12.5px; font-weight:600; display:block;}
   .qa .ic{font-size:22px; display:block; margin-bottom:4px;}
   .qa:active, .tile:active, .qa-sell:active{opacity:.7;}
-  .cash-card{display:block; text-decoration:none; color:var(--text); border:2px solid var(--accent); border-radius:14px; padding:14px; text-align:center; background:rgba(42,191,160,.10); margin-top:12px;}
+  .cash-card{position:relative; display:block; text-decoration:none; color:var(--text); border:2px solid var(--accent); border-radius:14px; padding:14px; text-align:center; background:rgba(42,191,160,.10); margin-top:12px;}
+  .eye-btn{position:absolute; top:6px; right:8px; background:transparent; border:0; color:var(--muted); padding:8px; line-height:0; cursor:pointer; border-radius:50%;}
   .cash-card .l{font-size:12px; font-weight:700; letter-spacing:.5px; color:var(--accent);}
   .cash-card .n{font-size:30px; font-weight:800; margin:4px 0;}
   .cash-card .s{font-size:12px; color:var(--muted);}
@@ -198,6 +199,7 @@
 
 <a class="cash-card" href="cash-position.html">
   <div class="l">💵 REAL CASH AVAILABLE</div>
+  <button type="button" class="eye-btn" id="cashEye" aria-label="Hide cash amount"></button>
   <div class="n" id="realCash">—</div>
   <div class="s">Actual business cash currently available</div>
 </a>
@@ -276,6 +278,25 @@
   })();
 </script>
 <script type="module">
+
+  // ---- hide / show the cash figure (same switch on the Dashboard and Cash Position, remembered on this phone)
+  const EYE_ON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>', EYE_OFF = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/></svg>';
+  const cashHidden = () => { try { return localStorage.getItem("mcHideCash") === "1"; } catch (e) { return false; } };
+  let cashShown = "—";
+  function paintCash() {
+    const h = cashHidden(), el = document.getElementById("realCash"), eye = document.getElementById("cashEye");
+    if (el) el.textContent = h ? "••••••" : cashShown;
+    if (eye) { eye.innerHTML = h ? EYE_OFF : EYE_ON; eye.setAttribute("aria-label", h ? "Show cash amount" : "Hide cash amount"); }
+    const bd = document.getElementById("breakdown"); if (bd) bd.style.filter = h ? "blur(7px)" : "";
+  }
+  document.addEventListener("click", function (ev) {
+    const b = ev.target.closest && ev.target.closest("#cashEye"); if (!b) return;
+    ev.preventDefault(); ev.stopPropagation();
+    try { localStorage.setItem("mcHideCash", cashHidden() ? "0" : "1"); } catch (e) {}
+    paintCash();
+  }, true);
+  window.addEventListener("mc-show", paintCash);
+  paintCash();
   const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, collection, onSnapshot, enableIndexedDbPersistence, query, where, getDocFromCache } = window.top.MC.api(window);
 
   const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
@@ -399,7 +420,7 @@
     $("vExpenses").textContent = fmt(act.exp);
     $("vCashMove").textContent = fmt(act.cashMove);
     $("vCount").textContent = receipts.filter(r => r.type === "SALE" && inShop(r)).filter(r => within(tsDate(r.createdAt))).length.toLocaleString();
-    $("realCash").textContent = "UGX " + fmt(realCash(shopFilter));
+    cashShown = "UGX " + fmt(realCash(shopFilter)); paintCash();
 
     // ---------- at a glance ----------
     const D = drugs.filter(inShop).filter(d => d.active !== false);
@@ -451,7 +472,7 @@
     }
   }
 
-  window.focusShop = function (id) { shopFilter = id; $("shopPick").value = id; try { localStorage.setItem("mc_activeShopId", id); localStorage.setItem("mcDashShop", id); } catch (e) {} render(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  window.focusShop = function (id) { shopFilter = id; $("shopPick").value = id; try { localStorage.setItem("mc_activeShopId", id); localStorage.setItem("mcDashShop", id); window.top.MC.shopSwitched(); } catch (e) {} render(); window.scrollTo({ top: 0, behavior: "smooth" }); };
 
   // ---------- backup reminder ----------
   (function () {

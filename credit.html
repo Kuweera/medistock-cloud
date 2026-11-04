@@ -376,6 +376,7 @@
   };
 
   window.openAccount = function (id) {
+    mcPos.save("acct");
     currentAccountId = id;
     const c = allCustomers.find(x => x.id === id);
     if (!c) return;
@@ -461,7 +462,7 @@
     if (c.active !== false && !confirm(`Deactivate ${c.name}? They'll be hidden from the active customer list but their history is kept.`)) return;
     try {
       window.mcQueue(updateDoc(doc(db, "credit_accounts", c.id), { active: c.active === false ? true : false }));
-      document.getElementById("accountCard").classList.add("hidden");
+      document.getElementById("accountCard").classList.add("hidden"); mcPos.restore("acct");
     } catch (err) {
       alert("Failed: " + err.message);
     }
@@ -474,7 +475,7 @@
     if (!userSnap.exists()) { window.mcGo("login.html"); return; }
     const profile = userSnap.data();
     if (profile.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
-    cashierName = profile.role === "owner" ? user.email : profile.name;
+    cashierName = profile.name || user.email;
     currentBusinessId = profile.businessId;
 
     if (profile.role === "owner") {
