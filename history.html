@@ -356,7 +356,7 @@
   const fmt = n => Math.round(Number(n) || 0).toLocaleString();
 
   let role = null, currentUser = null, businessId = null, myShopId = null, cashierName = "", myOperatorId = "";
-  let businessName = "", businessPhone = "";
+  let businessName = "", businessPhone = "", shopLoc = {};
   let shopsById = {}, receipts = [], expenses = [], creditTx = [], creditAccounts = [], cashAdj = [], stockAdj = [], stockTx = [], drugs = [];
   let shopFilter = "all", shown = 40;
 
@@ -406,6 +406,7 @@
     const L = [];
     L.push(businessName || "MediStock Cloud");
     if (shopsById[r.shopId]) L.push(shopsById[r.shopId]);
+    if (shopLoc[r.shopId]) L.push(shopLoc[r.shopId]);
     if (businessPhone) L.push(businessPhone);
     L.push("");
     L.push((r.type === "SALE" ? "Receipt: " : "Purchase receipt: ") + (r.displayNumber || ""));
@@ -422,22 +423,13 @@
     if (r.type === "SALE") L.push("Payment: " + (r.paymentStatus === "CREDIT" ? "ON CREDIT" + (r.customerName ? " - " + r.customerName : "") : "PAID (CASH)"));
     return L.join("\n");
   }
-  window.shareReceipt = async function (id) {
+  window.shareReceipt = function (id) {
     const r = receipts.find(x => x.id === id); if (!r) return;
-    const text = receiptText(r);
-    try {
-      if (navigator.share) await navigator.share({ title: "Receipt " + r.displayNumber, text });
-      else { await navigator.clipboard.writeText(text); alert("Receipt text copied — paste it into WhatsApp or any app."); }
-    } catch (e) { if (e && e.name !== "AbortError") { try { await navigator.clipboard.writeText(text); alert("Receipt text copied."); } catch (e2) { prompt("Copy this receipt:", text); } } }
+    window.top.mcShareText(receiptText(r), "Receipt " + r.displayNumber);
   };
-  window.saveReceipt = function (id) {
+  window.saveReceipt = async function (id) {
     const r = receipts.find(x => x.id === id); if (!r) return;
-    const blob = new Blob([receiptText(r)], { type: "text/plain" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "Receipt-" + (r.displayNumber || id) + "-" + tsDate(r.createdAt).toISOString().slice(0, 10) + ".txt";
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    alert(await window.top.mcSaveText("Receipt-" + (r.displayNumber || id) + "-" + tsDate(r.createdAt).toISOString().slice(0, 10) + ".txt", receiptText(r), "text/plain"));
   };
 
   // ---------- History list ----------
@@ -920,7 +912,7 @@
     const profile = snap.data();
     if (profile.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
     currentUser = user; role = profile.role; businessId = profile.businessId; myShopId = profile.shopId; myOperatorId = profile.operatorId || "";
-    cashierName = role === "owner" ? user.email : profile.name;
+    cashierName = profile.name || user.email;
     getDoc(doc(db, "businesses", businessId)).then(b => { if (b.exists()) { businessName = b.data().name || ""; businessPhone = b.data().phone || ""; } }).catch(() => {});
 
     let filters;
@@ -928,7 +920,7 @@
       $("shopIndicator").textContent = "Every record across your business";
       filters = [where("businessId", "==", businessId)];
       onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
-        shopsById = {}; s.docs.forEach(d => { shopsById[d.id] = d.data().name; });
+        shopsById = {}; shopLoc = {}; s.docs.forEach(d => { shopsById[d.id] = d.data().name; shopLoc[d.id] = d.data().location || ""; });
         const ids = Object.keys(shopsById);
         $("shopPick").innerHTML = '<option value="all">All shops</option>' + ids.map(id => '<option value="' + esc(id) + '">' + esc(shopsById[id]) + "</option>").join("");
         if (!ids.includes(shopFilter)) shopFilter = "all";
@@ -940,7 +932,7 @@
       shopFilter = myShopId;
       $("shopIndicator").textContent = "Records for your shop";
       filters = [where("businessId", "==", businessId), where("shopId", "==", myShopId)];
-      getDoc(doc(db, "shops", myShopId)).then(s => { if (s.exists()) { shopsById[myShopId] = s.data().name; render(); } }).catch(() => {});
+      getDoc(doc(db, "shops", myShopId)).then(s => { if (s.exists()) { shopsById[myShopId] = s.data().name; shopLoc[myShopId] = s.data().location || ""; render(); } }).catch(() => {});
     }
     const watch = (name, setter) => onSnapshot(query(collection(db, name), ...filters), s => { setter(s.docs.map(d => ({ id: d.id, ...d.data() }))); render(); });
     onSnapshot(query(collection(db, "receipts"), ...filters), { includeMetadataChanges: true }, s => {

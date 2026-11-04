@@ -775,6 +775,7 @@
   }
 
   window.openForm = function () {
+    mcPos.save("inv");
     editingId = null;
     document.getElementById("formTitle").textContent = "Add Drug";
     clearForm();
@@ -788,6 +789,7 @@
     editingId = null;
     document.getElementById("formCard").classList.add("hidden");
     showListView();
+    mcPos.restore("inv");
   };
 
   function clearForm() {
@@ -808,6 +810,7 @@
   window.editDrug = function (id) {
     const d = allDrugs.find(x => x.id === id);
     if (!d) return;
+    mcPos.save("inv");   // remember where you were in the list
     editingId = id;
     document.getElementById("formTitle").textContent = "Edit Drug";
 

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>if(window.top===window){location.replace("app.html#"+location.pathname.split("/").pop()+location.search);}</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2abfa0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MediStock">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<title>MediStock Cloud — User Guide</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  .hidden{display:none !important;}
+  .meta{font-size:12.5px; color:var(--muted); line-height:1.55; margin:6px 0;}
+  .big-btn{width:100%; padding:14px; margin-top:10px; border-radius:11px; border:none; background:var(--accent); color:#fff; font-size:15px; font-weight:700; cursor:pointer;}
+  .big-btn.sec{background:transparent; color:var(--accent); border:1px solid var(--accent); font-weight:600; font-size:14px; padding:12px;}
+  .big-btn:disabled{opacity:.55;}
+  .warnbox{border:1px solid var(--danger); background:rgba(229,83,75,.10); border-radius:10px; padding:10px 12px; font-size:13px; line-height:1.5;}
+  .okbox{border:1px solid var(--accent2); background:rgba(42,191,160,.10); border-radius:10px; padding:10px 12px; font-size:13px; line-height:1.5;}
+  .prog{font-size:12.5px; color:var(--muted); line-height:1.7; margin-top:8px;}
+  .prog .e{color:var(--danger);}
+  details{border:1px solid var(--border); border-radius:12px; background:var(--card); margin-bottom:10px; overflow:hidden;}
+  summary{padding:14px 16px; font-size:15px; font-weight:700; color:var(--accent); cursor:pointer; list-style:none;}
+  summary::-webkit-details-marker{display:none;}
+  summary::after{content:"＋"; float:right; color:var(--muted);}
+  details[open] summary::after{content:"－";}
+  details .in{padding:0 16px 14px; font-size:13.5px; line-height:1.6;}
+  details .in p{margin:6px 0;} details .in ul, details .in ol{margin:6px 0; padding-left:20px;} details .in li{margin:4px 0;}
+  .tip{border-left:3px solid var(--accent); background:rgba(42,191,160,.10); padding:8px 10px; border-radius:6px; margin:8px 0; font-size:13px;}
+  .contact{display:flex; align-items:center; gap:12px; padding:14px; border:1px solid var(--border); border-radius:12px; background:var(--card); margin-bottom:10px; text-decoration:none; color:var(--text);}
+  .contact .ic{font-size:24px;} .contact .t{font-weight:700;} .contact .s{font-size:12.5px; color:var(--accent);}
+  .contact button{margin-left:auto; background:transparent; border:1px solid var(--accent); color:var(--accent); padding:8px 12px;}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Multi-Shop Edition · User Guide</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="mcGo('dashboard.html')">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html" >Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+
+<div class="card"><h2>Welcome to MediStock Cloud</h2><p class="meta">MediStock Cloud runs every shop of your business from one app. It works <b>with or without internet</b>: sell, buy and count stock offline, and everything uploads by itself when the phone is online. Tap a heading below to open it.</p></div>
+<details open><summary>1. Getting started</summary><div class="in"><p><b>Owner:</b> open the app, choose <b>Owner → Create business account</b>. Enter your name, business phone, business name, first shop name, shop location and a short shop code (for example MAIN), then your email and password.</p>
+<p>Your name is printed on receipts as the cashier. The shop location and phone are printed on receipts too.</p>
+<p><b>Forgot your password?</b> On the Owner log-in screen tap <b>Forgot password?</b> under the password box (type your email first). A reset link is emailed to you. Check Spam too.</p>
+<p><b>Operator (shop worker):</b> choose <b>Operator</b> and enter the Shop Code, your Operator ID and your 6-digit PIN. Tap <b>Show</b> to see the PIN you typed.</p>
+<div class="tip">The first time a new phone opens the app it needs internet to download your shop data. After that it opens fast, even offline.</div></div></details>
+<details><summary>2. The Dashboard</summary><div class="in"><p>The Dashboard shows sales, profit, expenses, number of sales, stock alerts and your cash. Pick a period (today, week, month…) and, as owner, pick one shop or <b>All shops</b>.</p>
+<p><b>Real cash available</b> is the cash you should have in the till. Tap the <b>eye</b> icon on the card to hide the amount (an eye with a line through it) and tap again to show it. It is the same figure as on the Cash Position screen and the choice is remembered on the phone.</p></div></details>
+<details><summary>3. Selling</summary><div class="in"><ol><li>Open <b>Sell</b> and type part of the drug name in the search box. Tap the drug.</li>
+<li>The sale form opens with the quantity box ready. Choose the unit you are selling (packet, strip, tablet… the names come from that drug), enter the quantity and check the price.</li>
+<li>Tap <b>Add to Cart</b>. Add more drugs the same way. Tap <b>Edit</b> on a cart line to change it; you come back to the same place in the cart.</li>
+<li>For a <b>credit sale</b> switch on credit and enter the customer name, phone and the date they promise to pay.</li>
+<li>Tap <b>Complete sale</b>. A receipt appears with <b>Share Receipt</b> and <b>Save to phone</b>.</li></ol>
+<p>The app takes stock from the batch that expires first. An unfinished sale is kept if you leave the screen, so you can come back to it.</p></div></details>
+<details><summary>4. Receipts: share, copy and save</summary><div class="in"><p>Every <b>Share</b> button (receipts, reports, lists, operator logins) opens a small box with two choices:</p>
+<ul><li><b>Share to an app</b> — opens your phone's list of apps (WhatsApp, Telegram, email…).</li><li><b>Copy text</b> — copies it so you can paste anywhere.</li></ul>
+<p><b>Save to phone</b> puts a text file in your phone's <b>Downloads → MediStock</b> folder. Receipts show the business name, shop name and location, phone number, date, cashier, items and total.</p></div></details>
+<details><summary>5. Purchases (buying stock)</summary><div class="in"><p>Open <b>Purchases</b>, search the drug, enter how many packets / strips / tablets arrived, the cost, supplier, batch number and expiry date, then add it to the cart and save. Stock goes up and the batch is recorded. You can buy on credit from a supplier by choosing credit and giving a supplier name and due date.</p>
+<p>Tap <b>Edit</b> on a cart line to change it; you return to your place in the cart.</p></div></details>
+<details><summary>6. Inventory (your drug list)</summary><div class="in"><p>Add a drug with its name, class, form and how it is packaged: the biggest unit (for example Packet), an optional middle unit (Strip) and the smallest unit (Tablet), with how many of each. Set prices, the opening stock, the <b>reorder level</b> (when you want a low-stock warning) and the target stock.</p>
+<p>Tap <b>Low stock only</b> to see what is running out. After you edit a drug and save, the list returns to the place where you were.</p></div></details>
+<details><summary>7. Batches and expiring drugs</summary><div class="in"><p><b>Batches</b> lists every delivery with quantity and expiry date; filter <b>Expired</b> or <b>Expiring ≤30d</b>. <b>Expiring Drugs</b> groups stock by how soon it expires (30, 60, 90, 180 days) so you can sell or return it in time. Both can be shared as a list.</p></div></details>
+<details><summary>8. Stock Taking (counting the shelf)</summary><div class="in"><p>Search the drug and tap it. The boxes you fill in use the drug's own units, for example <b>Packets / Strips / Tablets</b>. Type what you counted in each box; the app shows what that means compared with the system. Give a reason (tap a quick reason such as Damaged or Missing), then <b>Save Stock Adjustment</b>. Every difference is recorded permanently.</p></div></details>
+<details><summary>9. What to Buy</summary><div class="in"><p>Lists the drugs at or under their reorder level and how much to buy to reach the target stock, so you can make a shopping list.</p></div></details>
+<details><summary>10. Expenses</summary><div class="in"><p>Record shop costs (rent, transport, salaries…) with category, amount and note. They reduce profit and cash.</p></div></details>
+<details><summary>11. Credit / Loans (customers who owe you)</summary><div class="in"><p>Every credit sale creates or updates a customer account. Open the customer to see what they owe, record a payment, or see the history. Customers past their promised date show as <b>Overdue</b>.</p></div></details>
+<details><summary>12. Suppliers</summary><div class="in"><p>Keeps what you owe each supplier from credit purchases and the payments you make.</p></div></details>
+<details><summary>13. Cash Position</summary><div class="in"><p>Shows the real cash available and exactly how it is made up: starting cash, cash sales, credit payments collected, purchases, supplier payments, expenses and adjustments. Use <b>Record a Cash Adjustment</b> for owner deposits or withdrawals, other income, or cash found missing or extra. Tap the eye to hide the figure.</p></div></details>
+<details><summary>14. History, Charts and Reports</summary><div class="in"><p><b>Business History</b> lists every sale, purchase and cash event; search or filter by type and period, and share or save any receipt. <b>Charts</b> and <b>Profit &amp; Reports</b> show how the business is doing; the summary can be shared or saved.</p></div></details>
+<details><summary>15. Shops (owner)</summary><div class="in"><p>Add more shops under <b>Shops</b>, each with a name, location and code. To work in another shop tap <b>Switch to this</b>. Sell, Inventory, Purchases and the other screens then show that shop straight away. The shop you are working in is written at the top of each screen.</p></div></details>
+<details><summary>16. Users and operators (owner)</summary><div class="in"><p>Under <b>Users</b> create an operator for a shop: you give a name and a 6-digit PIN. The app shows the Shop Code, Operator ID and PIN once, so share or write them down. You can deactivate an operator (they are logged out and cannot log in; their past sales stay). A PIN cannot be changed for someone else; give them a <b>new login</b> instead.</p>
+<p>Operators only see their own shop. Owners see all shops.</p></div></details>
+<details><summary>17. Working offline and syncing</summary><div class="in"><p>Everything you do offline is saved on the phone and uploaded automatically when internet returns. The dashboard shows <b>Changes waiting to sync</b> until they have gone up. Open the app online from time to time, especially before switching phones.</p>
+<div class="tip">Log out only after the "waiting to sync" note has gone, otherwise unsent changes can be lost.</div></div></details>
+<details><summary>18. Alerts (notifications)</summary><div class="in"><p>The app warns you about: <b>low stock</b> (immediately when a sale takes a drug to its reorder level, and a reminder at 8:00 in the morning), <b>expiring drugs</b>, <b>credit due</b>, and <b>changes that have not synced</b> for 24 hours. Tap an alert to open the right screen.</p>
+<ul><li>Allow notifications when asked, and keep banners switched on for MediStock in the phone settings.</li>
+<li>On Tecno, Infinix and Itel phones also allow <b>auto-start</b> and set battery to <b>No restrictions</b> for MediStock, or alerts may stop when the app is closed.</li>
+<li>Test it any time in <b>Backup &amp; Export → Alerts → Send a test alert</b>.</li></ul></div></details>
+<details><summary>19. Backup and Export</summary><div class="in"><p><b>Export full backup</b> saves all your records as a file in <b>Downloads → MediStock</b>. The <b>Excel (CSV)</b> buttons save sales, stock, expenses and customers who owe you as spreadsheets. Make a backup every few days and keep a copy somewhere else (WhatsApp to yourself, Google Drive).</p></div></details>
+<details><summary>20. Updates and help</summary><div class="in"><p>Most updates arrive by themselves: open the app online twice. A new app file (APK) is only needed for big changes, and it installs over the old one. For help see <a href="about.html">Developer &amp; Support</a>.</p></div></details>
+
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+</body>
+</html>

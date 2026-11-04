@@ -93,10 +93,14 @@
   <div id="signupFields">
     <label>Business name</label>
     <input type="text" id="businessName" placeholder="e.g. Kuweera Drug Shop">
-    <label>Business phone (optional)</label>
+    <label>Your name (owner)</label>
+    <input type="text" id="ownerName" placeholder="e.g. Arnest K.">
+    <label>Business phone (required)</label>
     <input type="tel" id="businessPhone" placeholder="e.g. 07xx xxx xxx">
     <label>First shop name</label>
     <input type="text" id="shopName" placeholder="e.g. Main Branch">
+    <label>First shop location (printed on receipts)</label>
+    <input type="text" id="shopLocation" placeholder="e.g. Kampala Road, Wandegeya">
     <label>First shop code</label>
     <input type="text" id="shopCode" placeholder="e.g. MAIN" style="text-transform:uppercase;">
   </div>
@@ -107,20 +111,21 @@
   <label>Password</label>
   <div class="pwrow">
     <input type="password" id="password" placeholder="At least 6 characters">
-    <button type="button" class="showbtn" onclick="toggleShow('password')">Show</button>
+    <button type="button" class="showbtn" onclick="toggleShow('password', this)">Show</button>
   </div>
+
+  <button class="btn-link hidden" id="forgotLink" onclick="doForgotPassword()" style="display:block; margin:8px 0 0 auto;">Forgot password?</button>
 
   <div id="confirmField">
     <label>Confirm password</label>
     <div class="pwrow">
       <input type="password" id="confirmPassword" placeholder="Re-enter password">
-      <button type="button" class="showbtn" onclick="toggleShow('confirmPassword')">Show</button>
+      <button type="button" class="showbtn" onclick="toggleShow('confirmPassword', this)">Show</button>
     </div>
   </div>
 
   <button class="btn-primary" id="submitBtn" onclick="doSignup()">Create business account</button>
   <button class="btn-secondary" id="toggleBtn" onclick="toggleMode()">I already have an account — log in</button>
-  <button class="btn-link hidden" id="forgotBtn" onclick="doForgotPassword()">Forgot password?</button>
 
   <div id="status"></div>
 </div>
@@ -133,7 +138,10 @@
   <label>Operator ID</label>
   <input type="text" id="opLoginId" placeholder="e.g. 4821">
   <label>PIN</label>
-  <input type="password" id="opLoginPin" placeholder="6-digit PIN" maxlength="6">
+  <div class="pwrow">
+    <input type="password" id="opLoginPin" placeholder="6-digit PIN" maxlength="6" inputmode="numeric">
+    <button type="button" class="showbtn" onclick="toggleShow('opLoginPin', this)">Show</button>
+  </div>
   <button class="btn-primary" onclick="doOperatorLogin()">Log in</button>
   <div id="opLoginStatus" style="font-size:13px; margin-top:10px;"></div>
 </div>
@@ -164,7 +172,10 @@
   <label>Operator name</label>
   <input type="text" id="opName" placeholder="e.g. Grace">
   <label>6-digit PIN</label>
-  <input type="password" id="opPin" placeholder="e.g. 483920" maxlength="6">
+  <div class="pwrow">
+    <input type="password" id="opPin" placeholder="e.g. 483920" maxlength="6" inputmode="numeric">
+    <button type="button" class="showbtn" onclick="toggleShow('opPin', this)">Show</button>
+  </div>
   <button class="btn-primary" onclick="doAddOperator()">Create operator</button>
   <div id="opStatus"></div>
 </div>
@@ -293,9 +304,10 @@
   function buildInternalEmail(shopCode, operatorId) {
     return `op${operatorId}@${sanitizeCode(shopCode).toLowerCase()}.medistock.internal`;
   }
-  function toggleShow(id) {
+  function toggleShow(id, btn) {
     const el = document.getElementById(id);
     el.type = el.type === "password" ? "text" : "password";
+    if (btn) btn.textContent = el.type === "password" ? "Show" : "Hide";
   }
   window.toggleShow = toggleShow;
 
@@ -320,21 +332,28 @@
     document.getElementById("toggleBtn").textContent = isLogin
       ? "New business — sign up"
       : "I already have an account — log in";
-    document.getElementById("forgotBtn").classList.toggle("hidden", !isLogin);
+    document.getElementById("forgotLink").classList.toggle("hidden", !isLogin);
     setStatus("");
   };
+
+  // a phone that has been used before opens on "Log in", not "Sign up"
+  try { if (localStorage.getItem("mcHasAccount") || Object.keys(localStorage).some(k => k.indexOf("mcProfile:") === 0)) window.toggleMode(); } catch (e) {}
 
   // ---- Owner signup / login ----
 
   window.doSignup = async function () {
     const businessName = val("businessName");
     const businessPhone = val("businessPhone");
+    const ownerName = val("ownerName");
+    const shopLocation = val("shopLocation");
     const shopName = val("shopName");
     const shopCode = sanitizeCode(val("shopCode"));
     const email = val("email");
     const password = document.getElementById("password").value;
     const confirmPassword = document.getElementById("confirmPassword").value;
 
+    if (!ownerName || ownerName.length < 2) { setStatus("Enter your name (it is printed on receipts as the cashier).", true); return; }
+    if (businessPhone.replace(/[^0-9]/g, "").length < 7) { setStatus("A business phone number is required.", true); return; }
     if (!businessName || !shopName || !shopCode || !email || password.length < 6) {
       setStatus("Fill in every required field (password needs 6+ characters).", true);
       return;
@@ -358,7 +377,7 @@
       const businessRef = doc(collection(db, "businesses"));
       await withTimeout(
         setDoc(businessRef, {
-          name: businessName, phone: businessPhone || null,
+          name: businessName, phone: businessPhone,
           ownerUid: uid, createdAt: serverTimestamp()
         }),
         "write business doc"
@@ -370,7 +389,7 @@
         () => withTimeout(
           setDoc(doc(db, "users", uid), {
             businessId: businessRef.id, role: "owner",
-            name: email, active: true, createdAt: serverTimestamp()
+            name: ownerName, email, active: true, createdAt: serverTimestamp()
           }),
           "write user doc"
         ),
@@ -383,7 +402,7 @@
       await withTimeout(
         setDoc(shopRef, {
           businessId: businessRef.id, ownerUid: uid,
-          name: shopName, shopCode, createdAt: serverTimestamp()
+          name: shopName, location: shopLocation || "", shopCode, createdAt: serverTimestamp()
         }),
         "write shop doc"
       );
@@ -411,10 +430,12 @@
 
   window.doForgotPassword = async function () {
     const email = val("email");
-    if (!email) { setStatus("Enter your email above first.", true); return; }
+    if (!email) { setStatus("Type your email address in the Email box first, then tap Forgot password again.", true); return; }
+    if (navigator.onLine === false) { setStatus("You need internet to reset your password. Connect and try again.", true); return; }
     try {
+      setStatus("Sending…");
       await withTimeout(sendPasswordResetEmail(auth, email), "send reset email");
-      setStatus("Password reset email sent — check your inbox.", false);
+      setStatus("Reset link sent to " + email + ". Open that email (also look in Spam), tap the link, choose a new password, then come back and log in.", false);
     } catch (err) {
       setStatus(err.message, true);
     }
@@ -523,6 +544,7 @@
   // ---- Shared post-login flow ----
 
   async function enterApp(user) {
+    try { localStorage.setItem("mcHasAccount", "1"); } catch (e) {}
     let userDocSnap;
     try {
       userDocSnap = await getDoc(doc(db, "users", user.uid));
