@@ -335,7 +335,7 @@
   let cashierName = "";
   let currentBusinessId = null;
   let currentShopId = null;
-  let currentShopName = "";
+  let currentShopName = "", currentShopLocation = "";
   let businessName = "";
   let businessPhone = "";
   let allDrugs = [];
@@ -447,6 +447,7 @@
 
     updateAddPreview();
     window.scrollTo({ top: document.getElementById("configureCard").offsetTop - 10, behavior: "smooth" });
+    mcPos.focus("p_qtyStock");
   };
 
   ["p_qtyStock", "p_qtyInter", "p_qtyBase", "p_cost"].forEach(id =>
@@ -479,6 +480,7 @@
     selectedDrug = null;
     editingCartIndex = null;
     document.getElementById("configureCard").classList.add("hidden");
+    mcPos.restore("cart");   // after editing a cart line, go back to where you were in the cart
   };
 
   window.addToCart = function () {
@@ -513,7 +515,7 @@
     renderCart();
   };
 
-  window.editCartItem = function (idx) { selectDrug(cart[idx].drugId, idx); };
+  window.editCartItem = function (idx) { mcPos.save("cart"); selectDrug(cart[idx].drugId, idx); };
   window.removeCartItem = function (idx) { cart.splice(idx, 1); renderCart(); };
   window.clearCart = function () {
     if (cart.length === 0) return;
@@ -580,6 +582,7 @@
     const lines = [];
     lines.push(businessName || "MediStock Cloud");
     if (currentShopName) lines.push(currentShopName);
+    if (currentShopLocation) lines.push(currentShopLocation);
     if (businessPhone) lines.push(businessPhone);
     lines.push("");
     lines.push(`Purchase Receipt: P-${receiptNo}`);
@@ -705,28 +708,15 @@
   window.shareReceipt = async function () {
     if (!lastReceiptData) return;
     const text = document.getElementById("receiptText").textContent;
-    if (navigator.share) {
-      try { await navigator.share({ title: `Receipt P-${lastReceiptData.receiptNo}`, text }); }
-      catch (e) { /* user cancelled — not an error */ }
-    } else {
-      try {
-        await navigator.clipboard.writeText(text);
-        alert("Sharing isn't available on this browser — the receipt text was copied instead.");
-      } catch (e) { alert("Sharing isn't available on this browser."); }
-    }
+    window.top.mcShareText(text, `Receipt P-${lastReceiptData.receiptNo}`);
   };
 
-  window.saveReceiptToPhone = function () {
+  window.saveReceiptToPhone = async function () {
     if (!lastReceiptData) return;
     const text = document.getElementById("receiptText").textContent;
-    const blob = new Blob([text], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `Receipt-P-${lastReceiptData.receiptNo}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    alert(await window.top.mcSaveText(`Receipt-P-${lastReceiptData.receiptNo}.txt`, text, "text/plain"));
   };
+
 
   let _recentUnsub = null;
   function loadRecentPurchases() {
@@ -789,7 +779,7 @@
     currentRole = profile.role;
     currentOperatorId = profile.operatorId || "";
     currentBusinessId = profile.businessId;
-    cashierName = profile.role === "owner" ? user.email : profile.name;
+    cashierName = profile.name || user.email;
 
     const bizSnap = await getDoc(doc(db, "businesses", currentBusinessId));
     if (bizSnap.exists()) { businessName = bizSnap.data().name || ""; businessPhone = bizSnap.data().phone || ""; }
@@ -801,12 +791,14 @@
       const resolvedShopDoc = foundShop || (shopsSnap.empty ? null : shopsSnap.docs[0]);
       currentShopId = resolvedShopDoc ? resolvedShopDoc.id : null;
       currentShopName = resolvedShopDoc ? resolvedShopDoc.data().name : "";
+      currentShopLocation = resolvedShopDoc ? (resolvedShopDoc.data().location || "") : "";
       document.getElementById("shopIndicator").textContent = resolvedShopDoc
         ? `Working in: ${currentShopName}` : "No shop set up yet — go to Shops to add one.";
     } else {
       currentShopId = profile.shopId;
       const shopSnap = await getDoc(doc(db, "shops", currentShopId));
       currentShopName = shopSnap.exists() ? shopSnap.data().name : "";
+      currentShopLocation = shopSnap.exists() ? (shopSnap.data().location || "") : "";
       document.getElementById("shopIndicator").textContent = shopSnap.exists() ? `Shop: ${currentShopName}` : "(unknown shop)";
     }
 

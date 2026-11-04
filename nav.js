@@ -21,6 +21,8 @@
     ["shops.html", "Shops"],
     ["backup.html", "Backup & Export"],
     ["migrate.html", "Import from Pro"],
+    ["guide.html", "User Guide"],
+    ["about.html", "Developer & Support"],
     ["settings.html", "Settings"]
   ];
   var FB = "https://www.gstatic.com/firebasejs/12.19.0/";
@@ -299,4 +301,21 @@
 
   // ---------- keep the app available with no internet ----------
   if (window.top === window && "serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function () {});
+})();
+
+
+/* Remembers where you were on a long list, so after editing something you come back to the same place instead of the top.
+   mcPos.save("key") when opening an edit/detail view, mcPos.restore("key") when closing it. */
+(function () {
+  var m = {};
+  window.mcPos = {
+    save: function (k) { m[k] = window.pageYOffset || document.documentElement.scrollTop || 0; },
+    restore: function (k, delay) {
+      if (m[k] == null) return;
+      var y = m[k]; delete m[k];
+      var go = function () { window.scrollTo({ top: y, behavior: "auto" }); };
+      setTimeout(go, delay || 60); setTimeout(go, (delay || 60) + 250);   // again after lists finish redrawing
+    },
+    focus: function (id, delay) { setTimeout(function () { var el = document.getElementById(id); if (el) { try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); } } }, delay || 380); }
+  };
 })();

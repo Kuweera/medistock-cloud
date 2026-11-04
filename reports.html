@@ -456,21 +456,14 @@
   window.shareSummary = async function () {
     const text = buildText();
     if (!text) { alert("Nothing to share yet."); return; }
-    try {
-      if (navigator.share) await navigator.share({ text });
-      else { await navigator.clipboard.writeText(text); alert("Summary copied."); }
-    } catch (e) { if (e && e.name !== "AbortError") { try { await navigator.clipboard.writeText(text); alert("Summary copied."); } catch (e2) { prompt("Copy this summary:", text); } } }
+    window.top.mcShareText(text, "MediStock Cloud summary");
   };
-  window.saveSummary = function () {
+  window.saveSummary = async function () {
     const text = buildText();
     if (!text) { alert("Nothing to save yet."); return; }
-    const blob = new Blob([text], { type: "text/plain" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "MediStockCloud-Summary-" + new Date().toISOString().slice(0, 10) + ".txt";
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    alert(await window.top.mcSaveText("MediStockCloud-Summary-" + new Date().toISOString().slice(0, 10) + ".txt", text, "text/plain"));
   };
+
 
   // ---------- controls ----------
   function syncControls() {

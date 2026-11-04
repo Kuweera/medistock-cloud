@@ -549,7 +549,7 @@ function mcPlanImport(pro, ctx, ex) {
     if (!snap.exists()) { window.mcGo("login.html"); return; }
     const p = snap.data();
     if (p.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
-    businessId = p.businessId; who = p.role === "owner" ? u.email : p.name;
+    businessId = p.businessId; who = p.name || u.email;
     $("netBadge").textContent = navigator.onLine === false ? "offline" : "online"; $("netBadge").className = "badge " + (navigator.onLine === false ? "offline" : "online");
     if (p.role !== "owner") { $("blocked").classList.remove("hidden"); return; }
     try {
