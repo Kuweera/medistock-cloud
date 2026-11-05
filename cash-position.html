@@ -169,8 +169,9 @@
   </select>
   <label>Amount</label>
   <input type="number" id="ca_amount" min="0">
-  <label>Reason (optional)</label>
-  <input type="text" id="ca_reason" placeholder="e.g. Till was short after count">
+  <label>Reason (required)</label>
+  <input type="text" id="ca_reason" placeholder="e.g. Till was short after count" maxlength="120">
+  <div style="font-size:12px;color:var(--muted);margin-top:4px;">Your name is saved with this adjustment so everyone can see who made it.</div>
   <label>Date</label>
   <input type="date" id="ca_date">
   <button class="btn-primary" onclick="addCashAdjustment()">Save Adjustment</button>
@@ -360,7 +361,7 @@
     });
     adjustments.forEach(a => {
       const isOut = a.type === "owner_withdrawal" || a.type === "cash_shortage";
-      entries.push({ ts: a.createdAt, desc: `${ADJ_LABELS[a.type] || "Adjustment"}${a.reason ? " — " + a.reason : ""}`, amount: isOut ? -(Number(a.amount) || 0) : (Number(a.amount) || 0) });
+      entries.push({ ts: a.createdAt, desc: `${ADJ_LABELS[a.type] || "Adjustment"}${a.reason ? " — " + a.reason : ""}`, by: (a.byName || a.cashier) ? ((a.byName || a.cashier) + (a.byRole ? " (" + a.byRole + ")" : "")) : "", amount: isOut ? -(Number(a.amount) || 0) : (Number(a.amount) || 0) });
     });
     entries.sort((a, b) => (a.ts?.toMillis?.() || 0) - (b.ts?.toMillis?.() || 0));
     let running = startingCash;
@@ -373,7 +374,7 @@
       ? withBalance.map(e => `
           <div class="ledger-row">
             ${e.desc} <b class="${e.amount >= 0 ? "v pos" : "v neg"}">${e.amount >= 0 ? "+" : "−"}${fmt(Math.abs(e.amount))}</b>
-            <div class="ledger-meta">${e.ts?.toDate ? e.ts.toDate().toLocaleString() : ""} · Balance: ${fmt(e.balance)}</div>
+            <div class="ledger-meta">${e.ts?.toDate ? e.ts.toDate().toLocaleString() : ""}${e.by ? " · By " + e.by : ""} · Balance: ${fmt(e.balance)}</div>
           </div>`).join("")
       : '<div class="empty">No cash movement recorded yet.</div>') + startingLine;
   }
@@ -387,11 +388,13 @@
     const reason = document.getElementById("ca_reason").value.trim();
     const date = document.getElementById("ca_date").value;
     if (!amount || amount <= 0) { statusEl.textContent = "Enter a valid amount."; statusEl.style.color = "var(--danger)"; return; }
+    if (reason.length < 3) { statusEl.textContent = "A reason is required — say why this adjustment is being made."; statusEl.style.color = "var(--danger)"; document.getElementById("ca_reason").focus(); return; }
+    if (!cashierName) { statusEl.textContent = "Still loading your account — try again in a moment."; statusEl.style.color = "var(--danger)"; return; }
     try {
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
       window.mcQueue(addDoc(collection(db, "cash_adjustments"), {
         businessId: currentBusinessId, shopId: currentShopId,
-        type, amount, reason, date, cashier: cashierName, createdAt: serverTimestamp()
+        type, amount, reason, date, cashier: cashierName, byName: cashierName, byRole: cashierRole, byUid: currentUser.uid, createdAt: serverTimestamp()
       }));
       document.getElementById("ca_amount").value = "";
       document.getElementById("ca_reason").value = "";
@@ -402,14 +405,14 @@
     }
   };
 
-  let cashierName = "";
+  let cashierName = "", cashierRole = "";
   onAuthStateChanged(auth, async (user) => {
     if (!user) { window.mcGo("login.html"); return; }
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.mcGo("login.html"); return; }
     const profile = userSnap.data();
     if (profile.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
-    cashierName = profile.name || user.email;
+    cashierName = profile.name || user.email; cashierRole = profile.role === "owner" ? "Owner" : "Operator";
     currentBusinessId = profile.businessId;
 
     if (profile.role === "owner") {

@@ -364,8 +364,8 @@
   </div>
 
   <div id="openingBlock">
-  <h2 style="margin-top:18px;">Opening stock</h2>
-  <div class="help">Count what is on the shelf right now, from the full packets down to the loose pieces. Example: 3 full packets + 2 opened strips + 4 loose tablets.</div>
+  <h2 style="margin-top:18px;" id="openingTitle">Opening stock</h2>
+  <div class="help" id="openingHelp">Count what is on the shelf right now, from the full packets down to the loose pieces. Example: 3 full packets + 2 opened strips + 4 loose tablets.</div>
   <div class="row">
     <div>
       <label id="lbl_openStock">Complete stock units</label>
@@ -381,7 +381,7 @@
     </div>
   </div>
   <div class="hint" id="openingHint"></div>
-  <div class="hint" style="color:var(--warn);">Use this only for a drug's very first stock. Once you're recording batches for it on the Batches page, add all further stock there instead — adding it in both places would count it twice.</div>
+  <div class="hint" id="openingWarn" style="color:var(--warn);">Use this only for a drug's very first stock. Once you're recording batches for it on the Batches page, add all further stock there instead — adding it in both places would count it twice.</div>
   <div class="hint" id="openingPreview" style="font-size:13px; color:var(--text);">Total opening stock = 0 base unit(s)</div>
   </div>
   <div id="lockNote" class="hint hidden" style="margin-top:14px; padding:10px; border:1px solid var(--warn); border-radius:10px; color:var(--text); font-size:12.5px; line-height:1.5;">🔒 <b>Stock quantity is locked</b> once a drug has been saved. To correct the quantity, use <a href="stocktake.html" style="color:var(--accent);">Stock Taking</a> — a reason is required and every change is recorded.<br>✏️ <b>Packaging can still be corrected</b> above (units and how many are in each). The quantity you hold does not change — only how it is counted into packets, strips and loose units.</div>
@@ -544,8 +544,24 @@
     updateOpeningPreview();
   }
 
+  let lockedStockBase = null;
   function updateOpeningPreview() {
     const p = currentPackagingInputs();
+    if (lockedStockBase !== null) {
+      const bd = (p.baseUnitsPerStock > 0) ? PackagingEngine.baseToBreakdown(lockedStockBase, p.baseUnitsPerStock, p.basePerIntermediate) : null;
+      const baseDisp = p.baseUnit || "base unit";
+      if (bd) {
+        document.getElementById("f_openStock").value = bd.stockUnits;
+        document.getElementById("f_openIntermediate").value = bd.intermediateUnits;
+        document.getElementById("f_openBase").value = bd.looseBase;
+      }
+      const parts = [];
+      if (bd && bd.stockUnits) parts.push(`${bd.stockUnits} ${p.stockUnit || "stock unit"}(s)`);
+      if (bd && p.has && bd.intermediateUnits) parts.push(`${bd.intermediateUnits} ${p.intermediateUnit || "intermediate"}(s)`);
+      if (bd && bd.looseBase) parts.push(`${bd.looseBase} loose ${baseDisp}(s)`);
+      document.getElementById("openingPreview").textContent = `In stock now: ${parts.length ? parts.join(" + ") + " = " : ""}${lockedStockBase.toLocaleString()} ${baseDisp}(s). Use this to set the Reorder level and Target stock below.`;
+      return;
+    }
     const openStock = Number(document.getElementById("f_openStock").value) || 0;
     const openIntermediate = Number(document.getElementById("f_openIntermediate").value) || 0;
     const openBase = Number(document.getElementById("f_openBase").value) || 0;
@@ -647,8 +663,14 @@
   // ---- lock: after the first save, stock quantity + packaging can only change through Stock Taking ----
   function setLocked(on) {
     // only the opening STOCK QUANTITY is locked; packaging can always be corrected
-    document.getElementById("openingBlock").classList.toggle("hidden", on);
+    // the stock stays visible (so you can set reorder level and target from it) but cannot be edited
+    lockedStockBase = on ? lockedStockBase : null;
+    ["f_openStock", "f_openIntermediate", "f_openBase"].forEach(id => { document.getElementById(id).disabled = !!on; });
+    document.getElementById("openingTitle").textContent = on ? "Stock on hand (cannot be edited here)" : "Opening stock";
+    document.getElementById("openingHelp").classList.toggle("hidden", !!on);
+    document.getElementById("openingWarn").classList.toggle("hidden", !!on);
     document.getElementById("lockNote").classList.toggle("hidden", !on);
+    updateOpeningPreview();
   }
 
   // ---- Deactivate / Reactivate (soft delete — never a hard delete, since
@@ -896,6 +918,7 @@
 
     document.getElementById("formStatus").textContent = "";
     updateCalcPreview();
+    lockedStockBase = Number(d.currentStockBase) || 0;
     setLocked(true);
     showOnlyForm();
     document.getElementById("formCard").classList.remove("hidden");
