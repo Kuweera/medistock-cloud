@@ -66,7 +66,16 @@
   function barOn() { bar.style.opacity = "1"; bar.style.width = "60%"; }
   function barOff() { bar.style.width = "100%"; setTimeout(() => { bar.style.opacity = "0"; bar.style.width = "0"; }, 200); }
 
+  // a menu left open on a screen must never be waiting there when you come back to it
+  function closeMenu(rec) {
+    try {
+      const d = rec.el.contentDocument; if (!d) return;
+      const p = d.getElementById("navPanel"); if (p) p.classList.remove("open");
+      const o = d.getElementById("navOverlay"); if (o) o.classList.remove("visible");
+    } catch (e) {}
+  }
   function activate(rec) {
+    frames.forEach(r => closeMenu(r)); closeMenu(rec);
     frames.forEach(r => { if (r !== rec) r.el.style.display = "none"; });
     rec.el.style.display = "block"; rec.el.style.visibility = "visible";
     active = rec; rec.last = Date.now();
@@ -88,6 +97,13 @@
   function hookFrame(el) {
     try {
       const d = el.contentDocument; if (!d || d.__mcHooked) return; d.__mcHooked = true;
+      // a clear 🏠 button right beside the ☰ menu button, so Home is never confused with the menu
+      const bar = d.querySelector(".nav-bar"), tg = d.getElementById("navToggle");
+      if (bar && !d.getElementById("mcHomeBtn")) {
+        const hb = d.createElement("button"); hb.type = "button"; hb.id = "mcHomeBtn"; hb.setAttribute("aria-label", "Home"); hb.className = "nav-bar-brand";
+        hb.textContent = "\ud83c\udfe0"; hb.style.cssText = "background:none;border:0;font-size:22px;line-height:1;padding:8px 10px;margin-right:auto;color:#fff";
+        if (tg && tg.parentNode === bar) bar.insertBefore(hb, tg.nextSibling); else bar.insertBefore(hb, bar.firstChild);
+      }
       d.addEventListener("click", ev => {
         const b = ev.target && ev.target.closest ? ev.target.closest(".nav-bar-brand") : null;
         if (!b) return;
