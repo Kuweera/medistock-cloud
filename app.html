@@ -104,6 +104,8 @@
         hb.textContent = "\ud83c\udfe0"; hb.style.cssText = "background:none;border:0;font-size:22px;line-height:1;padding:8px 10px;margin-right:auto;color:#fff";
         if (tg && tg.parentNode === bar) bar.insertBefore(hb, tg.nextSibling); else bar.insertBefore(hb, bar.firstChild);
       }
+      // only one Home button: hide the older centred "Home" label
+      d.querySelectorAll(".nav-bar-brand").forEach(x => { if (x.id !== "mcHomeBtn") x.style.display = "none"; });
       d.addEventListener("click", ev => {
         const b = ev.target && ev.target.closest ? ev.target.closest(".nav-bar-brand") : null;
         if (!b) return;
