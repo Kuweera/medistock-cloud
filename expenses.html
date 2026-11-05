@@ -284,10 +284,18 @@
   document.getElementById("e_date").value = new Date().toISOString().slice(0, 10);
 
   async function populateCategories() {
-    const snap = await getDocs(collection(db, "expense_categories"));
+    let names = [];
+    try {
+      names = (await getDocs(collection(db, "businesses", currentBusinessId, "expense_categories"))).docs.map(d => d.id);
+      if (!names.length && !localStorage.getItem("mcListCopied:" + currentBusinessId + ":expense_categories")) {
+        const old = (await getDocs(collection(db, "expense_categories"))).docs.map(d => d.id);
+        old.forEach(n => { try { window.mcQueue(setDoc(doc(db, "businesses", currentBusinessId, "expense_categories", n), { name: n })); } catch (x) {} });
+        names = old;
+        if (old.length) try { localStorage.setItem("mcListCopied:" + currentBusinessId + ":expense_categories", "1"); } catch (x) {}
+      }
+    } catch (x) {}
     const sel = document.getElementById("e_category");
     const prev = sel.value;
-    const names = snap.docs.map(d => d.id);
     const defaults = ["Transport", "Rent", "Electricity", "Water", "Salaries", "Airtime", "Repairs", "Supplies", "Other"];
     const all = [...new Set([...defaults, ...names])];
     sel.innerHTML = all.map(n => `<option value="${n}">${n}</option>`).join("");
@@ -296,7 +304,7 @@
   window.addNewCategory = async function () {
     const name = document.getElementById("e_newCategory").value.trim();
     if (!name) return;
-    window.mcQueue(setDoc(doc(db, "expense_categories", name), { name }));
+    window.mcQueue(setDoc(doc(db, "businesses", currentBusinessId, "expense_categories", name), { name }));
     document.getElementById("e_newCategory").value = "";
     await populateCategories();
     document.getElementById("e_category").value = name;

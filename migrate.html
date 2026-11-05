@@ -422,7 +422,7 @@ function mcPlanImport(pro, ctx, ex) {
       if (c === "drugs") snap.docs.forEach(d => { ex.drugsByName[String(d.data().name || "").trim().toLowerCase()] = d.id; });
       if (c === "suppliers") snap.docs.forEach(d => { ex.suppliersByName[String(d.data().name || "").trim().toLowerCase()] = d.id; });
     }
-    for (const c of GLOBAL_COLLS) { const snap = await getDocs(collection(db, c)); ex.ids[c] = new Set(snap.docs.map(d => d.id)); }
+    for (const c of GLOBAL_COLLS) { const snap = await getDocs(collection(db, "businesses", businessId, c)); ex.ids[c] = new Set(snap.docs.map(d => d.id)); }
     return ex;
   }
 
@@ -494,7 +494,7 @@ function mcPlanImport(pro, ctx, ex) {
   async function writeSplit(ops, first) {
     try {
       const wb = writeBatch(db);
-      ops.forEach(op => wb.set(doc(db, op.coll, op.id), toWrite(op)));
+      ops.forEach(op => wb.set(GLOBAL_COLLS.includes(op.coll) ? doc(db, "businesses", businessId, op.coll, op.id) : doc(db, op.coll, op.id), toWrite(op)));
       await commitWithRetry(wb, first ? 3 : 1);
     } catch (e) {
       if (ops.length === 1) { failures.push({ op: ops[0], err: e }); if (failures.length > 25) throw e; return; }

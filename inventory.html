@@ -586,10 +586,23 @@
     sel.innerHTML = '<option value="">' + placeholder + '</option>' + sorted.map(n => '<option value="' + n.replace(/"/g, "&quot;") + '">' + n + "</option>").join("") + '<option value="' + NEW_VALUE + '">' + addLabel + "</option>";
     if (keep && sorted.includes(keep)) sel.value = keep;
   }
+  // class / form lists belong to this business (businesses/{id}/...). First time: copy the old shared list once.
+  async function readList(coll) {
+    let names = [];
+    try {
+      names = (await getDocs(collection(db, "businesses", currentBusinessId, coll))).docs.map(d => d.id);
+      if (!names.length && !localStorage.getItem("mcListCopied:" + currentBusinessId + ":" + coll)) {
+        const old = (await getDocs(collection(db, coll))).docs.map(d => d.id);
+        old.forEach(n => { try { window.mcQueue(setDoc(doc(db, "businesses", currentBusinessId, coll, n), { name: n })); } catch (e) {} });
+        names = old;
+        if (old.length) try { localStorage.setItem("mcListCopied:" + currentBusinessId + ":" + coll, "1"); } catch (e) {}
+      }
+    } catch (e) {}
+    return names;
+  }
   async function populateSelects() {
     let cs = [], fs = [];
-    try { cs = (await getDocs(collection(db, "drug_classes"))).docs.map(d => d.id); } catch (e) {}
-    try { fs = (await getDocs(collection(db, "dosage_forms"))).docs.map(d => d.id); } catch (e) {}
+    cs = await readList("drug_classes"); fs = await readList("dosage_forms");
     const used = (key) => (typeof allDrugs !== "undefined" ? allDrugs : []).map(d => d[key]).filter(Boolean);
     const classSel = document.getElementById("f_class"), formSel = document.getElementById("f_form");
     fillSelect(classSel, DEFAULT_CLASSES.concat(cs, used("drugClass"), Array.from(extraLists.classes)), classSel.value, "➕ Add a new class…", "— Select drug class —");
@@ -613,7 +626,7 @@
   window.addNewClass = async function () {
     const name = document.getElementById("f_newClass").value.trim();
     if (!name) return;
-    window.mcQueue(setDoc(doc(db, "drug_classes", name), { name }));
+    window.mcQueue(setDoc(doc(db, "businesses", currentBusinessId, "drug_classes", name), { name }));
     extraLists.classes.add(name);
     document.getElementById("f_newClass").value = "";
     await populateSelects();
@@ -623,7 +636,7 @@
   window.addNewForm = async function () {
     const name = document.getElementById("f_newForm").value.trim();
     if (!name) return;
-    window.mcQueue(setDoc(doc(db, "dosage_forms", name), { name }));
+    window.mcQueue(setDoc(doc(db, "businesses", currentBusinessId, "dosage_forms", name), { name }));
     extraLists.forms.add(name);
     document.getElementById("f_newForm").value = "";
     await populateSelects();
