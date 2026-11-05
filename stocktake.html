@@ -451,6 +451,8 @@
       renderHistory();
     });
   });
+
+  window.mcBack = function () { const f = document.getElementById("stocktakeFormCard"); if (f && !f.classList.contains("hidden")) { f.classList.add("hidden"); selectedDrug = null; mcPos.restore("st"); return true; } return false; };
 </script>
 </body>
 </html>

@@ -40,6 +40,13 @@
     if (!h || /^(https?:|mailto:|tel:|#|javascript:|blob:)/i.test(h) || !/\.html(\?|$)/i.test(h)) return;
     e.preventDefault(); window.mcGo(h);
   }, true);
+  // the Home button always goes to the dashboard, whatever screen the app is on
+  document.addEventListener("click", function (e) {
+    var b = e.target && e.target.closest ? e.target.closest(".nav-bar-brand") : null;
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    if (MC && MC.home) MC.home(); else window.mcGo("dashboard.html");
+  }, true);
   // dark/light chosen on one screen applies to the screens kept open behind it
   window.addEventListener("storage", function (e) {
     if (e.key !== "mcThemePreference") return;

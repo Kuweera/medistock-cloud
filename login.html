@@ -92,13 +92,13 @@
 
   <div id="signupFields">
     <label>Business name</label>
-    <input type="text" id="businessName" placeholder="e.g. Kuweera Drug Shop">
+    <input type="text" id="businessName" placeholder="e.g. ARNEST MEDICAL SERVICES">
     <label>Your name (owner)</label>
     <input type="text" id="ownerName" placeholder="e.g. Arnest K.">
     <label>Business phone (required)</label>
     <input type="tel" id="businessPhone" placeholder="e.g. 07xx xxx xxx">
     <label>First shop name</label>
-    <input type="text" id="shopName" placeholder="e.g. Main Branch">
+    <input type="text" id="shopName" placeholder="e.g. ARNEST DRUG SHOP - Main Branch">
     <label>First shop location (printed on receipts)</label>
     <input type="text" id="shopLocation" placeholder="e.g. Kampala Road, Wandegeya">
     <label>First shop code</label>
@@ -580,6 +580,7 @@
     document.getElementById("ownerCard").classList.add("hidden");
     document.getElementById("operatorCard").classList.add("hidden");
     document.getElementById("authTabs").classList.add("hidden");
+    if (new URLSearchParams(location.search).get("debug") !== "1") { location.replace("app.html"); return true; }   // go straight to the dashboard
     document.getElementById("appCard").classList.remove("hidden");
     document.getElementById("testCard").classList.remove("hidden");
     document.getElementById("bizName").textContent = bizName;

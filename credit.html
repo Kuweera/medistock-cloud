@@ -509,6 +509,8 @@
       if (currentAccountId) openAccount(currentAccountId);
     });
   });
+
+  window.mcBack = function () { const f = document.getElementById("accountCard"); if (f && !f.classList.contains("hidden")) { f.classList.add("hidden"); mcPos.restore("acct"); return true; } return false; };
 </script>
 </body>
 </html>

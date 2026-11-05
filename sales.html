@@ -1098,6 +1098,8 @@
     // the screen stays alive between visits: refresh the two lists that are read once
     window.addEventListener("mc-show", () => { loadFrequentlySold(); loadCreditAccounts(); });
   });
+
+  window.mcBack = function () { const f = document.getElementById("configureCard"); if (f && !f.classList.contains("hidden")) { closeConfigure(); return true; } return false; };
 </script>
 </body>
 </html>

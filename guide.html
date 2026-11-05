@@ -169,7 +169,64 @@
 <script src="nav.js"></script>
 
 <div class="card"><h2>Welcome to MediStock Cloud</h2><p class="meta">MediStock Cloud runs every shop of your business from one app. It works <b>with or without internet</b>: sell, buy and count stock offline, and everything uploads by itself when the phone is online. Tap a heading below to open it.</p></div>
-<details open><summary>1. Getting started</summary><div class="in"><p><b>Owner:</b> open the app, choose <b>Owner → Create business account</b>. Enter your name, business phone, business name, first shop name, shop location and a short shop code (for example MAIN), then your email and password.</p>
+<details open><summary>★ How to add a New Drug (start here)</summary><div class="in">
+<p>This is the part new users find hardest, so take it slowly. Go to <b>Inventory → + Add Drug</b>. Under each box the app prints dim help text; this page explains the same things with examples.</p>
+<p><b>The big idea:</b> a medicine is packed in layers, like a box of sweets. You tell the app the layers <b>once</b>, from the biggest pack you buy down to the smallest piece you sell. After that, selling, buying, counting and alerts all use your own names (Packet, Strip, Tablet…) and the app does the arithmetic.</p>
+
+<p><b>Step 1 — Name</b><br>Type the name with the strength as on the pack: <i>Paracetamol 500mg</i>. This is what you will search when selling. The generic name, class, dosage form and supplier are optional helpers.</p>
+
+<p><b>Step 2 — Packaging (the important part)</b></p>
+<ul>
+<li><b>Stock unit</b> = the BIGGEST unit you buy and store. Examples: Packet, Box, Bottle, Carton.</li>
+<li><b>Base unit</b> = the SMALLEST piece you ever sell. Examples: Tablet, Capsule, ml, Sachet, or Bottle if you never open it.</li>
+<li><b>Middle level (Intermediate unit)</b> = only if there is a pack between the two, like a <i>Strip</i> inside a packet. Tick the box and name it. If there is no middle level, untick the box.</li>
+</ul>
+<p>Then give the numbers. They answer: <i>how many of the smaller thing fit in ONE of the bigger thing?</i></p>
+<ul>
+<li>With a middle level: <b>Strips per Packet</b> and <b>Tablets per Strip</b>.</li>
+<li>Without a middle level: <b>Base units per stock unit</b> (e.g. 100 capsules in one box).</li>
+</ul>
+<p>Below the boxes the app shows a sentence such as <i>1 Packet = 100 Tablets (10 Strips × 10 Tablets)</i>. <b>Read it. If it matches the real pack, you filled it correctly.</b></p>
+
+<p><b>Worked examples</b></p>
+<ul>
+<li><b>Paracetamol 500mg</b> — 1 packet has 10 strips, each strip has 10 tablets.<br>Stock unit: Packet · Base unit: Tablet · middle box ticked · Intermediate unit: Strip · Strips per Packet: 10 · Tablets per Strip: 10.</li>
+<li><b>Cough syrup</b> — sold by the bottle only.<br>Stock unit: Bottle · Base unit: Bottle · middle box unticked · Base units per stock unit: 1.</li>
+<li><b>Amoxicillin capsules</b> — box of 100, sold loose.<br>Stock unit: Box · Base unit: Capsule · middle box unticked · Base units per stock unit: 100.</li>
+<li><b>Diclofenac injection</b> — box of 10 ampoules.<br>Stock unit: Box · Base unit: Ampoule · unticked · 10.</li>
+<li><b>Skin cream</b> — one tube is one item.<br>Stock unit: Tube · Base unit: Tube · middle box unticked · Base units per stock unit: 1.</li>
+</ul>
+
+<p><b>Step 3 — Prices (UGX)</b></p>
+<ul>
+<li><b>Wholesale cost</b> = what YOU pay the supplier for ONE stock unit (one packet). It is used to work out your profit.</li>
+<li><b>Retail prices</b> = what the CUSTOMER pays: for a whole packet, for one strip, for one tablet. Fill the levels you really sell; leave the others empty. At the till you can still change the price of a sale.</li>
+</ul>
+
+<p><b>Step 4 — Reorder level and target stock (in packets)</b><br><i>Reorder level</i> is the number at which the app warns you (and sends an alert). <i>Target stock</i> is how many you want after restocking; the "What to Buy" screen uses it to tell you how many to order.</p>
+
+<p><b>Step 5 — Opening stock</b><br>Count what is on the shelf <b>right now</b>, from big to small: complete packets, opened strips, loose tablets. Example: 3 full packets + 2 strips + 4 tablets → boxes 3, 2 and 4. The line below shows the total.</p>
+<div class="tip">Opening stock is only for a drug's <b>first</b> stock. When more arrives later, record it in <b>Purchases</b>, never here, otherwise it is counted twice.</div>
+
+<p><b>Step 6 — Save Drug.</b></p>
+
+<p><b>After saving</b></p>
+<ul>
+<li>The <b>quantity is locked</b>. To correct it use <b>Stock Taking</b> (it records a reason and keeps the history).</li>
+<li>You can still correct the <b>packaging</b> (names and how many are in each) if you made a mistake. The quantity you hold does not change; only the way it is counted.</li>
+<li>Edit the name, prices, reorder level any time. You return to the same place in the list.</li>
+</ul>
+
+<p><b>Common mistakes</b></p>
+<ul>
+<li>Putting the number of <i>packets</i> where <i>tablets per strip</i> goes. Always read the sentence the app shows under the boxes.</li>
+<li>Adding more stock in both "Opening stock" and "Purchases".</li>
+<li>Typing the retail price of a packet in the tablet box (a tablet price should be small).</li>
+<li>Ticking the middle box for a drug that has no strips; untick it and use <i>Base units per stock unit</i>.</li>
+</ul>
+<div class="tip">Stuck? Message the developer from <a href="about.html">Developer &amp; Support</a> with a photo of the pack.</div>
+</div></details>
+<details><summary>1. Getting started</summary><div class="in"><p><b>Owner:</b> open the app, choose <b>Owner → Create business account</b>. Enter your name, business phone, business name, first shop name, shop location and a short shop code (for example MAIN), then your email and password.</p>
 <p>Your name is printed on receipts as the cashier. The shop location and phone are printed on receipts too.</p>
 <p><b>Forgot your password?</b> On the Owner log-in screen tap <b>Forgot password?</b> under the password box (type your email first). A reset link is emailed to you. Check Spam too.</p>
 <p><b>Operator (shop worker):</b> choose <b>Operator</b> and enter the Shop Code, your Operator ID and your 6-digit PIN. Tap <b>Show</b> to see the PIN you typed.</p>
@@ -187,8 +244,7 @@
 <p><b>Save to phone</b> puts a text file in your phone's <b>Downloads → MediStock</b> folder. Receipts show the business name, shop name and location, phone number, date, cashier, items and total.</p></div></details>
 <details><summary>5. Purchases (buying stock)</summary><div class="in"><p>Open <b>Purchases</b>, search the drug, enter how many packets / strips / tablets arrived, the cost, supplier, batch number and expiry date, then add it to the cart and save. Stock goes up and the batch is recorded. You can buy on credit from a supplier by choosing credit and giving a supplier name and due date.</p>
 <p>Tap <b>Edit</b> on a cart line to change it; you return to your place in the cart.</p></div></details>
-<details><summary>6. Inventory (your drug list)</summary><div class="in"><p>Add a drug with its name, class, form and how it is packaged: the biggest unit (for example Packet), an optional middle unit (Strip) and the smallest unit (Tablet), with how many of each. Set prices, the opening stock, the <b>reorder level</b> (when you want a low-stock warning) and the target stock.</p>
-<p>Tap <b>Low stock only</b> to see what is running out. After you edit a drug and save, the list returns to the place where you were.</p></div></details>
+<details><summary>6. Inventory (your drug list)</summary><div class="in"><p>The Inventory screen lists every drug with its stock, shown the way it is packaged (for example 3 Packets, 2 Strips, 4 Tablets). Tap <b>Low stock only</b> to see what is running out. Tap a drug to edit it; after you save, the list returns to the place where you were.</p><p>To add a drug follow <b>How to add a New Drug</b> at the top of this guide.</p></div></details>
 <details><summary>7. Batches and expiring drugs</summary><div class="in"><p><b>Batches</b> lists every delivery with quantity and expiry date; filter <b>Expired</b> or <b>Expiring ≤30d</b>. <b>Expiring Drugs</b> groups stock by how soon it expires (30, 60, 90, 180 days) so you can sell or return it in time. Both can be shared as a list.</p></div></details>
 <details><summary>8. Stock Taking (counting the shelf)</summary><div class="in"><p>Search the drug and tap it. The boxes you fill in use the drug's own units, for example <b>Packets / Strips / Tablets</b>. Type what you counted in each box; the app shows what that means compared with the system. Give a reason (tap a quick reason such as Damaged or Missing), then <b>Save Stock Adjustment</b>. Every difference is recorded permanently.</p></div></details>
 <details><summary>9. What to Buy</summary><div class="in"><p>Lists the drugs at or under their reorder level and how much to buy to reach the target stock, so you can make a shopping list.</p></div></details>

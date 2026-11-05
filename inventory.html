@@ -109,6 +109,11 @@
     background:none; border:none; color:#fff; font-size:22px; line-height:1;
     padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
   }
+  .help{font-size:11.5px; line-height:1.45; color:var(--muted); opacity:.85; margin:3px 0 10px;}
+  .howto{border:1px dashed var(--accent); border-radius:10px; padding:8px 12px; margin:6px 0 12px; background:rgba(42,191,160,.06);}
+  .howto summary{font-size:13px; font-weight:700; color:var(--accent); cursor:pointer;}
+  .howto .ex{font-size:12px; line-height:1.55; color:var(--muted); margin:8px 0;}
+  .howto .ex b{color:var(--text);}
   .nav-bar-brand{
     font-size:14px; font-weight:600; color:#fff; cursor:pointer;
     padding:8px 10px; -webkit-tap-highlight-color:transparent;
@@ -228,11 +233,22 @@
 <div class="card hidden" id="formCard">
   <h2 id="formTitle">Add Drug</h2>
 
+  <details class="howto">
+    <summary>New here? How to fill this form (tap to open)</summary>
+    <div class="ex"><b>The idea:</b> tell the app how the medicine is packed, from the biggest pack you buy down to the smallest piece you sell. You do it once; after that selling, buying and counting use your names automatically.</div>
+    <div class="ex"><b>Example 1 — Paracetamol 500mg tablets.</b> 1 Packet has 10 Strips, each Strip has 10 Tablets.<br>Stock unit = <b>Packet</b> · Base unit = <b>Tablet</b> · tick the middle box · Intermediate unit = <b>Strip</b> · Strips per Packet = <b>10</b> · Tablets per Strip = <b>10</b>. (1 Packet = 100 Tablets.)</div>
+    <div class="ex"><b>Example 2 — Cough syrup.</b> Sold by the bottle only.<br>Stock unit = <b>Bottle</b> · Base unit = <b>Bottle</b> · untick the middle box · Base units per stock unit = <b>1</b>.</div>
+    <div class="ex"><b>Example 3 — Amoxicillin capsules sold loose from a box of 100.</b><br>Stock unit = <b>Box</b> · Base unit = <b>Capsule</b> · untick the middle box · Base units per stock unit = <b>100</b>.</div>
+    <div class="ex"><b>Tip:</b> prices are per unit: the wholesale cost is what you pay for ONE stock unit (one Packet); the retail boxes are what the customer pays for ONE packet, ONE strip, ONE tablet.</div>
+  </details>
+
   <label>Drug name *</label>
   <input type="text" id="f_name" placeholder="e.g. Paracetamol 500mg">
+  <div class="help">Write the name and strength like it is on the pack, so it is easy to find when selling.</div>
 
   <label>Generic name</label>
   <input type="text" id="f_generic" placeholder="e.g. Paracetamol">
+  <div class="help">Optional. The medicine name without the brand, if you know it.</div>
 
   <div class="row">
     <div>
@@ -244,6 +260,7 @@
       <select id="f_form"></select>
     </div>
   </div>
+  <div class="help">Class = what it is used for (e.g. Analgesics). Dosage form = how it is taken (Tablet, Syrup, Injection…). Not in the list? Use the add buttons above.</div>
   <div class="row hidden" id="newClsRow" style="margin-top:6px;">
     <div id="newClassCol" class="hidden">
       <input type="text" id="f_newClass" placeholder="New class name">
@@ -257,16 +274,20 @@
 
   <label>Supplier</label>
   <input type="text" id="f_supplier" placeholder="e.g. ABC Suppliers">
+  <div class="help">Optional. Who you usually buy it from.</div>
 
   <h2 style="margin-top:18px;">Packaging</h2>
+  <div class="help">Think of the packet in your hand: Packet → Strip → Tablet. Fill the biggest unit on the left and the smallest on the right.</div>
   <div class="row">
     <div>
       <label>Stock unit (bulk)</label>
       <input type="text" id="f_stockUnit" placeholder="e.g. Packet">
+  <div class="help">The BIGGEST unit you buy and store: Packet, Box, Bottle, Carton.</div>
     </div>
     <div>
       <label>Base unit (smallest)</label>
       <input type="text" id="f_baseUnit" placeholder="e.g. Tablet">
+  <div class="help">The SMALLEST piece you sell: Tablet, Capsule, ml, Sachet, Bottle.</div>
     </div>
   </div>
 
@@ -274,63 +295,77 @@
     <input type="checkbox" id="f_hasIntermediate" checked>
     <label style="margin:0;">Has an in-between unit (e.g. a strip inside a packet)</label>
   </div>
+  <div class="help">Tick this only when there is a level between the packet and the single piece (a strip, blister or sachet pack). Untick it for syrups, creams, or boxes of loose tablets.</div>
 
   <div id="intermediateFields">
     <label>Intermediate unit</label>
     <input type="text" id="f_intermediateUnit" placeholder="e.g. Strip">
+  <div class="help">The name of the middle pack: Strip, Blister, Sachet.</div>
     <div class="row">
       <div>
         <label>Intermediate units per stock unit</label>
         <input type="number" id="f_intermediatePerStock" min="1" placeholder="e.g. 10">
+  <div class="help">How many strips are in ONE packet.</div>
       </div>
       <div>
         <label>Base units per intermediate unit</label>
         <input type="number" id="f_basePerIntermediate" min="1" placeholder="e.g. 10">
+  <div class="help">How many tablets are in ONE strip.</div>
       </div>
     </div>
   </div>
   <div id="directBaseField" class="hidden">
     <label>Base units per stock unit (direct)</label>
     <input type="number" id="f_basePerStockDirect" min="1" placeholder="e.g. 100">
+  <div class="help">How many single pieces are in ONE stock unit (100 capsules in a box = 100; a bottle sold as one = 1).</div>
   </div>
   <div class="hint" id="calcPreview" style="font-size:13px; color:var(--text); margin-top:10px;">1 stock unit = — base units</div>
 
   <h2 style="margin-top:18px;">Pricing</h2>
+  <div class="help">All prices are in UGX and are for ONE unit of the kind named on each box.</div>
   <div class="row">
     <div>
       <label>Wholesale cost (per stock unit)</label>
       <input type="number" id="f_wholesale" min="0" placeholder="e.g. 1500">
+  <div class="help">What you PAY the supplier for one packet. Used to work out your profit.</div>
     </div>
     <div>
       <label>Retail price (per stock unit)</label>
-      <input type="number" id="f_retailStock" min="0">
+      <input type="number" id="f_retailStock" min="0" placeholder="e.g. 2000">
+  <div class="help">What the customer pays for a whole packet.</div>
     </div>
   </div>
   <div class="row">
     <div>
       <label>Retail price (per intermediate)</label>
-      <input type="number" id="f_retailIntermediate" min="0">
+      <input type="number" id="f_retailIntermediate" min="0" placeholder="e.g. 250">
+  <div class="help">Price of one strip (leave empty if you don't sell strips).</div>
     </div>
     <div>
       <label>Retail price (per base unit)</label>
-      <input type="number" id="f_retailBase" min="0">
+      <input type="number" id="f_retailBase" min="0" placeholder="e.g. 30">
+  <div class="help">Price of one tablet (leave empty if you don't sell singles).</div>
     </div>
   </div>
 
   <h2 style="margin-top:18px;">Reorder</h2>
+  <div class="help">These make the app warn you before you run out.</div>
   <div class="row">
     <div>
       <label>Reorder level (in stock units, e.g. packets)</label>
       <input type="number" id="f_reorderLevel" min="0" placeholder="e.g. 5">
+  <div class="help">When stock falls to this many packets, you get a low-stock alert.</div>
     </div>
     <div>
       <label>Target stock (in stock units — what you want on hand once restocked)</label>
       <input type="number" id="f_targetStock" min="0" placeholder="e.g. 20">
+  <div class="help">How many packets you want on the shelf after restocking. "What to Buy" uses it.</div>
     </div>
   </div>
 
   <div id="openingBlock">
   <h2 style="margin-top:18px;">Opening stock</h2>
+  <div class="help">Count what is on the shelf right now, from the full packets down to the loose pieces. Example: 3 full packets + 2 opened strips + 4 loose tablets.</div>
   <div class="row">
     <div>
       <label id="lbl_openStock">Complete stock units</label>
@@ -1103,6 +1138,9 @@
         `<div class="empty" style="color:var(--danger);">Error loading: ${err.message}</div>`;
     });
   });
+
+  // phone back button: close the open form first
+  window.mcBack = function () { const f = document.getElementById("formCard"); if (f && !f.classList.contains("hidden")) { closeForm(); return true; } return false; };
 </script>
 </body>
 </html>

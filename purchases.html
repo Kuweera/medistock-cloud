@@ -876,6 +876,8 @@
     loadBatchNumberSuggestions();
     loadRecentPurchases();
   });
+
+  window.mcBack = function () { const f = document.getElementById("configureCard"); if (f && !f.classList.contains("hidden")) { closeConfigure(); return true; } return false; };
 </script>
 </body>
 </html>
