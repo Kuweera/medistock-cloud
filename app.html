@@ -84,6 +84,19 @@
     frames.delete(rec.page);
   }
 
+  // the shell itself makes the Home button work on every screen (so it never depends on an older cached screen file)
+  function hookFrame(el) {
+    try {
+      const d = el.contentDocument; if (!d || d.__mcHooked) return; d.__mcHooked = true;
+      d.addEventListener("click", ev => {
+        const b = ev.target && ev.target.closest ? ev.target.closest(".nav-bar-brand") : null;
+        if (!b) return;
+        ev.preventDefault(); ev.stopPropagation();
+        if (window.MC && window.MC.home) window.MC.home();
+      }, true);
+    } catch (e) {}
+  }
+
   function show(page, q) {
     const rec = frames.get(page);
     if (rec && rec.q === q && !rec.stale) { activate(rec); return; }
@@ -107,7 +120,7 @@
         else { fresh.el.style.display = "none"; }
       }, 90);
     };
-    el.addEventListener("load", finish);
+    el.addEventListener("load", () => { hookFrame(el); finish(); });
     setTimeout(finish, 6000);
     el.src = page + q;
   }
@@ -133,6 +146,10 @@
   }
   // returns what it did: "handled" (closed a form), "back", or "exit" (nothing left to go back to)
   function goBackInApp() {
+    try {
+      const d = active && active.el && active.el.contentDocument, p = d && d.getElementById("navPanel");
+      if (p && p.classList.contains("open")) { p.classList.remove("open"); const o = d.getElementById("navOverlay"); if (o) o.classList.remove("visible"); return "handled"; }
+    } catch (e) {}
     try { const w = active && active.el && active.el.contentWindow; if (w && typeof w.mcBack === "function" && w.mcBack()) return "handled"; } catch (e) {}
     if (navStack.length > 1) {
       navStack.pop(); const t = navStack[navStack.length - 1]; backing = true;
@@ -143,13 +160,20 @@
     if (cur !== "dashboard.html") { navStack.length = 0; location.hash = "dashboard.html"; return "back"; }
     return "exit";
   }
+  let hasBackPlugin = false;
   try {
-    const C = window.Capacitor, AP = C && ((C.Plugins && C.Plugins.App) || (typeof C.registerPlugin === "function" ? C.registerPlugin("App") : null));
-    if (AP && AP.addListener) AP.addListener("backButton", () => {
-      if (!window.MC) { if (Date.now() - lastBackPress < 2000) AP.exitApp(); else { lastBackPress = Date.now(); toast("Press back again to exit"); } return; }
-      const r = goBackInApp();
-      if (r === "exit") { if (Date.now() - lastBackPress < 2000) AP.exitApp(); else { lastBackPress = Date.now(); toast("Press back again to exit"); } }
-    });
+    const C = window.Capacitor; let AP = null;
+    if (C) { try { AP = C.Plugins && C.Plugins.App; } catch (e) {} if (!AP && typeof C.registerPlugin === "function") { try { AP = C.registerPlugin("App"); } catch (e) {} } }
+    if (AP && AP.addListener) {
+      hasBackPlugin = true;
+      AP.addListener("backButton", () => {
+        if (!window.MC) { if (Date.now() - lastBackPress < 2000) AP.exitApp(); else { lastBackPress = Date.now(); toast("Press back again to exit"); } return; }
+        const r = goBackInApp();
+        if (r === "exit") { if (Date.now() - lastBackPress < 2000) AP.exitApp(); else { lastBackPress = Date.now(); toast("Press back again to exit"); } }
+      });
+    }
+    window.__mcBackPlugin = hasBackPlugin;
+    if (C && C.isNativePlatform && C.isNativePlatform() && !hasBackPlugin) setTimeout(() => toast("Back button needs the newest MediStock Cloud app (reinstall the latest APK)"), 5000);
   } catch (e) {}
   window.addEventListener("hashchange", route);
 

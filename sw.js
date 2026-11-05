@@ -1,6 +1,6 @@
 /* MediStock Cloud — keeps the app's pages and the Firebase code on the phone so it opens with no internet.
    Pages refresh themselves in the background whenever the phone is online. */
-var VERSION = "mc-v10";
+var VERSION = "mc-v11";
 var PAGES = ["app.html", "mc-core.js", "mc-notify.js", "mc-share.js", "index.html", "dashboard.html", "charts.html", "reports.html", "history.html", "sales.html", "inventory.html", "purchases.html", "batches.html",
   "expiring.html", "stocktake.html", "whattobuy.html", "expenses.html", "credit.html", "cash-position.html", "suppliers.html", "users.html",
   "shops.html", "settings.html", "backup.html", "guide.html", "about.html", "migrate.html", "login.html", "nav.js", "manifest.json",
@@ -32,6 +32,24 @@ self.addEventListener("fetch", function (e) {
     e.respondWith(caches.open(VERSION).then(function (c) {
       return c.match(req.url).then(function (hit) {
         return hit || fetch(req).then(function (r) { if (r && r.ok) c.put(req.url, r.clone()); return r; });
+      });
+    }));
+    return;
+  }
+
+  // The app shell files always try the internet first (2 seconds), so an update is picked up on the very next opening.
+  var shell = /\/(app\.html|mc-core\.js|mc-notify\.js|mc-share\.js)$/.test(url.pathname) && url.origin === self.location.origin;
+  if (shell) {
+    var skey = url.origin + url.pathname;
+    e.respondWith(caches.open(VERSION).then(function (c) {
+      return c.match(skey).then(function (hit) {
+        var net = fetch(req).then(function (r) { if (r && r.ok) c.put(skey, r.clone()); return r; }).catch(function () { return null; });
+        if (!hit) return net.then(function (r) { return r || new Response("Offline", { status: 503 }); });
+        e.waitUntil(net);
+        return new Promise(function (resolve) {
+          var done = false, t = setTimeout(function () { if (!done) { done = true; resolve(hit); } }, 2000);
+          net.then(function (r) { if (done) return; done = true; clearTimeout(t); resolve(r && r.ok ? r : hit); });
+        });
       });
     }));
     return;
