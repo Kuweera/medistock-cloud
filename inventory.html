@@ -845,6 +845,7 @@
   }
 
   window.openForm = function () {
+    pendingNewDrugId = null;
     mcPos.save("inv");
     editingId = null;
     document.getElementById("formTitle").textContent = "Add Drug";
@@ -925,6 +926,7 @@
     window.scrollTo(0, 0);
   };
 
+  let pendingNewDrugId = null;
   window.saveDrug = async function () {
     const statusEl = document.getElementById("formStatus");
     const name = document.getElementById("f_name").value.trim();
@@ -993,7 +995,10 @@
         window.mcQueue(setDoc(doc(db, "drugs", editingId), record, { merge: true }));
         statusEl.textContent = "Updated.";
       } else {
-        window.mcQueue(addDoc(collection(db, "drugs"), { ...record, createdAt: serverTimestamp() }));
+        // the id is made once per new drug, so saving the same drug twice can only ever write one record
+        if (!pendingNewDrugId) pendingNewDrugId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
+        window.mcQueue(setDoc(doc(db, "drugs", pendingNewDrugId), { ...record, createdAt: serverTimestamp() }));
+        pendingNewDrugId = null;
         statusEl.textContent = "Saved.";
       }
       clearForm();
