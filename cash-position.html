@@ -394,7 +394,7 @@
       statusEl.textContent = "Saving…"; statusEl.style.color = "var(--muted)";
       window.mcQueue(addDoc(collection(db, "cash_adjustments"), {
         businessId: currentBusinessId, shopId: currentShopId,
-        type, amount, reason, date, cashier: cashierName, byName: cashierName, byRole: cashierRole, byUid: currentUser.uid, createdAt: serverTimestamp()
+        type, amount, reason, date, cashier: cashierName, byName: cashierName, byRole: cashierRole, byUid: currentUid, createdAt: serverTimestamp()
       }));
       document.getElementById("ca_amount").value = "";
       document.getElementById("ca_reason").value = "";
@@ -405,14 +405,14 @@
     }
   };
 
-  let cashierName = "", cashierRole = "";
+  let cashierName = "", cashierRole = "", currentUid = "";
   onAuthStateChanged(auth, async (user) => {
     if (!user) { window.mcGo("login.html"); return; }
     const userSnap = await getDoc(doc(db, "users", user.uid));
     if (!userSnap.exists()) { window.mcGo("login.html"); return; }
     const profile = userSnap.data();
     if (profile.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
-    cashierName = profile.name || user.email; cashierRole = profile.role === "owner" ? "Owner" : "Operator";
+    currentUid = user.uid; cashierName = profile.name || user.email; cashierRole = profile.role === "owner" ? "Owner" : "Operator";
     currentBusinessId = profile.businessId;
 
     if (profile.role === "owner") {

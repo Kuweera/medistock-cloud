@@ -365,7 +365,7 @@ function mcPlanImport(pro, ctx, ex) {
 
   // ---- cash adjustments ----
   list("cash_adjustments").forEach(function (a) {
-    add("cash_adjustments", idOf("cash_adjustments", a.id), shop({ type: a.type, amount: num(a.amount), reason: a.reason || "", date: day(a.date), cashier: ctx.who, createdAt: iso(a.date) || new Date().toISOString() }));
+    add("cash_adjustments", idOf("cash_adjustments", a.id), shop({ type: a.type, amount: num(a.amount), reason: (a.reason && String(a.reason).trim().length >= 3) ? a.reason : "Imported from MediStock Pro", date: day(a.date), cashier: ctx.who, byName: ctx.who, byRole: "Owner", byUid: ctx.uid, createdAt: iso(a.date) || new Date().toISOString() }));
   });
 
   // ---- stock taking ----
