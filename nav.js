@@ -188,9 +188,12 @@
     function place(x, y) { var p = clampPos(x, y); fab.style.left = p.x + "px"; fab.style.top = p.y + "px"; return p; }
     var saved = null;
     try { saved = JSON.parse(localStorage.getItem("mcCalcPos") || "null"); } catch (e) {}
-    if (saved && typeof saved.x === "number") place(saved.x * window.innerWidth, saved.y * window.innerHeight);
-    else place(window.innerWidth - SIZE - 12, window.innerHeight - SIZE - 80);
-    window.addEventListener("resize", function () { place(parseFloat(fab.style.left) || 0, parseFloat(fab.style.top) || 0); });
+    // keep the position as a fraction of the window so it stays in the same corner when a PC window is resized
+    // or when screens that were loaded at another size are shown (pixel positions drifted to the middle of the page)
+    var frac = (saved && typeof saved.x === "number") ? { x: saved.x, y: saved.y } : { x: (window.innerWidth - SIZE - 12) / window.innerWidth, y: (window.innerHeight - SIZE - 80) / window.innerHeight };
+    function placeFrac() { if (window.innerWidth > 0) place(frac.x * window.innerWidth, frac.y * window.innerHeight); }
+    placeFrac();
+    window.addEventListener("resize", placeFrac);
 
     var drag = null;
     fab.addEventListener("pointerdown", function (e) {
@@ -209,7 +212,8 @@
       var d = drag; drag = null;
       if (d.moved) {
         var x = parseFloat(fab.style.left) || 0, y = parseFloat(fab.style.top) || 0;
-        try { localStorage.setItem("mcCalcPos", JSON.stringify({ x: x / window.innerWidth, y: y / window.innerHeight })); } catch (err) {}
+        frac = { x: x / window.innerWidth, y: y / window.innerHeight };
+        try { localStorage.setItem("mcCalcPos", JSON.stringify(frac)); } catch (err) {}
       } else openSheet();
     }
     fab.addEventListener("pointerup", endDrag);
