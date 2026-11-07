@@ -60,6 +60,18 @@
   .pill.neutral{background:var(--border); color:var(--muted);}
   .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
   .hidden{display:none !important;}
+  details.hr{border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin:8px 0; background:var(--card);}
+  details.hr > summary{cursor:pointer; list-style:none; font-size:14px;}
+  details.hr > summary::-webkit-details-marker{display:none;}
+  .hr .meta{font-size:12.5px; color:var(--muted); line-height:1.55; margin:2px 0 0;}
+  .hr .line{display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px dashed var(--border); font-size:13px;}
+  .hr .line:last-of-type{border-bottom:0;}
+  .hr .sub{font-size:11.5px; color:var(--muted);}
+  .hr .tot{text-align:right; margin-top:7px; font-weight:700;}
+  .hr .acts{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;}
+  .hr .acts button{flex:1 1 120px; margin-top:0;}
+  .tagc{font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid var(--warn); color:var(--warn); margin-left:4px;}
+  .tagp{font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid var(--accent2); color:var(--accent2); margin-left:4px;}
   .tx-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
   .tx-row:last-child{border-bottom:none;}
 
@@ -307,6 +319,7 @@
   let allTxns = [];
   let showDeactivated = false;
   let currentAccountId = null;
+  let receiptsById = {}, businessName = "", businessPhone = "", shopName = "", shopLocation = "";
 
   function customerBalance(id) {
     return allTxns.filter(t => t.customerId === id).reduce((sum, t) => sum + (t.balanceChange || 0), 0);
@@ -375,6 +388,96 @@
     }
   };
 
+  // ---------- credit history cards (same layout as Business History) ----------
+  const esc = v => String(v == null ? "" : v).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+  const fmt = n => Math.round(Number(n) || 0).toLocaleString();
+  const when = t => t && t.toDate ? t.toDate() : null;
+  const fmtWhen = d => d ? d.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+  function breakdown(baseQty, it) {
+    const per = Number(it.baseUnitsPerStock) || 0, inter = Number(it.basePerIntermediate) || 0;
+    let stock = 0, rem = baseQty;
+    if (per > 0) { stock = Math.floor(baseQty / per); rem = baseQty - stock * per; }
+    let mid = 0, loose = rem;
+    if (inter > 0) { mid = Math.floor(rem / inter); loose = rem - mid * inter; }
+    return { stock, mid, loose, hasMid: !!it.intermediateUnit && inter > 0 };
+  }
+  function qtyLabel(baseQty, it) {
+    const b = breakdown(baseQty, it), parts = [];
+    if (b.stock) parts.push(b.stock + " " + it.stockUnit + "(s)");
+    if (b.hasMid && b.mid) parts.push(b.mid + " " + it.intermediateUnit + "(s)");
+    if (b.loose) parts.push(Math.round(b.loose * 1000) / 1000 + " " + it.baseUnit + "(s)");
+    return parts.length ? parts.join(" + ") : "0 " + (it.baseUnit || "unit") + "(s)";
+  }
+  function lineInfo(it) {
+    const conv = qtyLabel(Math.abs(it.baseQtyNeeded || 0), it), raw = it.qty + " " + it.unitLabel + "(s)";
+    return { qty: conv, sub: conv === raw ? null : "(sold as " + raw + " × " + fmt(it.pricePerUnit) + ")" };
+  }
+  function creditReceiptText(t, rc, c) {
+    const L = [];
+    L.push(businessName || "MediStock Cloud");
+    if (shopName) L.push(shopName);
+    if (shopLocation) L.push(shopLocation);
+    if (businessPhone) L.push(businessPhone);
+    L.push("");
+    L.push("Credit sale receipt: " + (rc ? rc.displayNumber : "—"));
+    L.push("Date: " + fmtWhen(when(t.createdAt)));
+    L.push("Customer: " + c.name + (c.phone ? " (" + c.phone + ")" : ""));
+    if (t.dueDate) L.push("Due: " + t.dueDate);
+    const cashier = (rc && rc.cashier) || t.cashier; if (cashier) L.push("Cashier: " + cashier);
+    L.push("---------------------------");
+    ((rc && rc.items) || []).forEach(i => { L.push(i.drugName); const d = lineInfo(i); L.push("  " + d.qty + " = " + fmt(i.total)); if (d.sub) L.push("  " + d.sub); });
+    L.push("---------------------------");
+    L.push("TOTAL ON CREDIT: " + fmt(t.amount));
+    return L.join("\n");
+  }
+  function paymentText(t, c, balAfter) {
+    const L = [];
+    L.push(businessName || "MediStock Cloud");
+    if (shopName) L.push(shopName);
+    if (shopLocation) L.push(shopLocation);
+    if (businessPhone) L.push(businessPhone);
+    L.push("");
+    L.push("Payment received");
+    L.push("Date: " + fmtWhen(when(t.createdAt)));
+    L.push("Customer: " + c.name + (c.phone ? " (" + c.phone + ")" : ""));
+    if (t.cashier) L.push("Received by: " + t.cashier);
+    L.push("---------------------------");
+    L.push("PAID: " + fmt(t.amount));
+    L.push("Balance remaining: " + fmt(Math.max(0, balAfter)));
+    return L.join("\n");
+  }
+  function txCard(t, c, balAfter, isOpen) {
+    const d = when(t.createdAt), dt = fmtWhen(d), k = ' data-k="' + esc(t.id) + '"' + (isOpen ? " open" : "");
+    const balLine = '<div class="meta">Balance after this record: <b>' + fmt(Math.max(0, balAfter)) + "</b></div>";
+    const acts = '<div class="acts"><button type="button" class="btn-small btn-secondary" onclick="shareTx(\'' + esc(t.id) + '\')">Share</button><button type="button" class="btn-small btn-secondary" onclick="saveTx(\'' + esc(t.id) + '\')">Save to Phone</button></div>';
+    if (t.type === "CREDIT_SALE") {
+      const rc = receiptsById[t.receiptId], lines = rc && Array.isArray(rc.items) ? rc.items : [];
+      const lineHtml = lines.length ? lines.map(i => { const x = lineInfo(i); return '<div class="line"><span><b>' + esc(i.drugName) + "</b><br>" + esc(x.qty) + (x.sub ? '<div class="sub">' + esc(x.sub) + "</div>" : "") + "</span><strong>" + fmt(i.total) + "</strong></div>"; }).join("")
+        : '<div class="meta">No saved item list for this credit sale.</div>';
+      return '<details class="hr"' + k + "><summary><b>Receipt #" + esc(rc ? rc.displayNumber : "—") + '</b><span class="tagc">CREDIT</span><br><span class="meta">' + esc(dt) + " · " + fmt(t.amount) + (t.dueDate ? " · due " + esc(t.dueDate) : "") + ((rc && rc.cashier) || t.cashier ? " · " + esc((rc && rc.cashier) || t.cashier) : "") + "</span></summary><div style=\"margin-top:8px\">" +
+        lineHtml + '<div class="tot">Total: ' + fmt(t.amount) + "</div>" + balLine + acts + "</div></details>";
+    }
+    if (t.type === "PAYMENT") {
+      return '<details class="hr"' + k + "><summary><b>Payment received</b><span class=\"tagp\">PAID</span><br><span class=\"meta\">" + esc(dt) + " · " + fmt(t.amount) + (t.cashier ? " · " + esc(t.cashier) : "") + "</span></summary><div style=\"margin-top:8px\">" +
+        (t.description ? '<div class="meta">' + esc(t.description) + "</div>" : "") + '<div class="tot">Paid: ' + fmt(t.amount) + "</div>" + balLine + acts + "</div></details>";
+    }
+    return '<details class="hr"' + k + "><summary><b>" + esc(String(t.type || "Record").replace(/_/g, " ")) + '</b><br><span class="meta">' + esc(dt) + " · " + fmt(t.amount || Math.abs(t.balanceChange || 0)) + "</span></summary><div style=\"margin-top:8px\">" +
+      (t.description ? '<div class="meta">' + esc(t.description) + "</div>" : "") + balLine + "</div></details>";
+  }
+  function txShareParts(id) {
+    const t = allTxns.find(x => x.id === id); if (!t) return null;
+    const c = allCustomers.find(x => x.id === t.customerId) || { name: t.customerName || "Customer", phone: "" };
+    const bal = allTxns.filter(x => x.customerId === t.customerId && (x.createdAt && x.createdAt.toMillis ? x.createdAt.toMillis() : Date.now()) <= (t.createdAt && t.createdAt.toMillis ? t.createdAt.toMillis() : Date.now())).reduce((s, x) => s + (x.balanceChange || 0), 0);
+    if (t.type === "CREDIT_SALE") { const rc = receiptsById[t.receiptId]; return { text: creditReceiptText(t, rc, c), title: "Credit receipt " + (rc ? rc.displayNumber : ""), file: "Credit-" + (rc ? rc.displayNumber : id) }; }
+    return { text: paymentText(t, c, bal), title: "Payment from " + c.name, file: "Payment-" + c.name.replace(/[^A-Za-z0-9]+/g, "-") };
+  }
+  window.shareTx = function (id) { const p = txShareParts(id); if (p) window.top.mcShareText(p.text, p.title); };
+  window.saveTx = async function (id) {
+    const p = txShareParts(id); if (!p) return;
+    const d = when((allTxns.find(x => x.id === id) || {}).createdAt) || new Date();
+    alert(await window.top.mcSaveText(p.file + "-" + d.toISOString().slice(0, 10) + ".txt", p.text, "text/plain"));
+  };
+
   window.openAccount = function (id) {
     mcPos.save("acct");
     currentAccountId = id;
@@ -391,15 +494,15 @@
       `Rating: <span class="pill ${rating.cls}">${rating.label}</span>`;
     document.getElementById("toggleActiveBtn").textContent = c.active === false ? "Reactivate Customer" : "Deactivate Customer";
 
-    const txs = allTxns.filter(t => t.customerId === id)
-      .sort((a, b2) => (b2.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
-    document.getElementById("accountTransactions").innerHTML = txs.length
-      ? txs.map(t => `
-          <div class="tx-row">
-            <span class="pill neutral" style="margin-left:0;">${t.type}</span> ${Math.round(t.amount || Math.abs(t.balanceChange || 0)).toLocaleString()}<br>
-            <span class="cust-meta">${t.createdAt?.toDate ? t.createdAt.toDate().toLocaleString() : ""} · ${t.description || ""}${t.dueDate ? " · due " + t.dueDate : ""}</span>
-          </div>`).join("")
-      : '<div class="empty">No transactions.</div>';
+    // running balance after each record (oldest first), then show newest first
+    const ms = t => (t.createdAt && t.createdAt.toMillis ? t.createdAt.toMillis() : Date.now());
+    const asc = allTxns.filter(t => t.customerId === id).sort((a, b2) => ms(a) - ms(b2));
+    let run = 0; const after = {};
+    asc.forEach(t => { run += t.balanceChange || 0; after[t.id] = run; });
+    const txs = asc.slice().reverse();
+    const box = document.getElementById("accountTransactions");
+    const openKeys = new Set(Array.from(box.querySelectorAll("details[open]")).map(d => d.dataset.k));
+    box.innerHTML = txs.length ? txs.map(t => txCard(t, c, after[t.id], openKeys.has(t.id))).join("") : '<div class="empty">No transactions.</div>';
     document.getElementById("accountCard").scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
@@ -504,10 +607,20 @@
       const fromCache = snap.metadata.fromCache;
       badge.textContent = fromCache ? "offline (cached)" : "online (synced)";
       badge.className = "badge " + (fromCache ? "offline" : "online");
-      allTxns = snap.docs.map(d => d.data());
+      allTxns = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderList();
       if (currentAccountId) openAccount(currentAccountId);
     });
+
+    // the receipts behind each credit sale, so the history here reads like Business History
+    onSnapshot(query(collection(db, "receipts"), where("businessId", "==", currentBusinessId), where("shopId", "==", currentShopId)), (snap) => {
+      receiptsById = {};
+      snap.docs.forEach(d => { receiptsById[d.id] = { id: d.id, ...d.data() }; });
+      if (currentAccountId) openAccount(currentAccountId);
+    });
+    // business and shop details printed on shared receipts
+    getDoc(doc(db, "businesses", currentBusinessId)).then(b => { if (b.exists()) { businessName = b.data().name || ""; businessPhone = b.data().phone || ""; } }).catch(() => {});
+    getDoc(doc(db, "shops", currentShopId)).then(sh => { if (sh.exists()) { shopName = sh.data().name || ""; shopLocation = sh.data().location || ""; } }).catch(() => {});
   });
 
   window.mcBack = function () { const f = document.getElementById("accountCard"); if (f && !f.classList.contains("hidden")) { f.classList.add("hidden"); mcPos.restore("acct"); return true; } return false; };

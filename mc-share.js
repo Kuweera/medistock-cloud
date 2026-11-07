@@ -20,9 +20,8 @@
   async function shareToApps(text, title) {
     if (isNative()) {
       var SH = plug("Share");
-      if (!SH) throw new Error("this app build has no share plugin");
-      await SH.share({ title: title || "MediStock", text: text, dialogTitle: "Share with…" });
-      return true;
+      if (SH) { await SH.share({ title: title || "MediStock", text: text, dialogTitle: "Share with…" }); return true; }
+      if (!navigator.share) throw new Error("this app build has no share plugin. Use Copy text instead.");
     }
     if (navigator.share) { await navigator.share({ title: title || "MediStock", text: text }); return true; }
     throw new Error("This browser cannot open the app list. Use Copy instead.");
@@ -36,21 +35,22 @@
       o.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;display:flex;align-items:flex-end;justify-content:center;font-family:-apple-system,Roboto,Arial,sans-serif";
       var btn = "width:100%;box-sizing:border-box;border-radius:11px;padding:13px;font-size:16px;font-weight:700;margin-top:8px;border:1px solid #2bbfa0;";
       o.innerHTML = '<div style="background:' + bg + ';color:' + fg + ';width:100%;max-width:480px;border-radius:16px 16px 0 0;padding:16px;box-sizing:border-box">' +
-        '<div style="font-size:17px;font-weight:700;margin-bottom:8px"></div>' +
-        '<pre style="margin:0 0 6px;max-height:140px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:12px;color:' + mut + ';border:1px solid ' + bd + ';border-radius:8px;padding:8px"></pre>' +
+        '<div id="mcsTitle" style="font-size:17px;font-weight:700;margin-bottom:8px"></div>' +
+        '<pre id="mcsText" style="margin:0 0 6px;max-height:140px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:12px;color:' + mut + ';border:1px solid ' + bd + ';border-radius:8px;padding:8px"></pre>' +
         '<button id="mcsApps" style="' + btn + 'background:#2bbfa0;color:#06201a">Share to an app (WhatsApp, Telegram, email…)</button>' +
         '<button id="mcsCopy" style="' + btn + 'background:transparent;color:#2bbfa0">Copy text</button>' +
         '<button id="mcsCancel" style="' + btn + 'background:transparent;color:' + mut + ';border-color:' + bd + '">Cancel</button>' +
         '<div id="mcsMsg" style="font-size:13px;margin-top:8px;min-height:16px;color:' + mut + '"></div></div>';
-      o.querySelector("div div").textContent = title || "Share";
-      o.querySelector("pre").textContent = text;
+      o.querySelector("#mcsTitle").textContent = title || "Share";
+      o.querySelector("#mcsText").textContent = text;
       var msg = o.querySelector("#mcsMsg");
       function done(r) { try { o.remove(); } catch (e) {} resolve(r); }
       o.addEventListener("click", function (e) { if (e.target === o) done("cancel"); });
       o.querySelector("#mcsCancel").onclick = function () { done("cancel"); };
       o.querySelector("#mcsCopy").onclick = async function () {
         var ok = await copyText(text);
-        msg.textContent = ok ? "Copied. Paste it into any app." : "Could not copy. Press and hold the text above to copy it.";
+        if (!ok) { try { var rg = document.createRange(); rg.selectNodeContents(o.querySelector("#mcsText")); var sl = window.getSelection(); sl.removeAllRanges(); sl.addRange(rg); } catch (e) {} }
+        msg.textContent = ok ? "Copied. Paste it into any app." : "Could not copy automatically. The text above is selected: press and hold it, then tap Copy.";
         msg.style.color = ok ? "#2bbfa0" : "#e5484d";
         if (ok) setTimeout(function () { done("copied"); }, 900);
       };

@@ -502,10 +502,13 @@
         .sort((a, b) => expiryMs(a.expiryDate) - expiryMs(b.expiryDate));
       const expiredQty = allBatchesForDrug
         .filter(b => daysUntil(b.expiryDate) < 0)
-        .reduce((sum, b) => sum + b.quantity, 0);
+        .reduce((sum, b) => sum + Math.max(0, Number(b.quantity) || 0), 0);
 
       selectedBatches = active;
-      sellableBaseForDrug = active.reduce((sum, b) => sum + b.quantity, 0);
+      // The drug's own stock is what Inventory shows, so it is what can be sold (less any expired batch).
+      // Batch records alone can be lower than real stock (stock-taking, imported history), which used to
+      // show "Sellable: 0" for drugs that were plainly in stock.
+      sellableBaseForDrug = Math.max(0, (Number(selectedDrug.currentStockBase) || 0) - expiredQty);
 
       let stockText = "Sellable: " + formatSoldQtyLabel(sellableBaseForDrug, selectedDrug);
       if (expiredQty > 0) stockText += ` (+${expiredQty} ${selectedDrug.baseUnit}(s) expired, excluded)`;
@@ -832,8 +835,12 @@
           }
         }
         if (remaining > 0) {
-          // No batch coverage for the remainder (e.g. no batches recorded at all for this drug) —
-          // fall back to simple deduction, same as the drug's own running total.
+          // No batch coverage for the remainder (stock with no batch record, e.g. imported or added by stock taking).
+          // It is still deducted from the drug's own running total below; cost it at the drug's wholesale price
+          // so profit reports are not overstated.
+          const dd = liveDrugSnaps[drugId] && liveDrugSnaps[drugId].exists() ? liveDrugSnaps[drugId].data() : null;
+          const w = dd ? Number(dd.wholesale) || 0 : 0;
+          if (w > 0) used.push({ batchId: null, batchNumber: "", qty: remaining, costPerStockUnit: w });
         }
         batchesUsedByDrug[drugId] = used;
         const drugSnap = liveDrugSnaps[drugId];

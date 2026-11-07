@@ -428,7 +428,7 @@
   };
 
   function showCreds(title, shopCode, opId, pin, name) {
-    const text = "MediStock login for " + name + " — Shop Code: " + shopCode + " · Operator ID: " + opId + " · PIN: " + pin;
+    const text = "MediStock login for " + name + "\nShop Code: " + shopCode + "\nOperator ID: " + opId + "\nPIN: " + pin;
     $("credBox").innerHTML = '<div class="cred"><div><b>' + esc(title) + "</b></div>Shop Code: <b>" + esc(shopCode) + "</b><br>Operator ID: <b>" + esc(opId) + "</b><br>PIN: <b>" + esc(pin) +
       '</b><div class="hint2">Write these down or send them now — the PIN is not shown again.</div>' +
       '<div class="op-actions"><button class="btn-small btn-secondary" id="shareCred">Share / Copy</button><button class="btn-small btn-secondary" id="hideCred">Done</button></div></div>';

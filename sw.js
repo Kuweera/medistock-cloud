@@ -1,6 +1,6 @@
 /* MediStock Cloud — keeps the app's pages and the Firebase code on the phone so it opens with no internet.
    Pages refresh themselves in the background whenever the phone is online. */
-var VERSION = "mc-v11";
+var VERSION = "mc-v12";
 var PAGES = ["app.html", "mc-core.js", "mc-notify.js", "mc-share.js", "index.html", "dashboard.html", "charts.html", "reports.html", "history.html", "sales.html", "inventory.html", "purchases.html", "batches.html",
   "expiring.html", "stocktake.html", "whattobuy.html", "expenses.html", "credit.html", "cash-position.html", "suppliers.html", "users.html",
   "shops.html", "settings.html", "backup.html", "guide.html", "about.html", "migrate.html", "login.html", "nav.js", "manifest.json",
