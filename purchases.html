@@ -176,6 +176,7 @@
 <script src="nav.js"></script>
 <div class="hint" id="shopIndicator" style="margin-bottom:8px;"></div>
 
+<div class="mc-cols"><div class="mc-col-a">
 <div class="card" id="searchCard">
   <input type="text" id="searchBox" placeholder="Search drug to restock…" autocomplete="off">
   <div id="results" style="margin-top:8px;"></div>
@@ -225,6 +226,7 @@
   </div>
 </div>
 
+</div><div class="mc-col-b">
 <div class="card hidden" id="cartCard">
   <h2>Purchase Cart</h2>
   <div id="cartList"></div>
@@ -241,6 +243,9 @@
   <button class="btn-secondary" onclick="saveReceiptToPhone()">Save to Phone</button>
   <button class="btn-secondary" onclick="startNewPurchase()">New Purchase</button>
 </div>
+
+<div class="mc-empty"><b>Cart is empty</b>Search a drug on the left and add it. Your purchase cart and receipt appear here.</div>
+</div></div>
 
 <div class="cart-bar hidden" id="cartBar">
   <div><b id="cartBarCount">0 items</b><span class="amt" id="cartBarTotal">0</span></div>

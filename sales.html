@@ -189,6 +189,7 @@
 <script src="nav.js"></script>
 <div class="hint" id="shopIndicator" style="margin-bottom:8px;"></div>
 
+<div class="mc-cols"><div class="mc-col-a">
 <div class="card hidden" id="frequentCard">
   <div class="hint" style="margin:0 0 6px;">Frequently sold</div>
   <div class="chip-row" id="frequentChips"></div>
@@ -223,6 +224,7 @@
   </div>
 </div>
 
+</div><div class="mc-col-b">
 <div class="card hidden" id="cartCard">
   <h2>Cart</h2>
   <div id="cartList"></div>
@@ -255,6 +257,9 @@
   <button class="btn-secondary" onclick="saveReceiptToPhone()">Save to Phone</button>
   <button class="btn-secondary" onclick="startNewSale()">New Sale</button>
 </div>
+
+<div class="mc-empty"><b>Cart is empty</b>Search a drug on the left, type the quantity and press Enter to add it. Your cart and receipt appear here.</div>
+</div></div>
 
 <div class="cart-bar hidden" id="cartBar">
   <div><b id="cartBarCount">0 items</b><span class="amt" id="cartBarTotal">0</span></div>
@@ -547,6 +552,17 @@
     updateConfigTotal();
   };
 
+  // PC keyboard: Enter in the search picks the first match, Enter in quantity/price adds to cart, then back to search.
+  const wide = () => window.matchMedia && matchMedia("(min-width: 900px)").matches;
+  document.getElementById("searchBox").addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    const first = document.querySelector("#results .result-item"); if (first) { e.preventDefault(); first.click(); }
+  });
+  ["qty", "pricePerUnit"].forEach(id => document.getElementById(id).addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return; e.preventDefault(); window.addToCart();
+    if (wide() && !selectedDrug) document.getElementById("searchBox").focus();
+  }));
+  window.addEventListener("mc-show", () => { if (wide() && !selectedDrug) { try { document.getElementById("searchBox").focus(); } catch (e) {} } });
   document.getElementById("qty").addEventListener("input", updateConfigTotal);
   document.getElementById("pricePerUnit").addEventListener("input", updateConfigTotal);
 

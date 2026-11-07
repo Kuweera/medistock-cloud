@@ -1,0 +1,84 @@
+/* MediStock Cloud — wide-screen layout (PC, laptop, large tablet).
+   The app shell (app.html) adds this to every screen. Phones never match these rules, so the phone layout is unchanged.
+   Below 900px wide nothing here applies; from 900px up the menu becomes a permanent side bar and screens use the width. */
+
+/* the "cart is empty" note exists only on wide screens */
+.mc-empty { display: none; }
+
+@media (min-width: 900px) {
+  html { --side: 232px; --gut: max(28px, calc((100vw - var(--side) - 1240px) / 2)); }
+  body { padding: 20px var(--gut) 56px calc(var(--side) + var(--gut)) !important; }
+
+  /* ---- top bars span the content area, aligned with the cards ---- */
+  .app-header { margin: -20px calc(-1 * var(--gut)) 0 calc(-1 * var(--gut)) !important; padding: 16px var(--gut) 14px !important; }
+  .nav-bar { margin: -14px calc(-1 * var(--gut)) 16px calc(-1 * var(--gut)) !important; padding: 8px var(--gut) !important; justify-content: flex-end !important; }
+
+  /* ---- the menu is a permanent side bar ---- */
+  .hamburger-btn, #mcHomeBtn, .nav-bar-brand, .nav-overlay, .nav-panel-title { display: none !important; }
+  .nav-panel {
+    transform: none !important; left: 0 !important; right: auto !important; width: var(--side) !important; max-width: none !important;
+    box-shadow: none !important; border-right: 1px solid rgba(255, 255, 255, .18); padding: 14px 10px 18px !important; z-index: 30 !important;
+  }
+  .nav-panel::before { content: "\1F48A  MediStock Cloud"; display: block; color: #fff; font-weight: 800; font-size: 17px; padding: 4px 8px 12px; }
+  .nav-panel a { padding: 10px 12px !important; margin-bottom: 2px !important; font-size: 14px !important; }
+  .nav-panel a:hover { background: rgba(255, 255, 255, .2) !important; }
+  .nav-panel a.active:hover { background: var(--card) !important; }
+
+  /* ---- mouse and keyboard comfort ---- */
+  button, a, summary, select, .result-item, .cust-row, .tile, .qa, .drug-card .row-top { cursor: pointer; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tile:hover, .qa:hover, .qa-sell:hover { filter: brightness(1.07); }
+  .cust-row:hover, .result-item:hover { background: rgba(42, 191, 160, .08); }
+  .card { padding: 20px !important; }
+  .cart-bar { display: none !important; }            /* the cart is already beside the search on a wide screen */
+
+  /* forms and settings-type screens stay a readable width instead of stretching across the screen */
+  html[data-mc-page="settings"] body > .card, html[data-mc-page="shops"] body > .card, html[data-mc-page="users"] body > .card,
+  html[data-mc-page="backup"] body > .card, html[data-mc-page="migrate"] body > .card, html[data-mc-page="about"] body > .card,
+  html[data-mc-page="expenses"] body > .card, html[data-mc-page="suppliers"] body > .card, html[data-mc-page="stocktake"] body > .card,
+  html[data-mc-page="cash-position"] body > .card, html[data-mc-page="credit"] body > .card { max-width: 980px; }
+  html[data-mc-page="guide"] body > * { max-width: 900px; }
+
+  /* ---- Sell and Purchases: search on the left, cart and receipt on the right ---- */
+  .mc-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(360px, 1fr); gap: 0 22px; align-items: start; }
+  .mc-cols > div { min-width: 0; }
+  .mc-col-b { position: sticky; top: 64px; max-height: calc(100vh - 84px); overflow-y: auto; }
+  .mc-empty { display: none; border: 2px dashed var(--border); border-radius: 14px; padding: 36px 22px; text-align: center; color: var(--muted); font-size: 14px; line-height: 1.6; }
+  .mc-empty b { display: block; font-size: 16px; color: var(--text); margin-bottom: 6px; }
+  #cartCard.hidden ~ #receiptCard.hidden ~ .mc-empty { display: block; }
+  #results { max-height: 52vh; overflow-y: auto; }
+
+  /* ---- Inventory: drugs in columns ---- */
+  #drugList, #deactivatedList { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px; align-items: start; }
+  #drugList > .empty, #deactivatedList > .empty { grid-column: 1 / -1; }
+  #drugList .drug-card, #deactivatedList .drug-card { margin-bottom: 0 !important; }
+  html[data-mc-page="inventory"] #formCard { max-width: 900px; }
+
+  /* ---- Business History: records in columns ---- */
+  #historyResults { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 0 14px; align-items: start; }
+  #historyResults > .empty { grid-column: 1 / -1; }
+
+  /* ---- Dashboard: wider tile grids ---- */
+  .qa-grid { grid-template-columns: repeat(6, 1fr) !important; gap: 12px !important; }
+  .tiles { grid-template-columns: repeat(5, 1fr) !important; gap: 12px !important; }
+  .tiles.three { grid-template-columns: repeat(6, 1fr) !important; }
+  .tile.wide { grid-column: auto !important; }
+  .tile { padding: 18px 8px !important; }
+  .tile .n { font-size: 26px !important; }
+  .tile .n[style] { font-size: 21px !important; }
+  .qa-sell { padding: 18px !important; font-size: 20px !important; }
+  .qa { padding: 16px 6px !important; }
+  .cash-card { padding: 20px !important; }
+  .cash-card .n { font-size: 36px !important; }
+}
+
+/* a little more room on large monitors */
+@media (min-width: 1500px) {
+  html { --side: 248px; }
+  #drugList, #deactivatedList { grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); }
+}
+
+/* narrow desktop windows and tablets: keep the drawer menu, but do not stretch the content edge to edge */
+@media (min-width: 640px) and (max-width: 899px) {
+  body > *:not(.nav-panel):not(.nav-overlay):not(.app-header):not(.nav-bar):not(script):not(style) { max-width: 760px; margin-left: auto; margin-right: auto; }
+}

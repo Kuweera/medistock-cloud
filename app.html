@@ -93,10 +93,23 @@
     frames.delete(rec.page);
   }
 
+  // wide-screen layout: one shared stylesheet added to every screen (phones ignore it, see desktop.css)
+  let DESK_CSS = "";
+  fetch("desktop.css").then(r => r.ok ? r.text() : "").then(t => { DESK_CSS = t; }).catch(() => {});
+  function addDesktopLayout(el, d) {
+    try {
+      d.documentElement.setAttribute("data-mc-page", String(el.getAttribute("title") || "").replace(/\.html$/, ""));
+      if (d.getElementById("mcDesk")) return;
+      if (DESK_CSS) { const st = d.createElement("style"); st.id = "mcDesk"; st.textContent = DESK_CSS; d.head.appendChild(st); }
+      else { const l = d.createElement("link"); l.id = "mcDesk"; l.rel = "stylesheet"; l.href = "desktop.css"; d.head.appendChild(l); }
+    } catch (e) {}
+  }
+
   // the shell itself makes the Home button work on every screen (so it never depends on an older cached screen file)
   function hookFrame(el) {
     try {
       const d = el.contentDocument; if (!d || d.__mcHooked) return; d.__mcHooked = true;
+      addDesktopLayout(el, d);
       // a clear 🏠 button right beside the ☰ menu button, so Home is never confused with the menu
       const bar = d.querySelector(".nav-bar"), tg = d.getElementById("navToggle");
       if (bar && !d.getElementById("mcHomeBtn")) {

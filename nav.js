@@ -73,7 +73,7 @@
     installBtn.className = "theme-toggle";
     installBtn.id = "installBtn";
     installBtn.style.display = "none";
-    installBtn.textContent = "\ud83d\udcf2 Install app on this phone";
+    installBtn.textContent = "\ud83d\udcf2 Install app on this device";
     panel.appendChild(installBtn);
     out = document.createElement("button");
     out.type = "button";
