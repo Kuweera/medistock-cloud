@@ -218,7 +218,7 @@
     <button type="button" class="pill-btn" data-series="expenses"><span class="legend-dot" style="background:var(--warn)"></span>Expenses</button>
   </div>
   <div class="chart-wrap" id="trendChart"></div>
-  <div class="detail" id="trendDetail">Tap the chart to see the figures for that point.</div>
+  <div class="detail" id="trendDetail">Click or tap the chart to see the figures for that point.</div>
 </div>
 
 <div class="card">
@@ -505,7 +505,7 @@
   }
   function showDetail() {
     const el = $("trendDetail");
-    if (selectedIdx == null) { el.textContent = "Tap the chart to see the figures for that point."; return; }
+    if (selectedIdx == null) { el.textContent = "Click or tap the chart to see the figures for that point."; return; }
     const b = buckets[selectedIdx];
     el.innerHTML = "<b>" + esc(bucketLong(b, grain)) + "</b>" +
       '<div class="dr"><span>Sales</span><span>' + fmt(b.sales) + "</span></div>" +

@@ -35,7 +35,7 @@
   /* forms and settings-type screens stay a readable width instead of stretching across the screen */
   html[data-mc-page="settings"] body > .card, html[data-mc-page="shops"] body > .card, html[data-mc-page="users"] body > .card,
   html[data-mc-page="backup"] body > .card, html[data-mc-page="migrate"] body > .card, html[data-mc-page="about"] body > .card,
-  html[data-mc-page="expenses"] body > .card, html[data-mc-page="suppliers"] body > .card, html[data-mc-page="stocktake"] body > .card,
+  html[data-mc-page="expenses"] body > .card, html[data-mc-page="suppliers"] body > .card,
   html[data-mc-page="cash-position"] body > .card, html[data-mc-page="credit"] body > .card { max-width: 980px; }
   html[data-mc-page="guide"] body > * { max-width: 900px; }
 
@@ -54,6 +54,12 @@
   .mc-empty b { display: block; font-size: 16px; color: var(--text); margin-bottom: 6px; }
   #cartCard.hidden ~ #receiptCard.hidden ~ .mc-empty { display: block; }
   #results { max-height: 52vh; overflow-y: auto; }
+
+  /* ---- Stock Taking: medicines in two columns; the count form keeps a readable width ---- */
+  #stocktakeResults { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); column-gap: 28px; }
+  #stocktakeHistory { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); column-gap: 28px; align-items: start; }
+  #stocktakeResults > .empty, #stocktakeHistory > .empty { grid-column: 1 / -1; }
+  #stocktakeFormCard { max-width: 980px; }
 
   /* ---- Inventory: drugs in columns ---- */
   #drugList, #deactivatedList { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px; align-items: start; }
