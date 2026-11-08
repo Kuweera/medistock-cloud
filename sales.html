@@ -259,16 +259,17 @@
 </div>
 
 <div class="mc-empty"><b>Cart is empty</b>Search a drug on the left, type the quantity and press Enter to add it. Your cart and receipt appear here.</div>
-</div></div>
+</div>
 
 <div class="cart-bar hidden" id="cartBar">
   <div><b id="cartBarCount">0 items</b><span class="amt" id="cartBarTotal">0</span></div>
   <button class="btn-primary" onclick="goToCart()">Checkout &rsaquo;</button>
 </div>
 
-<div class="card">
+<div class="card mc-recent">
   <h2>Recent Receipts</h2>
   <div id="recentReceiptsList"><div class="empty">Loading…</div></div>
+</div>
 </div>
 
 <script>
@@ -483,7 +484,8 @@
     mcPos.focus("qty");   // the form is on screen and ready to type
     document.getElementById("configDrugName").textContent = selectedDrug.name;
     document.getElementById("configDrugStock").textContent = "Checking batches…";
-    window.scrollTo({ top: document.getElementById("configureCard").offsetTop - 10, behavior: "smooth" });
+    // on a PC the search bar and the form are on screen together, so stay at the top instead of scrolling past the search bar
+    window.scrollTo({ top: isWide() ? 0 : document.getElementById("configureCard").offsetTop - 10, behavior: "smooth" });
 
     const batchesQ = query(
       collection(db, "batches"),
@@ -553,7 +555,8 @@
   };
 
   // PC keyboard: Enter in the search picks the first match, Enter in quantity/price adds to cart, then back to search.
-  const wide = () => window.matchMedia && matchMedia("(min-width: 900px)").matches;
+  function isWide() { return !!(window.matchMedia && matchMedia("(min-width: 900px)").matches); }
+  const wide = isWide;
   document.getElementById("searchBox").addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     const first = document.querySelector("#results .result-item"); if (first) { e.preventDefault(); first.click(); }
@@ -589,6 +592,7 @@
     editingCartIndex = null;
     document.getElementById("configureCard").classList.add("hidden");
     mcPos.restore("cart");   // after editing a cart line, go back to where you were in the cart
+    if (isWide()) window.scrollTo({ top: 0, behavior: "smooth" });   // PC: back to the search bar
   };
 
   window.addToCart = function () {
@@ -928,7 +932,7 @@
       document.getElementById("receiptText").textContent = buildReceiptText(receiptNo, saleItems, grandTotal, paymentStatus, customerNameInput);
       document.getElementById("receiptCard").classList.remove("hidden");
       document.getElementById("cartCard").classList.add("hidden");
-      window.scrollTo({ top: document.getElementById("receiptCard").offsetTop - 10, behavior: "smooth" });
+      window.scrollTo({ top: isWide() ? 0 : document.getElementById("receiptCard").offsetTop - 10, behavior: "smooth" });
 
       cart = [];
       document.getElementById("cartBar").classList.add("hidden");

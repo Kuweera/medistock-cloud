@@ -42,7 +42,14 @@
   /* ---- Sell and Purchases: search on the left, cart and receipt on the right ---- */
   .mc-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(360px, 1fr); gap: 0 22px; align-items: start; }
   .mc-cols > div { min-width: 0; }
-  .mc-col-b { position: sticky; top: 64px; max-height: calc(100vh - 84px); overflow-y: auto; }
+  .mc-col-a { grid-column: 1; grid-row: 1; }
+  .mc-col-b { grid-column: 2; grid-row: 1 / span 2; position: sticky; top: 80px; align-self: start; }
+  .mc-recent { grid-column: 1; grid-row: 2; align-self: start; }
+  /* the cart list scrolls by itself; totals and the Complete / Clear buttons always stay on screen */
+  #cartCard:not(.hidden) { display: flex; flex-direction: column; max-height: calc(100vh - 100px); overflow-y: auto; }
+  #cartCard > * { flex: none; }
+  #cartCard > #cartList { flex: 1 1 auto; min-height: 90px; overflow-y: auto; }
+  #receiptCard .receipt-box { max-height: 46vh; overflow-y: auto; }
   .mc-empty { display: none; border: 2px dashed var(--border); border-radius: 14px; padding: 36px 22px; text-align: center; color: var(--muted); font-size: 14px; line-height: 1.6; }
   .mc-empty b { display: block; font-size: 16px; color: var(--text); margin-bottom: 6px; }
   #cartCard.hidden ~ #receiptCard.hidden ~ .mc-empty { display: block; }

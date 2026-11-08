@@ -245,16 +245,17 @@
 </div>
 
 <div class="mc-empty"><b>Cart is empty</b>Search a drug on the left and add it. Your purchase cart and receipt appear here.</div>
-</div></div>
+</div>
 
 <div class="cart-bar hidden" id="cartBar">
   <div><b id="cartBarCount">0 items</b><span class="amt" id="cartBarTotal">0</span></div>
   <button class="btn-primary" onclick="goToCart()">Checkout &rsaquo;</button>
 </div>
 
-<div class="card">
+<div class="card mc-recent">
   <h2>Recent Purchases</h2>
   <div id="recentPurchasesList"><div class="empty">Loading…</div></div>
+</div>
 </div>
 
 <script>
@@ -451,7 +452,7 @@
     document.getElementById("p_creditDueDate").value = existing ? (existing.creditDueDate || "") : "";
 
     updateAddPreview();
-    window.scrollTo({ top: document.getElementById("configureCard").offsetTop - 10, behavior: "smooth" });
+    window.scrollTo({ top: isWide() ? 0 : document.getElementById("configureCard").offsetTop - 10, behavior: "smooth" });   // PC: stay at the top, search bar and form together
     mcPos.focus("p_qtyStock");
   };
 
@@ -481,11 +482,13 @@
     document.getElementById("lineTotal").textContent = "Line total: " + Math.round(cost * quantityInStockUnits).toLocaleString();
   }
 
+  function isWide() { return !!(window.matchMedia && matchMedia("(min-width: 900px)").matches); }
   window.closeConfigure = function () {
     selectedDrug = null;
     editingCartIndex = null;
     document.getElementById("configureCard").classList.add("hidden");
     mcPos.restore("cart");   // after editing a cart line, go back to where you were in the cart
+    if (isWide()) window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   window.addToCart = function () {
@@ -690,7 +693,7 @@
       document.getElementById("receiptText").textContent = buildReceiptText(receiptNo, purchaseItems, grandCost, creditPortion);
       document.getElementById("receiptCard").classList.remove("hidden");
       document.getElementById("cartCard").classList.add("hidden");
-      window.scrollTo({ top: document.getElementById("receiptCard").offsetTop - 10, behavior: "smooth" });
+      window.scrollTo({ top: isWide() ? 0 : document.getElementById("receiptCard").offsetTop - 10, behavior: "smooth" });
 
       cart = [];
       document.getElementById("cartBar").classList.add("hidden");
@@ -856,7 +859,7 @@
             });
             renderCart();
             if (cart.length > 0) {
-              document.getElementById("cartCard").scrollIntoView({ behavior: "smooth" });
+              if (!isWide()) document.getElementById("cartCard").scrollIntoView({ behavior: "smooth" });
             }
           } catch (e) { /* malformed handoff data — ignore, nothing was added */ }
         } else {
