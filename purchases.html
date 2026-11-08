@@ -452,7 +452,7 @@
     document.getElementById("p_creditDueDate").value = existing ? (existing.creditDueDate || "") : "";
 
     updateAddPreview();
-    window.scrollTo({ top: isWide() ? 0 : document.getElementById("configureCard").offsetTop - 10, behavior: "smooth" });   // PC: stay at the top, search bar and form together
+    scrollToSearch(false);   // search bar and the form start on screen together
     mcPos.focus("p_qtyStock");
   };
 
@@ -483,12 +483,23 @@
   }
 
   function isWide() { return !!(window.matchMedia && matchMedia("(min-width: 900px)").matches); }
+  // Show the search bar together with the form: the page is scrolled so the search card sits just under the sticky top bar
+  // (before, it scrolled to the form itself, which left the search bar hidden behind the bar and needed a scroll up to change item).
+  function scrollToSearch(preferChips) {
+    if (isWide()) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+    var t = (preferChips && document.getElementById("frequentCard") && !document.getElementById("frequentCard").classList.contains("hidden"))
+      ? document.getElementById("frequentCard") : document.getElementById("searchCard");
+    if (!t) return;
+    var bar = document.querySelector(".nav-bar"), off = (bar ? bar.offsetHeight : 0) + 8;
+    window.scrollTo({ top: Math.max(0, t.getBoundingClientRect().top + window.pageYOffset - off), behavior: "smooth" });
+  }
   window.closeConfigure = function () {
+    const wasEditing = editingCartIndex !== null;
     selectedDrug = null;
     editingCartIndex = null;
     document.getElementById("configureCard").classList.add("hidden");
-    mcPos.restore("cart");   // after editing a cart line, go back to where you were in the cart
-    if (isWide()) window.scrollTo({ top: 0, behavior: "smooth" });
+    if (wasEditing && !isWide()) mcPos.restore("cart");   // after editing a cart line, go back to where you were in the cart
+    else scrollToSearch(true);
   };
 
   window.addToCart = function () {
