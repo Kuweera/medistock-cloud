@@ -1,9 +1,9 @@
 /* MediStock Cloud — keeps the app's pages and the Firebase code on the phone so it opens with no internet.
    Pages refresh themselves in the background whenever the phone is online. */
-var VERSION = "mc-v15";
+var VERSION = "mc-v16";
 var PAGES = ["app.html", "mc-core.js", "mc-notify.js", "mc-share.js", "desktop.css", "index.html", "dashboard.html", "charts.html", "reports.html", "history.html", "sales.html", "inventory.html", "purchases.html", "batches.html",
   "expiring.html", "stocktake.html", "whattobuy.html", "expenses.html", "credit.html", "cash-position.html", "suppliers.html", "users.html",
-  "shops.html", "settings.html", "backup.html", "guide.html", "about.html", "migrate.html", "login.html", "nav.js", "manifest.json",
+  "shops.html", "settings.html", "backup.html", "guide.html", "about.html", "migrate.html", "login.html", "login.css", "login.js", "nav.js", "manifest.json",
   "mc-icon-192.png", "mc-icon-512.png", "mc-icon-maskable-512.png", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-192.png", "icons/icon-maskable-512.png", "icons/favicon-32.png", "icons/apple-touch-icon-180.png"];
 var SDK = ["https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js", "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js",
   "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js"];
@@ -38,7 +38,7 @@ self.addEventListener("fetch", function (e) {
   }
 
   // The app shell files always try the internet first (2 seconds), so an update is picked up on the very next opening.
-  var shell = /\/(app\.html|mc-core\.js|mc-notify\.js|mc-share\.js|desktop\.css)$/.test(url.pathname) && url.origin === self.location.origin;
+  var shell = /\/(app\.html|mc-core\.js|mc-notify\.js|mc-share\.js|desktop\.css|login\.html|login\.css|login\.js)$/.test(url.pathname) && url.origin === self.location.origin;
   if (shell) {
     var skey = url.origin + url.pathname;
     e.respondWith(caches.open(VERSION).then(function (c) {
