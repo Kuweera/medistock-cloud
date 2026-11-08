@@ -330,3 +330,102 @@
     focus: function (id, delay) { setTimeout(function () { var el = document.getElementById(id); if (el) { try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); } } }, delay || 380); }
   };
 })();
+
+/* PC extras: keyboard shortcuts, the alerts bell (low stock / expiring / expired, from the data already on this device),
+   and hiding Print buttons inside the phone app (the phone saves a PDF instead). */
+(function () {
+  var top = window.top, MC = null;
+  try { MC = top.MC; } catch (e) {}
+  try {
+    var C = top.Capacitor;
+    if (C && C.isNativePlatform && C.isNativePlatform()) { var st = document.createElement("style"); st.textContent = ".mc-print{display:none!important}"; document.head.appendChild(st); }
+  } catch (e) {}
+  function wide() { return window.innerWidth >= 900; }
+  function typing(el) { return el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable); }
+
+  // ---------- shortcuts ----------
+  var KEYS = [["F2", "sales.html", "Sell"], ["F3", "purchases.html", "Purchases"], ["F4", "inventory.html", "Inventory"], ["F8", "history.html", "Business History"], ["F9", "reports.html", "Profit & Reports"]];
+  function help() {
+    var o = document.getElementById("mcKeyHelp");
+    if (o) { o.remove(); return; }
+    o = document.createElement("div"); o.id = "mcKeyHelp";
+    o.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9998;display:flex;align-items:center;justify-content:center";
+    var rows = KEYS.map(function (k) { return "<tr><td><kbd>" + k[0] + "</kbd></td><td>" + k[2] + "</td></tr>"; }).join("") +
+      "<tr><td><kbd>/</kbd></td><td>Jump to the search box</td></tr><tr><td><kbd>Enter</kbd></td><td>In Sell: add the first match / add to cart</td></tr><tr><td><kbd>?</kbd></td><td>Show or hide this list</td></tr><tr><td><kbd>Esc</kbd></td><td>Close</td></tr>";
+    o.innerHTML = '<div style="background:var(--card,#fff);color:var(--text,#16241f);border-radius:14px;padding:20px 24px;min-width:300px;box-shadow:0 10px 40px rgba(0,0,0,.4)"><div style="font-weight:800;font-size:17px;margin-bottom:10px">Keyboard shortcuts</div><table style="border-collapse:collapse;font-size:14px;line-height:2">' + rows + "</table></div>";
+    o.querySelectorAll("kbd").forEach(function (k) { k.style.cssText = "border:1px solid var(--border,#ccc);border-radius:6px;padding:1px 8px;font:700 12px monospace;margin-right:14px;background:rgba(127,127,127,.12)"; });
+    o.addEventListener("click", function () { o.remove(); });
+    document.body.appendChild(o);
+  }
+  function onKey(e) {
+    if (!wide() || e.ctrlKey || e.metaKey || e.altKey) return;
+    var k = e.key;
+    if (k === "Escape") { var h = document.getElementById("mcKeyHelp"); if (h) h.remove(); closeBell(); return; }
+    for (var i = 0; i < KEYS.length; i++) if (k === KEYS[i][0]) { e.preventDefault(); window.mcGo(KEYS[i][1]); return; }
+    if (typing(document.activeElement)) return;
+    if (k === "/") { var s = document.getElementById("searchBox"); if (s) { e.preventDefault(); s.focus(); s.select && s.select(); } }
+    else if (k === "?") { e.preventDefault(); help(); }
+  }
+  document.addEventListener("keydown", onKey);
+  window.mcKeyHelp = help;
+
+  // ---------- alerts bell ----------
+  var bar = document.querySelector(".nav-bar"), bell = null, box = null;
+  function rows(coll) {
+    var seen = {}, out = [];
+    ((MC && MC.entries) || []).forEach(function (e) { if (e.coll !== coll) return; e.rows.forEach(function (r) { if (!seen[r.id]) { seen[r.id] = 1; var o = {}; for (var k in r.d) o[k] = r.d[k]; o.id = r.id; out.push(o); } }); });
+    return out;
+  }
+  function day(s) {
+    if (!s) return null;
+    if (typeof s.toDate === "function") { var t = s.toDate(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); }
+    var m = /^(\d{4})-(\d{2})(?:-(\d{2}))?/.exec(String(s)); if (!m) return null;
+    return m[3] ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(+m[1], +m[2], 0);   // "YYYY-MM" means the end of that month
+  }
+  function alerts() {
+    var out = [], now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var low = rows("drugs").filter(function (d) { return d.active !== false && Number(d.reorderLevel) > 0 && Number(d.currentStockBase || 0) <= Number(d.reorderLevel) * Number(d.baseUnitsPerStock || 1); });
+    var exp = [], soon = [];
+    rows("batches").forEach(function (b) {
+      if (!(Number(b.quantity) > 0)) return;
+      var ex = day(b.expiryDate); if (!ex) return;
+      var n = Math.round((ex - today) / 86400000);
+      if (n < 0) exp.push(b); else if (n <= 30) soon.push(b);
+    });
+    function nm(l, k) { var u = []; l.forEach(function (x) { if (x[k] && u.indexOf(x[k]) < 0) u.push(x[k]); }); return u.slice(0, 3).join(", ") + (u.length > 3 ? " +" + (u.length - 3) + " more" : ""); }
+    if (exp.length) out.push({ c: "#e5484d", t: exp.length + " expired batch" + (exp.length > 1 ? "es" : "") + " still in stock", s: nm(exp, "drugName"), u: "batches.html?filter=expired" });
+    if (low.length) out.push({ c: "#f0b429", t: low.length + " drug" + (low.length > 1 ? "s" : "") + " low on stock", s: nm(low, "name"), u: "inventory.html?low=1" });
+    if (soon.length) out.push({ c: "#f0b429", t: soon.length + " batch" + (soon.length > 1 ? "es" : "") + " expiring within 30 days", s: nm(soon, "drugName"), u: "expiring.html?w=30" });
+    return out;
+  }
+  function closeBell() { if (box) box.style.display = "none"; }
+  function paintBell() {
+    if (!bell) return;
+    var a = alerts();
+    bell.textContent = "🔔" + (a.length ? " " + a.length : "");
+    bell.style.background = a.length ? "#f0b429" : "rgba(255,255,255,.2)"; bell.style.color = a.length ? "#222" : "#fff";
+    box.innerHTML = a.length ? a.map(function (x, i) { return '<div data-i="' + i + '" style="padding:9px 12px;border-left:4px solid ' + x.c + ';cursor:pointer;border-bottom:1px solid rgba(127,127,127,.2)"><b style="font-size:13.5px"></b><div style="font-size:12px;opacity:.75"></div></div>'; }).join("") : '<div style="padding:12px;font-size:13px;opacity:.75">No alerts. Stock levels and expiry dates look fine.</div>';
+    a.forEach(function (x, i) { var d = box.querySelector('[data-i="' + i + '"]'); d.querySelector("b").textContent = x.t; d.querySelector("div").textContent = x.s; d.onclick = function () { closeBell(); window.mcGo(x.u); }; });
+  }
+  function initBell() {
+    if (bell || !bar || !MC || !wide()) return;
+    bell = document.createElement("button"); bell.type = "button"; bell.id = "mcBell";
+    bell.style.cssText = "border:0;border-radius:999px;padding:3px 12px;font:700 13px system-ui,sans-serif;cursor:pointer;margin-right:10px;color:#fff;background:rgba(255,255,255,.2)";
+    bell.title = "Alerts";
+    box = document.createElement("div");
+    box.style.cssText = "display:none;position:absolute;right:14px;top:100%;width:340px;max-width:92vw;background:var(--card,#fff);color:var(--text,#16241f);border:1px solid var(--border,#ccc);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.3);z-index:40;overflow:hidden";
+    var kb = document.createElement("button"); kb.type = "button"; kb.textContent = "⌨ Shortcuts"; kb.title = "Keyboard shortcuts (press ?)";
+    kb.style.cssText = "border:0;border-radius:999px;padding:3px 12px;font:700 12.5px system-ui,sans-serif;cursor:pointer;margin-right:10px;color:#fff;background:rgba(255,255,255,.2)";
+    kb.onclick = help;
+    bar.appendChild(kb); bar.appendChild(bell); bar.appendChild(box);
+    if (getComputedStyle(bar).position === "static") bar.style.position = "relative";
+    bell.onclick = function (e) { e.stopPropagation(); paintBell(); box.style.display = box.style.display === "block" ? "none" : "block"; };
+    document.addEventListener("click", function (e) { if (!box.contains(e.target)) closeBell(); });
+    paintBell();
+    if (MC.onSync) MC.onSync(paintBell);
+    setInterval(paintBell, 60000);
+  }
+  window.addEventListener("mc-show", function () { initBell(); paintBell(); });
+  setTimeout(initBell, 800);
+  window.addEventListener("resize", function () { if (bell) { var w = wide(); bell.style.display = w ? "" : "none"; if (bell.previousSibling) bell.previousSibling.style.display = w ? "" : "none"; } });
+})();

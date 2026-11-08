@@ -79,6 +79,58 @@
     var blob = new Blob([text], { type: mime }), a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 3000);
-    return "Saved to your phone: " + name;
+    return "Downloaded: " + name + " (see your Downloads folder)";
+  };
+  // ---- print (PC) and PDF (PC and phone) ----
+  function asciiSafe(s) {
+    return String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\u00b7\u2022]/g, "-").replace(/[\u2014\u2013]/g, "-")
+      .replace(/\u2026/g, "...").replace(/\u00d7/g, "x").replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"').replace(/\t/g, "    ").replace(/[^\x20-\x7e\n]/g, "?");
+  }
+  // A small plain-text PDF made by hand (pure ASCII, so it also saves correctly through the phone's text saver).
+  function makePdf(text, title) {
+    var lines = [], W = 62, LPP = 64, LH = 11.5, FS = 9;
+    asciiSafe(text).split("\n").forEach(function (l) { l = l.replace(/\s+$/, ""); if (!l) { lines.push(""); return; } while (l.length > W) { var cut = l.lastIndexOf(" ", W); if (cut < 20) cut = W; lines.push(l.slice(0, cut)); l = l.slice(cut).replace(/^\s+/, ""); } lines.push(l); });
+    var longest = 0; lines.forEach(function (l) { if (l.length > longest) longest = l.length; });
+    var pw = Math.max(240, Math.round(longest * FS * 0.6 + 56)), pages = [];
+    for (var i = 0; i < lines.length; i += LPP) pages.push(lines.slice(i, i + LPP));
+    if (!pages.length) pages.push([""]);
+    var objs = [], n = 4 + pages.length * 2;
+    objs[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+    var kids = pages.map(function (p, k) { return (4 + k * 2) + " 0 R"; }).join(" ");
+    objs[2] = "<< /Type /Pages /Kids [" + kids + "] /Count " + pages.length + " >>";
+    objs[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>";
+    pages.forEach(function (p, k) {
+      var ph = Math.round(p.length * LH + 56), y = ph - 30, c = "BT /F1 " + FS + " Tf " + LH + " TL 28 " + y + " Td\n";
+      p.forEach(function (l) { c += "(" + l.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)") + ") '\n"; });
+      c += "ET";
+      objs[4 + k * 2] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + pw + " " + ph + "] /Resources << /Font << /F1 3 0 R >> >> /Contents " + (5 + k * 2) + " 0 R >>";
+      objs[5 + k * 2] = "<< /Length " + c.length + " >>\nstream\n" + c + "\nendstream";
+    });
+    var out = "%PDF-1.4\n", off = [];
+    for (var o = 1; o < n; o++) { off[o] = out.length; out += o + " 0 obj\n" + objs[o] + "\nendobj\n"; }
+    var xr = out.length; out += "xref\n0 " + n + "\n0000000000 65535 f \n";
+    for (o = 1; o < n; o++) out += ("0000000000" + off[o]).slice(-10) + " 00000 n \n";
+    out += "trailer\n<< /Size " + n + " /Root 1 0 R >>\nstartxref\n" + xr + "\n%%EOF\n";
+    return out;
+  }
+  window.mcSavePdf = async function (name, text, title) {
+    var msg = await window.mcSaveText(name.replace(/\.[a-z]+$/i, "") + ".pdf", makePdf(text, title), "application/pdf");
+    return msg;
+  };
+  window.mcPrintText = function (text, title) {
+    var f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+    document.body.appendChild(f);
+    var d = f.contentWindow.document;
+    d.open();
+    d.write('<!doctype html><html><head><meta charset="utf-8"><title></title><style>@page{size:80mm auto;margin:4mm}body{margin:0}' +
+      'pre{font:12px/1.35 "Courier New",monospace;white-space:pre-wrap;word-break:break-word;margin:0;color:#000}</style></head><body><pre id="t"></pre></body></html>');
+    d.close();
+    d.title = title || "Receipt";
+    d.getElementById("t").textContent = text;
+    setTimeout(function () {
+      try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { alert("Printing is not available here. Use Save PDF instead."); }
+      setTimeout(function () { try { f.remove(); } catch (e) {} }, 60000);
+    }, 150);
   };
 })();

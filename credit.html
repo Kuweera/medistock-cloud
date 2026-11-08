@@ -449,7 +449,7 @@
   function txCard(t, c, balAfter, isOpen) {
     const d = when(t.createdAt), dt = fmtWhen(d), k = ' data-k="' + esc(t.id) + '"' + (isOpen ? " open" : "");
     const balLine = '<div class="meta">Balance after this record: <b>' + fmt(Math.max(0, balAfter)) + "</b></div>";
-    const acts = '<div class="acts"><button type="button" class="btn-small btn-secondary" onclick="shareTx(\'' + esc(t.id) + '\')">Share</button><button type="button" class="btn-small btn-secondary" onclick="saveTx(\'' + esc(t.id) + '\')">Save to Phone</button></div>';
+    const acts = '<div class="acts"><button type="button" class="btn-small btn-secondary" onclick="shareTx(\'' + esc(t.id) + '\')">Share</button><button type="button" class="btn-small btn-secondary" onclick="saveTx(\'' + esc(t.id) + '\')">Save to Phone</button><button type="button" class="btn-small btn-secondary" onclick="pdfTx(\'' + esc(t.id) + '\')">Save PDF</button><button type="button" class="btn-small btn-secondary mc-print" onclick="printTx(\'' + esc(t.id) + '\')">Print</button></div>';
     if (t.type === "CREDIT_SALE") {
       const rc = receiptsById[t.receiptId], lines = rc && Array.isArray(rc.items) ? rc.items : [];
       const lineHtml = lines.length ? lines.map(i => { const x = lineInfo(i); return '<div class="line"><span><b>' + esc(i.drugName) + "</b><br>" + esc(x.qty) + (x.sub ? '<div class="sub">' + esc(x.sub) + "</div>" : "") + "</span><strong>" + fmt(i.total) + "</strong></div>"; }).join("")
@@ -472,6 +472,8 @@
     return { text: paymentText(t, c, bal), title: "Payment from " + c.name, file: "Payment-" + c.name.replace(/[^A-Za-z0-9]+/g, "-") };
   }
   window.shareTx = function (id) { const p = txShareParts(id); if (p) window.top.mcShareText(p.text, p.title); };
+  window.printTx = function (id) { const p = txShareParts(id); if (p) window.top.mcPrintText(p.text, p.title); };
+  window.pdfTx = async function (id) { const p = txShareParts(id); if (p) alert(await window.top.mcSavePdf(p.file + "-" + new Date().toISOString().slice(0, 10), p.text, p.title)); };
   window.saveTx = async function (id) {
     const p = txShareParts(id); if (!p) return;
     const d = when((allTxns.find(x => x.id === id) || {}).createdAt) || new Date();

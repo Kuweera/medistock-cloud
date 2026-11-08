@@ -255,6 +255,8 @@
   <div class="receipt-box" id="receiptText"></div>
   <button class="btn-primary" onclick="shareReceipt()">Share Receipt</button>
   <button class="btn-secondary" onclick="saveReceiptToPhone()">Save to Phone</button>
+  <button class="btn-secondary" onclick="savePdfReceipt()">Save PDF</button>
+  <button class="btn-secondary mc-print" onclick="printReceipt()">Print</button>
   <button class="btn-secondary" onclick="startNewSale()">New Sale</button>
 </div>
 
@@ -976,6 +978,15 @@
     if (!lastReceiptData) return;
     const text = document.getElementById("receiptText").textContent;
     window.top.mcShareText(text, `Receipt S-${lastReceiptData.receiptNo}`);
+  };
+
+  window.printReceipt = function () {
+    if (!lastReceiptData) return;
+    window.top.mcPrintText(document.getElementById("receiptText").textContent, "Receipt S-" + lastReceiptData.receiptNo);
+  };
+  window.savePdfReceipt = async function () {
+    if (!lastReceiptData) return;
+    alert(await window.top.mcSavePdf("Receipt-S-" + lastReceiptData.receiptNo, document.getElementById("receiptText").textContent, "Receipt"));
   };
 
   window.saveReceiptToPhone = async function () {

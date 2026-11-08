@@ -61,6 +61,16 @@
   #stocktakeResults > .empty, #stocktakeHistory > .empty { grid-column: 1 / -1; }
   #stocktakeFormCard { max-width: 980px; }
 
+  /* ---- Credit, Suppliers, Expenses, Cash ledger, Shops: records in two columns ---- */
+  #customersList, #suppliersList, #expenseList, #ledger, #shopList { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); column-gap: 28px; align-items: start; }
+  #customersList > .empty, #suppliersList > .empty, #expenseList > .empty, #ledger > .empty, #shopList > .empty { grid-column: 1 / -1; }
+  html[data-mc-page="credit"] body > .card, html[data-mc-page="suppliers"] body > .card,
+  html[data-mc-page="expenses"] body > .card, html[data-mc-page="cash-position"] body > .card { max-width: 1040px; }
+  html[data-mc-page="shops"] body > .card { max-width: 1040px; }
+
+  /* ---- Charts: summary figures in one row ---- */
+  html[data-mc-page="charts"] .sum-grid { grid-template-columns: repeat(4, 1fr); }
+
   /* ---- Inventory: drugs in columns ---- */
   #drugList, #deactivatedList { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px; align-items: start; }
   #drugList > .empty, #deactivatedList > .empty { grid-column: 1 / -1; }
