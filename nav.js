@@ -366,7 +366,21 @@
     if (k === "/") { var s = document.getElementById("searchBox"); if (s) { e.preventDefault(); s.focus(); s.select && s.select(); } }
     else if (k === "?") { e.preventDefault(); help(); }
   }
-  document.addEventListener("keydown", onKey);
+  // keys are heard whether the cursor is inside the screen or on the app frame around it; only the visible screen answers
+  function mine() { try { var fe = window.frameElement; return !fe || (fe.isConnected && fe.getClientRects().length > 0 && getComputedStyle(fe).visibility !== "hidden"); } catch (e) { return true; } }
+  function onKeyOnce(e) { if (e.__mcKey || !mine()) return; e.__mcKey = 1; onKey(e); }
+  document.addEventListener("keydown", onKeyOnce);
+  try { if (top !== window) top.document.addEventListener("keydown", onKeyOnce); } catch (e) {}
+  setTimeout(function () { try { if (wide() && mine() && !typing(document.activeElement)) window.focus(); } catch (e) {} }, 500);
+  window.addEventListener("mc-show", function () { setTimeout(function () { try { if (wide()) window.focus(); } catch (e) {} }, 100); });
+  // "Save to Phone" only makes sense in the phone app; on a computer the same button downloads a file
+  var isNat = false; try { isNat = !!(top.Capacitor && top.Capacitor.isNativePlatform && top.Capacitor.isNativePlatform()); } catch (e) {}
+  if (!isNat) {
+    var relabel = function () { document.querySelectorAll("button").forEach(function (b) { if (b.textContent.trim() === "Save to Phone") b.textContent = "Download text"; }); };
+    var rt = null;
+    new MutationObserver(function () { clearTimeout(rt); rt = setTimeout(relabel, 60); }).observe(document.documentElement, { childList: true, subtree: true });
+    relabel();
+  }
   window.mcKeyHelp = help;
 
   // ---------- alerts bell ----------

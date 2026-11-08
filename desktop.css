@@ -59,7 +59,8 @@
   #stocktakeResults { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); column-gap: 28px; }
   #stocktakeHistory { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); column-gap: 28px; align-items: start; }
   #stocktakeResults > .empty, #stocktakeHistory > .empty { grid-column: 1 / -1; }
-  #stocktakeFormCard { max-width: 980px; }
+  #stocktakeFormCard:not(.hidden) { max-height: calc(100vh - 100px); overflow-y: auto; }
+  #stocktakeFormCard.hidden ~ .mc-empty { display: block; }
 
   /* ---- Credit, Suppliers, Expenses, Cash ledger, Shops: records in two columns ---- */
   #customersList, #suppliersList, #expenseList, #ledger, #shopList { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); column-gap: 28px; align-items: start; }
