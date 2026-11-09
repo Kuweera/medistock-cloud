@@ -1,0 +1,431 @@
+rules_version = '2';
+
+// MediStock Cloud — multi-shop roles & security (v10 PROPOSED)
+// v10: adds Patient Care (pc_*) rules for Phase 1a (identity, facility links, allergies, history,
+// consents, merges, audit/access logs). Everything above the PATIENT CARE section is UNCHANGED from v9.
+// Cross-business sharing (Phase 1b) is NOT in this file yet.
+// v9: operators can only reach shops of THEIR OWN business; drug classes, dosage forms and
+// expense categories are now per business (businesses/{id}/...) instead of one shared global list.
+// v8 change: operator accounts can only be created from an owner's invite (see /invites below),
+// and owner profiles only for the person the business names as its owner. Nobody can simply
+// create a profile that claims to belong to someone else's business.
+//   - owner: full access to every shop in their business
+//   - operator: full access to exactly the one shop they're assigned to (while active)
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isOwnerOfBusiness(businessId) {
+      return isSignedIn()
+        && myProfile().role == 'owner'
+        && myProfile().businessId == businessId;
+    }
+
+    function isActiveOperatorOfShop(shopId) {
+      return isSignedIn()
+        && myProfile().role == 'operator'
+        && myProfile().active == true
+        && myProfile().shopId == shopId;
+    }
+
+    function canAccessShop(businessId, shopId) {
+      return isOwnerOfBusiness(businessId)
+        || (isActiveOperatorOfShop(shopId) && myProfile().businessId == businessId);
+    }
+
+    function isMemberOfBusiness(businessId) {
+      return isOwnerOfBusiness(businessId)
+        || (isSignedIn() && myProfile().role == 'operator'
+            && myProfile().active == true && myProfile().businessId == businessId);
+    }
+
+    function shopScoped() {
+      return canAccessShop(resource.data.businessId, resource.data.shopId);
+    }
+    function shopScopedCreate() {
+      return canAccessShop(request.resource.data.businessId, request.resource.data.shopId);
+    }
+
+    // ---- Invites (new in v8) ----
+    // The owner writes one invite per new operator (id = shopId_operatorId). The operator's own
+    // profile may only be created if a matching, still-unused invite exists.
+    function invitePath(d) {
+      return /databases/$(database)/documents/invites/$(d.shopId + '_' + d.operatorId);
+    }
+    function validInviteFor(d) {
+      return exists(invitePath(d))
+        && get(invitePath(d)).data.used == false
+        && get(invitePath(d)).data.businessId == d.businessId
+        && get(invitePath(d)).data.shopId == d.shopId
+        && get(invitePath(d)).data.operatorId == d.operatorId
+        && get(invitePath(d)).data.name == d.name;
+    }
+
+    match /invites/{inviteId} {
+      allow read: if isSignedIn() && isOwnerOfBusiness(resource.data.businessId);
+      allow create: if isSignedIn()
+        && isOwnerOfBusiness(request.resource.data.businessId)
+        && request.resource.data.used == false;
+      allow update: if isSignedIn() && resource.data.used == false && (
+        // the owner re-saving an invite that hasn't been used yet
+        (isOwnerOfBusiness(resource.data.businessId) && request.resource.data.used == false)
+        ||
+        // the new operator claiming it, and changing nothing else
+        (request.resource.data.used == true
+          && request.resource.data.usedBy == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedBy', 'usedAt']))
+      );
+      allow delete: if false;
+    }
+
+    // ---- Accounts ----
+
+    match /users/{uid} {
+      allow read: if isSignedIn() &&
+        (request.auth.uid == uid || isOwnerOfBusiness(resource.data.businessId));
+      // Owner signing up: the business document (created one step earlier) must name this person as owner.
+      // Operator: must match an unused invite written by that business's owner.
+      allow create: if isSignedIn() && request.auth.uid == uid
+        && request.resource.data.businessId is string
+        && request.resource.data.role in ['owner', 'operator']
+        && (
+          (request.resource.data.role == 'owner'
+            && get(/databases/$(database)/documents/businesses/$(request.resource.data.businessId)).data.ownerUid == request.auth.uid)
+          ||
+          (request.resource.data.role == 'operator'
+            && request.resource.data.active == true
+            && validInviteFor(request.resource.data))
+        );
+      allow update: if isSignedIn() && isOwnerOfBusiness(resource.data.businessId);
+      allow delete: if false;
+    }
+
+    match /businesses/{businessId} {
+      allow read: if isOwnerOfBusiness(businessId) ||
+        (isSignedIn() && myProfile().role == 'operator' && myProfile().active == true
+          && myProfile().businessId == businessId);
+      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if isOwnerOfBusiness(businessId);
+      allow delete: if false;
+    }
+
+    match /shops/{shopId} {
+      allow read: if canAccessShop(resource.data.businessId, shopId);
+      allow create: if isOwnerOfBusiness(request.resource.data.businessId);
+      allow update: if isOwnerOfBusiness(resource.data.businessId);
+      allow delete: if false;
+    }
+
+    // ---- Shop-scoped business data (unchanged) ----
+
+    match /drugs/{docId}                 { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
+    match /batches/{docId}                { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
+    match /sales/{docId}                  { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
+    match /purchases/{docId}              { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
+    match /suppliers/{docId}              { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
+    match /supplier_transactions/{docId}  { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
+    match /stock_transactions/{docId}     { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
+    match /stock_adjustments/{docId}      { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
+    match /counters/{docId} {
+      allow read: if isSignedIn() && (resource == null || shopScoped());
+      allow update: if shopScoped();
+      allow create: if shopScopedCreate();
+      allow delete: if false;
+    }
+    match /expenses/{docId}               { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
+    match /receipts/{docId}               { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
+    // Cash adjustments: anyone in the shop can add one, but it must carry a reason and the id of the person
+    // adding it; once saved, only the owner can change or remove it (so the "who" cannot be rewritten).
+    match /cash_adjustments/{docId} {
+      allow read: if shopScoped();
+      allow create: if shopScopedCreate()
+        && request.resource.data.byUid == request.auth.uid
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() >= 3;
+      allow update, delete: if isOwnerOfBusiness(resource.data.businessId);
+    }
+    match /credit_accounts/{docId}        { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
+    match /credit_transactions/{docId}    { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
+
+    match /audit_log/{docId} {
+      allow read: if shopScoped();
+      allow create: if shopScopedCreate();
+      allow update, delete: if false;
+    }
+
+    // ---- Reference data, per business (v9) ----
+    match /businesses/{businessId}/drug_classes/{name} {
+      allow read: if isMemberOfBusiness(businessId);
+      allow create: if isMemberOfBusiness(businessId)
+        && request.resource.data.keys().hasOnly(['name'])
+        && request.resource.data.name == name && name.size() > 0 && name.size() < 60;
+      allow update: if isMemberOfBusiness(businessId) && request.resource.data == resource.data;
+      allow delete: if isOwnerOfBusiness(businessId);
+    }
+    match /businesses/{businessId}/dosage_forms/{name} {
+      allow read: if isMemberOfBusiness(businessId);
+      allow create: if isMemberOfBusiness(businessId)
+        && request.resource.data.keys().hasOnly(['name'])
+        && request.resource.data.name == name && name.size() > 0 && name.size() < 60;
+      allow update: if isMemberOfBusiness(businessId) && request.resource.data == resource.data;
+      allow delete: if isOwnerOfBusiness(businessId);
+    }
+    match /businesses/{businessId}/expense_categories/{name} {
+      allow read: if isMemberOfBusiness(businessId);
+      allow create: if isMemberOfBusiness(businessId)
+        && request.resource.data.keys().hasOnly(['name'])
+        && request.resource.data.name == name && name.size() > 0 && name.size() < 60;
+      allow update: if isMemberOfBusiness(businessId) && request.resource.data == resource.data;
+      allow delete: if isOwnerOfBusiness(businessId);
+    }
+
+    // =====================================================================================
+    // PATIENT CARE (Phase 1a) — new in v10. Collections are prefixed pc_ . Nothing here touches
+    // the shop data rules above. Clinical records can never be deleted; corrections are new
+    // documents or status-only changes. Permissions come from users/{uid}.perms (owner = all).
+    // =====================================================================================
+
+    function hasPerm(businessId, perm) {
+      return isOwnerOfBusiness(businessId)
+        || (isSignedIn() && myProfile().role == 'operator' && myProfile().active == true
+            && myProfile().businessId == businessId
+            && myProfile().get('perms', {}).get(perm, false) == true);
+    }
+
+    function shopDoc(shopId) {
+      return get(/databases/$(database)/documents/shops/$(shopId)).data;
+    }
+
+    // the facility belongs to this business AND has Patient Care switched on
+    function pcFacilityOk(businessId, facilityId) {
+      return exists(/databases/$(database)/documents/shops/$(facilityId))
+        && shopDoc(facilityId).businessId == businessId
+        && shopDoc(facilityId).get('enabledServices', []).hasAny(['patient_care']);
+    }
+
+    function patientPath(patientId) {
+      return /databases/$(database)/documents/pc_patients/$(patientId);
+    }
+    function patientInBusiness(patientId, businessId) {
+      return exists(patientPath(patientId)) && get(patientPath(patientId)).data.businessId == businessId;
+    }
+
+    // common checks for creating any pc_ record
+    function pcCreateOk(d) {
+      return d.businessId is string && d.facilityId is string
+        && canAccessShop(d.businessId, d.facilityId)
+        && pcFacilityOk(d.businessId, d.facilityId)
+        && d.createdBy == request.auth.uid
+        && d.createdAt == request.time
+        && d.schemaVersion is int;
+    }
+
+    // fields that may never change on an existing pc_ record
+    function pcLocked() {
+      return ['businessId', 'facilityId', 'patientId', 'createdBy', 'createdAt'];
+    }
+    function pcUpdateStamped() {
+      return request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    // ---- Patient identity (shared inside one business) ----
+    match /pc_patients/{patientId} {
+      allow read: if hasPerm(resource.data.businessId, 'patient.view');
+
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'patient.register')
+        && request.resource.data.registeredFacilityId == request.resource.data.facilityId
+        && request.resource.data.status == 'active'
+        && request.resource.data.fullName is string && request.resource.data.fullName.size() >= 2
+        && request.resource.data.sex in ['male', 'female', 'other', 'unknown']
+        && !('mergedInto' in request.resource.data);
+
+      allow update: if (
+          // ordinary edit of an active patient, by the registering facility (or owner)
+          hasPerm(resource.data.businessId, 'patient.edit')
+          && canAccessShop(resource.data.businessId, resource.data.registeredFacilityId)
+          && resource.data.status == 'active'
+          && request.resource.data.status == 'active'
+          && !request.resource.data.diff(resource.data).affectedKeys()
+               .hasAny(pcLocked().concat(['registeredFacilityId', 'status', 'mergedInto']))
+          && pcUpdateStamped()
+        ) || (
+          // merge: only together with a merge record whose id is this patient's id
+          hasPerm(resource.data.businessId, 'patient.merge')
+          && resource.data.status == 'active'
+          && request.resource.data.status == 'merged'
+          && request.resource.data.mergedInto is string
+          && request.resource.data.mergedInto != patientId
+          && patientInBusiness(request.resource.data.mergedInto, resource.data.businessId)
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status', 'mergedInto', 'updatedAt', 'updatedBy'])
+          && pcUpdateStamped()
+          && existsAfter(/databases/$(database)/documents/pc_patient_merges/$(patientId))
+          && getAfter(/databases/$(database)/documents/pc_patient_merges/$(patientId)).data.survivorId
+               == request.resource.data.mergedInto
+        );
+      allow delete: if false;
+    }
+
+    // ---- Which facility has registered the patient (id = patientId_facilityId, so no duplicates) ----
+    match /pc_patient_facility_links/{linkId} {
+      allow read: if hasPerm(resource.data.businessId, 'patient.view');
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'patient.register')
+        && linkId == request.resource.data.patientId + '_' + request.resource.data.facilityId
+        && patientInBusiness(request.resource.data.patientId, request.resource.data.businessId)
+        && request.resource.data.localRegNo is string && request.resource.data.localRegNo.size() > 0
+        && request.resource.data.status == 'active';
+      allow update: if hasPerm(resource.data.businessId, 'patient.edit')
+        && canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(pcLocked().concat(['localRegNo', 'registeredAt', 'registeredBy']))
+        && pcUpdateStamped();
+      allow delete: if false;
+    }
+
+    // ---- Consent granted by a patient's source facility to another facility of the same business ----
+    // id = patientId_grantedFacilityId. Revoking sets revokedAt; re-granting clears it again.
+    function consentPath(patientId, granteeFacilityId) {
+      return /databases/$(database)/documents/pc_patient_consents/$(patientId + '_' + granteeFacilityId);
+    }
+    // true when MY facility has a live consent from the facility that owns this clinical record
+    function myFacilityHasConsent(d) {
+      return isSignedIn() && myProfile().role == 'operator' && myProfile().active == true
+        && myProfile().businessId == d.businessId
+        && myProfile().get('perms', {}).get('patient.view', false) == true
+        && exists(consentPath(d.patientId, myProfile().shopId))
+        && get(consentPath(d.patientId, myProfile().shopId)).data.businessId == d.businessId
+        && get(consentPath(d.patientId, myProfile().shopId)).data.facilityId == d.facilityId
+        && get(consentPath(d.patientId, myProfile().shopId)).data.get('revokedAt', null) == null;
+    }
+
+    match /pc_patient_consents/{consentId} {
+      allow read: if (canAccessShop(resource.data.businessId, resource.data.facilityId)
+                      && hasPerm(resource.data.businessId, 'patient.consent'))
+        || (isSignedIn() && myProfile().role == 'operator' && myProfile().active == true
+            && myProfile().businessId == resource.data.businessId
+            && myProfile().shopId == resource.data.grantedFacilityId);
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'patient.consent')
+        && consentId == request.resource.data.patientId + '_' + request.resource.data.grantedFacilityId
+        && request.resource.data.grantedFacilityId != request.resource.data.facilityId
+        && patientInBusiness(request.resource.data.patientId, request.resource.data.businessId)
+        && exists(/databases/$(database)/documents/shops/$(request.resource.data.grantedFacilityId))
+        && shopDoc(request.resource.data.grantedFacilityId).businessId == request.resource.data.businessId
+        && request.resource.data.purpose is string && request.resource.data.purpose.size() >= 3
+        && request.resource.data.grantedBy == request.auth.uid
+        && request.resource.data.get('revokedAt', null) == null;
+      allow update: if hasPerm(resource.data.businessId, 'patient.consent')
+        && canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && pcUpdateStamped()
+        && (
+          // revoke
+          (resource.data.get('revokedAt', null) == null
+            && request.resource.data.revokedAt != null
+            && request.resource.data.revokedBy == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['revokedAt', 'revokedBy', 'updatedAt', 'updatedBy']))
+          ||
+          // grant again after a revoke (the earlier history stays in pc_audit_logs)
+          (resource.data.get('revokedAt', null) != null
+            && request.resource.data.get('revokedAt', null) == null
+            && request.resource.data.grantedBy == request.auth.uid
+            && request.resource.data.purpose is string && request.resource.data.purpose.size() >= 3
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['revokedAt', 'revokedBy', 'grantedAt', 'grantedBy', 'purpose', 'updatedAt', 'updatedBy']))
+        );
+      allow delete: if false;
+    }
+
+    // ---- Allergies (facility-scoped; shared only through a live consent) ----
+    match /pc_allergies/{docId} {
+      allow read: if (canAccessShop(resource.data.businessId, resource.data.facilityId)
+                      && hasPerm(resource.data.businessId, 'patient.view'))
+        || myFacilityHasConsent(resource.data);
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'allergy.record')
+        && patientInBusiness(request.resource.data.patientId, request.resource.data.businessId)
+        && request.resource.data.substance is string && request.resource.data.substance.size() > 0
+        && request.resource.data.severity in ['mild', 'moderate', 'severe', 'unknown']
+        && request.resource.data.status == 'active'
+        && request.resource.data.recordedBy == request.auth.uid;
+      // only way to "remove" an entry: mark it entered in error, with a reason
+      allow update: if hasPerm(resource.data.businessId, 'allergy.record')
+        && canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && resource.data.status == 'active'
+        && request.resource.data.status == 'entered_in_error'
+        && request.resource.data.errorReason is string && request.resource.data.errorReason.size() >= 3
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'errorReason', 'updatedAt', 'updatedBy'])
+        && pcUpdateStamped();
+      allow delete: if false;
+    }
+
+    // ---- Medical history entries (same pattern; edits are new documents using `supersedes`) ----
+    match /pc_medical_history/{docId} {
+      allow read: if (canAccessShop(resource.data.businessId, resource.data.facilityId)
+                      && hasPerm(resource.data.businessId, 'patient.view'))
+        || myFacilityHasConsent(resource.data);
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'history.record')
+        && patientInBusiness(request.resource.data.patientId, request.resource.data.businessId)
+        && request.resource.data.type in ['chronic_illness', 'previous_diagnosis', 'admission', 'operation',
+             'current_medicine', 'previous_medicine', 'family_history', 'social_history', 'pregnancy_breastfeeding']
+        && request.resource.data.text is string && request.resource.data.text.size() > 0
+        && request.resource.data.status == 'active';
+      allow update: if hasPerm(resource.data.businessId, 'history.record')
+        && canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && resource.data.status == 'active'
+        && request.resource.data.status in ['resolved', 'entered_in_error']
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'errorReason', 'updatedAt', 'updatedBy'])
+        && (request.resource.data.status == 'resolved'
+            || (request.resource.data.errorReason is string && request.resource.data.errorReason.size() >= 3))
+        && pcUpdateStamped();
+      allow delete: if false;
+    }
+
+    // ---- Merge records (id = the id of the patient being merged away) ----
+    match /pc_patient_merges/{mergedPatientId} {
+      allow read: if hasPerm(resource.data.businessId, 'patient.merge');
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'patient.merge')
+        && request.resource.data.mergedId == mergedPatientId
+        && request.resource.data.survivorId is string
+        && request.resource.data.survivorId != mergedPatientId
+        && patientInBusiness(mergedPatientId, request.resource.data.businessId)
+        && patientInBusiness(request.resource.data.survivorId, request.resource.data.businessId)
+        && get(patientPath(mergedPatientId)).data.status == 'active'
+        && get(patientPath(request.resource.data.survivorId)).data.status == 'active'
+        && request.resource.data.reason is string && request.resource.data.reason.size() >= 5
+        && request.resource.data.mergedBy == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ---- Audit and access logs: add-only. Rules cannot force the app to write them (known limit). ----
+    match /pc_audit_logs/{docId} {
+      allow read: if hasPerm(resource.data.businessId, 'audit.view');
+      allow create: if pcCreateOk(request.resource.data)
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.action is string;
+      allow update, delete: if false;
+    }
+    match /pc_access_logs/{docId} {
+      allow read: if hasPerm(resource.data.businessId, 'audit.view');
+      allow create: if pcCreateOk(request.resource.data)
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.purpose is string && request.resource.data.purpose.size() >= 3;
+      allow update, delete: if false;
+    }
+  }
+}

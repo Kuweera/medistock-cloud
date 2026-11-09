@@ -117,6 +117,12 @@
   .tag.on{color:var(--accent2); border-color:var(--accent2);} .tag.off{color:var(--danger); border-color:var(--danger);}
   .op-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
   .op-actions button{flex:1; min-width:120px;}
+  .perm-box{margin-top:10px; padding-top:10px; border-top:1px dashed var(--border);}
+  .perm-box h3{font-size:13px; margin:0 0 6px; color:var(--accent);}
+  .perm-row{display:flex; align-items:center; gap:10px; margin:0; padding:9px 0; border-bottom:1px solid var(--border); font-size:13.5px; color:var(--text);}
+  .perm-row:last-of-type{border-bottom:none;}
+  .perm-row input{width:22px; height:22px; flex:0 0 22px; padding:0; margin:0;}
+  .perm-warn{font-size:12px; color:var(--warn); margin-bottom:8px; line-height:1.5;}
   .cred{background:var(--bg); border:1px dashed var(--accent); border-radius:10px; padding:12px; margin:10px 0; font-size:14px; line-height:1.7;}
   .cred b{font-size:16px; letter-spacing:.5px;}
   .msg{font-size:13px; margin-top:8px;} .msg.err{color:var(--danger);} .msg.ok{color:var(--accent2);}
@@ -403,14 +409,87 @@
         "Last activity: " + (last ? esc(fmtDateTime(last)) : "none yet") + " · Sales this month: " + fmt(monthSales) +
         (o.createdAt && o.createdAt.toDate ? "<br>Added: " + esc(fmtDateTime(o.createdAt.toDate())) : "") +
         (!on && o.deactivatedAt && o.deactivatedAt.toDate ? "<br>Deactivated: " + esc(fmtDateTime(o.deactivatedAt.toDate())) : "") +
-        (!on && o.replacedBy ? "<br>Replaced by new Operator ID " + esc(o.replacedBy) : "") + "</div>" +
+        (!on && o.replacedBy ? "<br>Replaced by new Operator ID " + esc(o.replacedBy) : "") + (on ? "<br>Patient Care access: " + permSummary(o) : "") + "</div>" +
         '<div class="op-actions">' +
         (on ? '<button class="btn-small btn-secondary" onclick="newLogin(\'' + o.id + '\')">New login (reset PIN)</button>' +
+              '<button class="btn-small btn-secondary" onclick="togglePerms(\'' + o.id + '\')">Patient Care access</button>' +
               '<button class="btn-small btn-danger-outline" onclick="setActive(\'' + o.id + '\', false)">Deactivate</button>'
             : (o.replacedBy ? "" : '<button class="btn-small btn-secondary" onclick="setActive(\'' + o.id + '\', true)">Reactivate</button>')) +
-        "</div></div>";
+        "</div>" + (on ? permsBlock(o) : "") + "</div>";
     }).join("");
   }
+
+
+  // ================= Patient Care permissions (owner sets what each operator may do) =================
+  // Saved on the operator's account as  perms: { "patient.view": true, ... }.  The security rules read these.
+  const PERM_LIST = [
+    ["patient.view", "View patients"],
+    ["patient.register", "Register new patients"],
+    ["patient.edit", "Edit patient details"],
+    ["history.record", "Record medical history"],
+    ["allergy.record", "Record allergies"],
+    ["patient.consent", "Share a patient's records with another facility"],
+    ["patient.merge", "Merge duplicate patients"],
+    ["audit.view", "View Patient Care audit and access logs"]
+  ];
+  // quick-fill only: you can still tick or untick anything before saving
+  const PERM_PRESETS = {
+    reception: ["patient.view", "patient.register"],
+    nurse: ["patient.view", "patient.register", "history.record", "allergy.record"],
+    clinician: ["patient.view", "patient.register", "patient.edit", "history.record", "allergy.record", "patient.consent"]
+  };
+  const permsOpen = new Set();
+  const permDraft = {};
+
+  function permSummary(o) {
+    const p = o.perms || {};
+    const n = PERM_LIST.filter(x => p[x[0]] === true).length;
+    return n ? n + " of " + PERM_LIST.length + " permissions" : "none";
+  }
+  function permsBlock(o) {
+    if (!permsOpen.has(o.id)) return "";
+    const d = permDraft[o.id] || {};
+    const shop = shopsById[o.shopId];
+    const shopOn = !!(shop && Array.isArray(shop.services) && shop.services.indexOf("patient_care") >= 0);
+    return '<div class="perm-box"><h3>Patient Care access for ' + esc(o.name) + "</h3>" +
+      (shopOn ? "" : '<div class="perm-warn">Patient Care is not switched on for this operator\'s shop yet. Turn it on in Shops &rarr; Edit, otherwise these permissions will have no effect.</div>') +
+      '<div class="pill-row" style="margin-bottom:8px;">' +
+      '<button type="button" class="pill-btn" onclick="permPreset(\'' + o.id + '\',\'reception\')">Reception</button>' +
+      '<button type="button" class="pill-btn" onclick="permPreset(\'' + o.id + '\',\'nurse\')">Nurse</button>' +
+      '<button type="button" class="pill-btn" onclick="permPreset(\'' + o.id + '\',\'clinician\')">Clinician</button>' +
+      '<button type="button" class="pill-btn" onclick="permPreset(\'' + o.id + '\',\'none\')">Clear all</button></div>' +
+      PERM_LIST.map(x => '<label class="perm-row"><input type="checkbox"' + (d[x[0]] === true ? " checked" : "") +
+        ' onchange="permChange(\'' + o.id + '\',\'' + x[0] + '\',this.checked)"><span>' + esc(x[1]) + "</span></label>").join("") +
+      '<div class="op-actions"><button class="btn-small btn-primary" style="margin-top:0;" onclick="savePerms(\'' + o.id + '\')">Save access</button>' +
+      '<button class="btn-small btn-secondary" onclick="togglePerms(\'' + o.id + '\')">Cancel</button></div>' +
+      '<div class="hint2">The owner always has full access. Operators with nothing ticked see no Patient Care features.</div></div>';
+  }
+  window.togglePerms = function (uid) {
+    if (permsOpen.has(uid)) { permsOpen.delete(uid); delete permDraft[uid]; }
+    else { const o = operators.find(x => x.id === uid); permDraft[uid] = Object.assign({}, (o && o.perms) || {}); permsOpen.add(uid); }
+    renderOps();
+  };
+  window.permChange = function (uid, key, on) {
+    permDraft[uid] = permDraft[uid] || {};
+    if (on) permDraft[uid][key] = true; else delete permDraft[uid][key];
+  };
+  window.permPreset = function (uid, name) {
+    const d = {};
+    (PERM_PRESETS[name] || []).forEach(k => { d[k] = true; });
+    permDraft[uid] = d;
+    renderOps();
+  };
+  window.savePerms = function (uid) {
+    const o = operators.find(x => x.id === uid); if (!o) return;
+    const d = permDraft[uid] || {};
+    const clean = {};
+    PERM_LIST.forEach(x => { if (d[x[0]] === true) clean[x[0]] = true; });
+    permsOpen.delete(uid); delete permDraft[uid];
+    renderOps();
+    // not awaited: works offline too and syncs when the phone is online; a refusal is reported below
+    updateDoc(doc(db, "users", uid), { perms: clean, permsUpdatedAt: serverTimestamp(), permsUpdatedBy: me.id })
+      .catch(err => alert(rulesHint(err)));
+  };
 
   function rulesHint(err) {
     return err && err.code === "permission-denied"
@@ -536,7 +615,7 @@
       $("logTitle").textContent = "Activity Log";
       filters = [where("businessId", "==", businessId)];
       onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
-        shopsById = {}; s.docs.forEach(d => { shopsById[d.id] = { name: d.data().name, shopCode: d.data().shopCode }; });
+        shopsById = {}; s.docs.forEach(d => { shopsById[d.id] = { name: d.data().name, shopCode: d.data().shopCode, services: d.data().enabledServices || [] }; });
         const ids = Object.keys(shopsById);
         $("newShop").innerHTML = ids.map(id => '<option value="' + esc(id) + '">' + esc(shopsById[id].name) + "</option>").join("");
         const keep = shopFilter;

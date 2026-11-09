@@ -41,6 +41,7 @@
     background:var(--card); color:var(--text); font-size:14px;
   }
   input:focus{outline:none; border-color:var(--accent);}
+  select{width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px;}
   button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
   .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
   .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent); padding:9px 12px;}
@@ -60,6 +61,8 @@
   .hint{font-size:11px; color:var(--muted); margin-top:8px;}
   .edit-block{display:none; margin-top:10px; padding-top:10px; border-top:1px solid var(--border);}
   .edit-block.open{display:block;}
+  .chk-row{display:flex; align-items:center; gap:10px; margin-top:12px; font-size:13.5px; color:var(--text);}
+  .chk-row input{width:22px; height:22px; flex:0 0 22px; padding:0; margin:0;}
   #status, #ownerGate{font-size:13px; margin-top:8px;}
 
   /* ===== Shared MediStock Cloud navigation (matches MediStock Pro) ===== */
@@ -299,7 +302,17 @@
     try {
       statusEl.textContent = "Saving…";
       statusEl.style.color = "var(--muted)";
-      await updateDoc(doc(db, "shops", id), { name, location });
+      const cur = allShops.find(x => x.id === id) || {};
+      const typeEl = document.getElementById("edit-type-" + id);
+      const pcEl = document.getElementById("edit-pc-" + id);
+      const services = Array.isArray(cur.enabledServices) ? cur.enabledServices.filter(x => x !== "patient_care") : [];
+      if (pcEl && pcEl.checked) services.push("patient_care");
+      await updateDoc(doc(db, "shops", id), {
+        name, location,
+        facilityType: typeEl ? typeEl.value : (cur.facilityType || "drug_shop"),
+        enabledServices: services,
+        timezone: cur.timezone || "Africa/Kampala"
+      });
       statusEl.textContent = "Saved.";
       statusEl.style.color = "var(--accent2)";
     } catch (err) {
@@ -380,6 +393,15 @@
           <label>Shop Code</label>
           <input type="text" value="${s.shopCode || ""}" disabled style="opacity:.6;">
           <div class="hint">Locked — operators already assigned to this shop log in with this exact code baked into their account. Changing it here would silently break their login with no warning, so it can't be edited after creation.</div>
+          <label>Facility type</label>
+          <select id="edit-type-${s.id}">
+            <option value="drug_shop" ${(s.facilityType || "drug_shop") === "drug_shop" ? "selected" : ""}>Drug shop</option>
+            <option value="pharmacy" ${s.facilityType === "pharmacy" ? "selected" : ""}>Pharmacy</option>
+            <option value="clinic" ${s.facilityType === "clinic" ? "selected" : ""}>Clinic</option>
+            <option value="hospital" ${s.facilityType === "hospital" ? "selected" : ""}>Hospital</option>
+          </select>
+          <label class="chk-row"><input type="checkbox" id="edit-pc-${s.id}" ${(Array.isArray(s.enabledServices) && s.enabledServices.indexOf("patient_care") >= 0) ? "checked" : ""}><span>Patient Care (patient records)</span></label>
+          <div class="hint">Switch this on only for a facility that is authorised to provide patient care. Turning it off later does not delete any patient records.</div>
           <button class="btn-primary" onclick="saveShopEdit('${s.id}')">Save Changes</button>
           <div id="edit-status-${s.id}" style="font-size:12.5px; margin-top:6px;"></div>
         </div>
