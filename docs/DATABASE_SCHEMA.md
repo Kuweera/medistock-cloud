@@ -56,3 +56,9 @@ Notes: `createdAt` must equal server time (stops back-dating). The real event ti
 
 ## Status
 Written and reviewed by reading only. **Not yet run against Firebase.** Step (a) is complete only after the Playground checks above pass.
+
+## Step (c) additions (fields now actually written)
+`pc_patients` also stores: `registeredFacilityId`, `dobApprox` (date used for matching and for ageing estimated ages), `ageRecordedOn`, `estimatedAge {years, months, days}`, `createdByName`, `clientCreatedAt` (phone time in ms).
+`pc_patient_facility_links`: `patientId, localRegNo, registeredAt, registeredBy, status`.
+`pc_audit_logs` (actions so far): `patient.register` (with `duplicateOverrideReason`, `duplicateCandidates`), `patient.link`.
+No new rules were needed for step (c); the published v10 rules are enough.

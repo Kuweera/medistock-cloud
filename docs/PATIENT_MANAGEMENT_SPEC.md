@@ -122,3 +122,14 @@ Goal: the same person is recognised as one patient in every business, without an
 **Legal check before launch:** Uganda's Data Protection and Privacy Act, 2019 and any registration or consent duties for health data; confirm the Firestore region and get qualified legal advice.
 
 **Acceptance (1b):** register in Business A; register the same person in Business B and get the match prompt; B cannot read A's allergies; A approves a scoped grant; B reads them; revoked/expired grant closes access; a third business cannot list or scrape the index; all steps appear in logs.
+
+## 13. Step (c) decisions – registration and search (built 2026-11-09)
+- **Loading:** `patients.html` loads the business's patients and facility links into the phone the same way Inventory loads drugs, so search and duplicate checks work offline. Fine for a few thousand patients; at larger sizes it must change to indexed search (needs a Firestore composite index).
+- **Why no server-side search now:** a search with a business filter plus a name range needs a composite index created in the console. Avoided for now.
+- **Writes:** patient, facility link and audit log are saved as three separate writes, in order. A single batch is NOT used because the security rules check `exists()/get()` against the state before the batch, so a link created in the same batch as its patient would be refused. If a batch is wanted later, the link rule must switch to `existsAfter()/getAfter()`.
+- **Registration number:** `P-{operatorId}-{n}` (`P-O-n` for the owner), counter kept on the phone and seeded from existing links, as Sales does for receipts. Two phones signed in as the same operator can produce the same number.
+- **Duplicate check:** name (words may differ by one letter only if they start with the same letter, so Okello and Akello stay different), phone, date of birth or birth year, next-of-kin phone. A phone match alone never flags. Strong match needs a typed reason to register anyway. Nothing is merged automatically.
+- **Age:** exact date, estimated age (years/months/days, shown with ~), or unknown. Estimated ages keep ageing from the day they were recorded.
+
+## 14. Future usage-based billing (owner note, 2026-11-09)
+Billing will depend on facility type (drug shop, clinic, hospital, medical centre) and how many facilities an account has. Hooks already in place: `shops.facilityType`, `shops.enabledServices`. Warning: today the owner can switch services on or off themselves on the Shops page, which would let an account bypass paid services. Before billing starts, service entitlements should move to a field only you (a platform administrator) can write, and the Shops switch should read from it. Counting facilities and enforcing limits also cannot be done reliably with Firestore rules alone on the free plan; decide that when billing is designed.

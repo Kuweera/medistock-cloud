@@ -2,27 +2,30 @@
 
 | Phase | Step | Status |
 |---|---|---|
-| 0 | Existing application audit | Delivered, decisions answered |
-| 1a | (a) Rules v10 + migration notes | **Published in Firebase by the owner (2026-11-09).** Rules Playground checks not yet run |
-| 1a | (b) Permissions on Users page + Patient Care switch on Shops page | **Built, awaiting upload and phone test** |
-| 1a | (c) Registration + search | Not started |
+| 0 | Existing application audit | Delivered |
+| 1a | (a) Rules v10 + migration notes | Published by the owner (2026-11-09). Playground checks not run |
+| 1a | (b) Permissions on Users page + Patient Care switch on Shops page | Delivered, awaiting owner confirmation |
+| 1a | (c) Registration + search | **Built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (d) Profile, history, allergies | Not started |
-| 1a | (e) Duplicate detection | Not started |
-| 1a | (f) Facility links + consent | Not started |
+| 1a | (e) Duplicate detection | Done inside (c) at registration; post-sync duplicate scan not built |
+| 1a | (f) Facility links + consent | Facility links done inside (c); consent not started |
 | 1a | (g) Merge | Not started |
 | 1a | (h) Regression | Not started |
-| 1b | Cross-business sharing | Design only (PATIENT_MANAGEMENT_SPEC.md section 12) |
+| 1b | Cross-business sharing | Design only |
 
-## Step (b) details
-Changed files: `users.html`, `shops.html`. New files: `firestore.rules` (copy of what is published), `docs/*.md`.
-- Users page: each active operator has a "Patient Care access" button with 8 tick boxes and quick-fill (Reception, Nurse, Clinician, Clear all). Saved as `perms` on the operator's `users` document, with `permsUpdatedAt` / `permsUpdatedBy`.
-- Shops page (Edit): Facility type and a "Patient Care" switch. Saved as `facilityType`, `enabledServices`, `timezone`. Existing shop fields are untouched.
-- No change to Sales, Purchases, Inventory, Reports, login, or the service worker.
+## Step (c) files
+New: `patients.html`. Changed: `nav.js` (menu item "Patient Care"), `sw.js` (cache version mc-v17, page added to offline list). Docs updated.
 
-## Phone test for step (b)
-1. Shops > Edit your shop > tick Patient Care > Save Changes. Reopen Edit: the tick is still there.
-2. Users > an operator > Patient Care access > tick two boxes > Save access. Reopen: the same two are ticked, and the card says "2 of 8 permissions".
-3. Use Sell, Inventory and Users once as owner and once as an operator. Everything works as before.
-4. Operator login still works.
+## How step (c) was tested
+Logic tests (names, phones, ages, duplicate scoring, search) in Node: all passed. Page run in a headless browser against a pretend database: register, search by name/phone/reg number, duplicate warning and forced registration with reason, linking a patient from another facility, operator without permission, shop without Patient Care, refused save. **Not tested against real Firebase or the real security rules.**
 
-Known issues: rules not yet checked in the Playground; `reports (1).html` stray file; no automated tests exist.
+## Phone test for step (c)
+1. Shops: Patient Care ticked for your shop. Open Menu > Patient Care.
+2. Register a test patient (use a made-up name). It appears at once with a number like P-O-1.
+3. Search by part of the name, by phone, and by the number.
+4. Register the same name and phone again: a warning appears.
+5. Turn on airplane mode, register another test patient, turn it off, and check it synced (no red NOT SAVED message).
+6. Log in as an operator with and without Patient Care access.
+7. Use Sell and Inventory once. Nothing there should change.
+
+Known issues: menu shows Patient Care to every user (the page itself explains missing access); `reports (1).html` stray file; no automated tests in the repo.
