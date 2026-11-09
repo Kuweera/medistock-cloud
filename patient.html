@@ -154,6 +154,11 @@
   .entry{padding:10px 0; border-bottom:1px solid var(--border);} .entry:last-child{border-bottom:none;}
   .entry.struck .pt-name{text-decoration:line-through; color:var(--muted); font-weight:500;}
   .pill-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}
+  /* ===== typed or picked dates ===== */
+  .dateField{position:relative; display:flex; gap:8px; align-items:center;}
+  .dateField input[type="text"]{flex:1; min-width:0;}
+  .cal-btn{flex:0 0 46px; height:40px; background:var(--card); border:1px solid var(--border); border-radius:8px; font-size:18px; padding:0;}
+  .cal-native{position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0; padding:0;}
 </style>
 <script>
 (function(){
@@ -218,6 +223,7 @@
     <button type="button" class="pill-btn selected" data-t="overview">Overview</button>
     <button type="button" class="pill-btn" data-t="history">Medical history</button>
     <button type="button" class="pill-btn" data-t="allergies">Allergies</button>
+    <button type="button" class="pill-btn" data-t="sharing">Sharing</button>
   </div>
 
   <div id="tab-overview" class="card"></div>
@@ -245,28 +251,57 @@
       <div class="msg" id="hMsg"></div>
     </div>
     <div class="card"><h2>Medical history</h2><div id="hList"></div></div>
+    <div id="hShared"></div>
   </div>
 
   <div id="tab-allergies" class="hidden">
     <div class="card hidden" id="aAddCard">
       <h2>Record an allergy</h2>
       <label>Allergic to (substance) *</label>
-      <input type="text" id="aSubstance" placeholder="e.g. Penicillin" autocomplete="off">
+      <input type="text" id="aSubstance" list="substanceList" placeholder="Type or choose, e.g. Penicillin" autocomplete="off">
       <label>Reaction</label>
-      <input type="text" id="aReaction" placeholder="e.g. Rash, swelling" autocomplete="off">
+      <input type="text" id="aReaction" list="reactionList" placeholder="Type or choose" autocomplete="off">
       <div class="row">
         <div><label>Severity</label>
           <select id="aSeverity"><option value="unknown">Not known</option><option value="mild">Mild</option><option value="moderate">Moderate</option><option value="severe">Severe</option></select></div>
-        <div><label>Date noted</label><input type="date" id="aDate"></div>
+        <div><label>Date noted</label>
+          <div class="dateField"><input type="text" id="aDate"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div></div>
       </div>
       <button class="btn-primary" id="aAddBtn">Save allergy</button>
       <div class="msg" id="aMsg"></div>
     </div>
     <div class="card"><h2>Allergies</h2><div id="aList"></div></div>
+    <div id="aShared"></div>
+  </div>
+
+  <div id="tab-sharing" class="hidden">
+    <div class="card"><h2>Shared with this facility</h2><div id="sInList"></div></div>
+    <div class="card hidden" id="sOutCard">
+      <h2>Share this patient's records with another facility</h2>
+      <div class="hint2" style="margin-top:0;">The allergies and medical history recorded here become visible to the facility you choose, until you stop sharing. Do this only with the patient's (or guardian's) agreement.</div>
+      <div id="sOutList"></div>
+      <label>Share with</label>
+      <select id="sTarget"></select>
+      <label>Why (type or choose)</label>
+      <input type="text" id="sPurpose" list="purposeList" placeholder="e.g. Referral" autocomplete="off">
+      <div class="row">
+        <div><label>How did they agree?</label>
+          <select id="sMethod"><option value="verbal">Said yes (verbal)</option><option value="written">Signed (written)</option></select></div>
+        <div><label>Who agreed? *</label><input type="text" id="sBy" list="byList" placeholder="Name" autocomplete="off"></div>
+      </div>
+      <label class="chk"><input type="checkbox" id="sAgree"><span>The patient (or guardian) agrees to share these records</span></label>
+      <button class="btn-primary" id="sGrantBtn">Share records</button>
+      <div class="msg" id="sMsg"></div>
+    </div>
   </div>
   <div class="msg ok" id="doneMsg"></div>
+  <datalist id="substanceList"><option value="Penicillin"><option value="Amoxicillin"><option value="Ampicillin"><option value="Cotrimoxazole (Septrin)"><option value="Sulfonamides"><option value="Aspirin"><option value="Ibuprofen"><option value="Diclofenac"><option value="Paracetamol"><option value="Chloroquine"><option value="Quinine"><option value="Artemether-lumefantrine"><option value="Metronidazole"><option value="Ciprofloxacin"><option value="Erythromycin"><option value="Tetracycline"><option value="Latex"><option value="Eggs"><option value="Peanuts"><option value="Milk"><option value="Fish"><option value="Dust"><option value="Bee sting"></datalist>
+  <datalist id="reactionList"><option value="Rash"><option value="Itching"><option value="Hives"><option value="Swelling of face or lips"><option value="Difficulty breathing"><option value="Wheezing"><option value="Anaphylaxis"><option value="Vomiting"><option value="Diarrhoea"><option value="Fever"><option value="Dizziness"></datalist>
+  <datalist id="purposeList"><option value="Referral"><option value="Follow-up care"><option value="Shared treatment"><option value="Second opinion"><option value="Patient moved"></datalist>
+  <datalist id="byList"></datalist>
 </div>
 
+<script src="pc-fields.js"></script>
 <script type="module">
   const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, getDocFromCache } = window.top.MC.api(window);
 
@@ -317,6 +352,7 @@
 
   let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
   let patient = null, links = [], allergies = [], history = [], shopsById = {};
+  let grantedByMe = [], grantedToMe = [], shared = {};
   let showErrAllergies = false, showErrHistory = false, loggedView = false;
   const pid = new URLSearchParams(location.search).get("id");
   const can = k => role === "owner" || perms[k] === true;
@@ -351,8 +387,11 @@
   function renderBanner() {
     const act = sortAllergies(allergies.filter(a => a.status === "active"));
     const b = $("allergyBanner");
-    if (!act.length) { b.classList.add("hidden"); return; }
-    b.innerHTML = "<b>Allergies:</b> " + act.map(a => esc(a.substance) + (a.severity === "severe" ? " (severe)" : "")).join(", ");
+    const sh = [];
+    Object.keys(shared).forEach(id => sortAllergies((shared[id].allergies || []).filter(a => a.status === "active")).forEach(a => sh.push({ a: a, from: srcName(id) })));
+    if (!act.length && !sh.length) { b.classList.add("hidden"); return; }
+    b.innerHTML = (act.length ? "<b>Allergies:</b> " + act.map(a => esc(a.substance) + (a.severity === "severe" ? " (severe)" : "")).join(", ") : "") +
+      (sh.length ? (act.length ? "<br>" : "") + "<b>Shared by other facilities:</b> " + sh.map(x => esc(x.a.substance) + (x.a.severity === "severe" ? " (severe)" : "") + " (" + esc(x.from) + ")").join(", ") : "");
     b.classList.remove("hidden");
   }
   function line(k, v) { return v ? '<div class="breakdown-line"><span>' + esc(k) + '</span><span class="v">' + esc(v) + "</span></div>" : ""; }
@@ -368,7 +407,7 @@
       line("Allergies recorded here", String(act)) + line("History entries here", String(hist)) +
       '<h3 class="sub">Registered at</h3>' +
       (ls.length ? ls.map(l => '<div class="breakdown-line"><span>' + esc(facilityName(l.facilityId)) + '</span><span class="v">' + esc(l.localRegNo) + "</span></div>").join("") : '<div class="empty">No facility registration found.</div>') +
-      '<div class="hint2">Allergies and history are kept by each facility. You see the ones recorded at ' + esc(facility ? facility.name : "this facility") + ".</div>";
+      '<div class="hint2">Allergies and history are kept by each facility. You see the ones recorded at ' + esc(facility ? facility.name : "this facility") + ", plus anything another facility has shared with you (Sharing tab).</div>";
   }
 
   // ---------- allergies ----------
@@ -393,11 +432,13 @@
     const sub = $("aSubstance").value.trim().replace(/\s+/g, " ");
     const msg = $("aMsg"); msg.textContent = ""; msg.className = "msg err";
     if (sub.length < 2) { msg.textContent = "Enter what the patient is allergic to."; return; }
+    const di = PCF.dateInfo("aDate");
+    if (di.state === "bad" || di.state === "future" || di.state === "old") { msg.textContent = "Type the date as DD/MM/YYYY (for example 05/05/2026) or tap the calendar. It cannot be in the future."; return; }
     const ref = doc(collection(db, "pc_allergies"));
-    const d = Object.assign(stamp(), { patientId: pid, substance: sub, reaction: $("aReaction").value.trim(), severity: $("aSeverity").value, recordedDate: $("aDate").value || isoDate(new Date()), recordedBy: me.id, recordedByName: myName, status: "active" });
+    const d = Object.assign(stamp(), { patientId: pid, substance: sub, reaction: $("aReaction").value.trim(), severity: $("aSeverity").value, recordedDate: di.iso || isoDate(new Date()), recordedBy: me.id, recordedByName: myName, status: "active" });
     setDoc(ref, d).catch(saveFailed);
     logAudit("allergy.add", "pc_allergies/" + ref.id, { substance: sub, severity: d.severity });
-    $("aSubstance").value = ""; $("aReaction").value = ""; $("aSeverity").value = "unknown";
+    $("aSubstance").value = ""; $("aReaction").value = ""; $("aSeverity").value = "unknown"; PCF.setDate("aDate", PCF.todayISO());
     ok("Allergy saved on this phone. It will sync when you are online.");
   }
   function allergyError(id) {
@@ -453,19 +494,128 @@
     logAudit("history.error", "pc_medical_history/" + id, { reason: reason });
   }
 
+
+  // ---------- sharing between facilities (needs the patient's agreement; stored as a consent record) ----------
+  function dateOf(ts) {
+    const d = ts && ts.toDate ? ts.toDate() : (ts && ts.seconds ? new Date(ts.seconds * 1000) : null);
+    return d && !isNaN(d.getTime()) ? PCF.toTyped(isoDate(d)) : "";
+  }
+  function srcName(id) {
+    const c = grantedToMe.find(x => x.facilityId === id);
+    return (shopsById[id] && shopsById[id].name) || (c && c.facilityName) || "another facility";
+  }
+  function targetName(c) { return (shopsById[c.grantedFacilityId] && shopsById[c.grantedFacilityId].name) || c.grantedFacilityName || "another facility"; }
+
+  function renderShared() {
+    const ids = Object.keys(shared);
+    let ah = "", hh = "";
+    ids.forEach(id => {
+      const e = shared[id], name = esc(srcName(id));
+      const act = sortAllergies((e.allergies || []).filter(a => a.status === "active"));
+      ah += '<div class="card"><h2>From ' + name + ' (shared with consent)</h2>' + (e.err ? '<div class="empty">Could not load. Sharing may have been stopped.</div>' :
+        (act.length ? act.map(a => '<div class="entry"><div class="pt-name">' + esc(a.substance) + ' <span class="chip ' + (a.severity === "severe" ? "bad" : a.severity === "moderate" ? "warn" : "") + '">' + esc(SEV_LABEL[a.severity] || a.severity) + "</span></div>" +
+          '<div class="pt-meta">' + (a.reaction ? "Reaction: " + esc(a.reaction) + "<br>" : "") + "Noted " + esc(a.recordedDate || "") + "</div></div>").join("") : '<div class="empty">No allergy recorded there.</div>')) + "</div>";
+      const live = (e.history || []).filter(h => h.status !== "entered_in_error");
+      hh += '<div class="card"><h2>From ' + name + ' (shared with consent)</h2>' + (e.err ? '<div class="empty">Could not load. Sharing may have been stopped.</div>' :
+        (live.length ? HIST_TYPES.map(t => {
+          const rows = live.filter(h => h.type === t[0]); if (!rows.length) return "";
+          return '<h3 class="sub">' + esc(t[1]) + "</h3>" + rows.map(h => '<div class="entry"><div class="pt-name">' + esc(h.text) + (h.status === "resolved" ? ' <span class="chip">Resolved</span>' : "") + '</div><div class="pt-meta">' + (h.onset ? "When: " + esc(h.onset) : "") + "</div></div>").join("");
+        }).join("") : '<div class="empty">No medical history recorded there.</div>')) + "</div>";
+    });
+    $("aShared").innerHTML = ah; $("hShared").innerHTML = hh;
+  }
+
+  function logSharedView(id) {
+    setDoc(doc(collection(db, "pc_access_logs")), Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, patientId: pid, sourceFacilityId: id,
+      purpose: "Viewed records shared by " + srcName(id) + " (patient consent)", at: serverTimestamp() })).catch(() => {});
+  }
+  function syncShared() {
+    const active = grantedToMe.filter(c => !c.revokedAt);
+    const keep = {}; active.forEach(c => { keep[c.facilityId] = true; });
+    Object.keys(shared).forEach(id => { if (!keep[id]) { try { if (shared[id].ua) shared[id].ua(); if (shared[id].uh) shared[id].uh(); } catch (e) {} delete shared[id]; } });
+    active.forEach(c => {
+      const id = c.facilityId; if (shared[id]) return;
+      const e = shared[id] = { allergies: [], history: [], err: false };
+      const base = [where("businessId", "==", businessId), where("patientId", "==", pid), where("facilityId", "==", id), limit(300)];
+      e.ua = onSnapshot(query(collection(db, "pc_allergies"), ...base), s => { e.allergies = s.docs.map(d => ({ id: d.id, ...d.data() })); e.err = false; renderBanner(); renderShared(); }, () => { e.err = true; renderShared(); });
+      e.uh = onSnapshot(query(collection(db, "pc_medical_history"), ...base), s => { e.history = s.docs.map(d => ({ id: d.id, ...d.data() })); renderShared(); }, () => { e.err = true; renderShared(); });
+      logSharedView(id);
+    });
+    renderBanner(); renderShared();
+  }
+
+  function renderSharing() {
+    const inc = grantedToMe.filter(c => !c.revokedAt);
+    $("sInList").innerHTML = inc.length ? inc.map(c => '<div class="entry"><div class="pt-name">' + esc(srcName(c.facilityId)) + '</div><div class="pt-meta">Why: ' + esc(c.purpose || "") + (dateOf(c.grantedAt) ? " · since " + esc(dateOf(c.grantedAt)) : "") +
+      "<br>Their allergies and history are shown in the Allergies and Medical history tabs.</div></div>").join("") : '<div class="empty">No other facility has shared this patient with you.</div>';
+    $("sOutCard").classList.toggle("hidden", !can("patient.consent"));
+    if (!can("patient.consent")) return;
+    $("sOutList").innerHTML = grantedByMe.length ? '<h3 class="sub">Facilities you share with</h3>' + grantedByMe.map(c => {
+      const live = !c.revokedAt;
+      return '<div class="entry"><div class="pt-name">' + esc(targetName(c)) + ' <span class="chip ' + (live ? "ok" : "") + '">' + (live ? "Sharing" : "Stopped") + "</span></div>" +
+        '<div class="pt-meta">Why: ' + esc(c.purpose || "") + (dateOf(c.grantedAt) ? " · from " + esc(dateOf(c.grantedAt)) : "") + (!live && dateOf(c.revokedAt) ? " · stopped " + esc(dateOf(c.revokedAt)) : "") + "</div>" +
+        '<div class="op-actions">' + (live ? '<button class="btn-small btn-secondary" data-stop="' + esc(c.grantedFacilityId) + '">Stop sharing</button>' : '<button class="btn-small btn-secondary" data-again="' + esc(c.grantedFacilityId) + '">Share again</button>') + "</div></div>";
+    }).join("") : "";
+    const liveIds = {}; grantedByMe.forEach(c => { if (!c.revokedAt) liveIds[c.grantedFacilityId] = true; });
+    const opts = Object.keys(shopsById).filter(id => id !== facilityId && !liveIds[id] && Array.isArray(shopsById[id].enabledServices) && shopsById[id].enabledServices.indexOf("patient_care") >= 0)
+      .sort((a, b) => String(shopsById[a].name).localeCompare(String(shopsById[b].name)));
+    const sel = $("sTarget"), keepVal = sel.value;
+    sel.innerHTML = opts.length ? opts.map(id => '<option value="' + esc(id) + '">' + esc(shopsById[id].name) + "</option>").join("") : '<option value="">No other facility available</option>';
+    if (keepVal && opts.indexOf(keepVal) >= 0) sel.value = keepVal;
+    $("sGrantBtn").disabled = !opts.length;
+    if (!opts.length && role !== "owner" && !$("sMsg").textContent) $("sMsg").innerHTML = "You can only see your own facility. Ask the owner to share this patient with another facility.";
+  }
+  function setSMsg(t, err) { const m = $("sMsg"); m.textContent = t || ""; m.className = "msg " + (err ? "err" : "ok"); }
+  function grantShare() {
+    setSMsg("");
+    const target = $("sTarget").value, purpose = $("sPurpose").value.trim(), by = $("sBy").value.trim().replace(/\s+/g, " "), method = $("sMethod").value;
+    if (!target) { setSMsg("Choose a facility.", true); return; }
+    if (purpose.length < 3) { setSMsg("Say why the records are being shared.", true); return; }
+    if (by.length < 2) { setSMsg("Enter the name of the person who agreed.", true); return; }
+    if (!$("sAgree").checked) { setSMsg("Tick the box only if the patient or guardian agreed.", true); return; }
+    const existing = grantedByMe.find(c => c.grantedFacilityId === target);
+    if (existing && !existing.revokedAt) { setSMsg("Already shared with that facility.", true); return; }
+    const id = pid + "_" + target, ref = doc(db, "pc_patient_consents", id);
+    const evidence = { granteeFacilityId: target, purpose: purpose, consentMethod: method, consentGivenBy: by };
+    if (existing) {
+      updateDoc(ref, { revokedAt: null, revokedBy: null, grantedAt: serverTimestamp(), grantedBy: me.id, purpose: purpose, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    } else {
+      setDoc(ref, Object.assign(stamp(), { patientId: pid, grantedFacilityId: target, grantedFacilityName: (shopsById[target] && shopsById[target].name) || "", facilityName: facility ? facility.name : "",
+        purpose: purpose, grantedBy: me.id, grantedAt: serverTimestamp(), revokedAt: null, revokedBy: null })).catch(saveFailed);
+    }
+    logAudit("consent.grant", "pc_patient_consents/" + id, evidence);
+    $("sPurpose").value = ""; $("sBy").value = ""; $("sAgree").checked = false;
+    setSMsg("Sharing saved on this phone. It will sync when you are online.");
+  }
+  function stopShare(target) {
+    if (!window.confirm("Stop sharing this patient's records with that facility?")) return;
+    const id = pid + "_" + target;
+    updateDoc(doc(db, "pc_patient_consents", id), { revokedAt: serverTimestamp(), revokedBy: me.id, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    logAudit("consent.revoke", "pc_patient_consents/" + id, { granteeFacilityId: target });
+  }
+  function fillPeopleList() {
+    const names = []; const add = n => { n = String(n || "").trim(); if (n && names.indexOf(n) < 0) names.push(n); };
+    if (patient) { add(patient.fullName); add(patient.nextOfKin && patient.nextOfKin.name); add(patient.emergencyContact && patient.emergencyContact.name); }
+    $("byList").innerHTML = names.map(n => '<option value="' + esc(n) + '">').join("");
+  }
+
   // ---------- wiring ----------
   function renderAll() { if (!patient) return; renderHeader(); renderBanner(); renderOverview(); renderAllergies(); renderHistory(); }
   document.querySelectorAll("#tabs .pill-btn").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll("#tabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b));
-    ["overview", "history", "allergies"].forEach(t => { $("tab-" + t).classList.toggle("hidden", t !== b.dataset.t); });
+    ["overview", "history", "allergies", "sharing"].forEach(t => { $("tab-" + t).classList.toggle("hidden", t !== b.dataset.t); });
   }));
-  $("aAddBtn").onclick = addAllergy; $("hAddBtn").onclick = addHistory;
+  $("aAddBtn").onclick = addAllergy; $("hAddBtn").onclick = addHistory; $("sGrantBtn").onclick = grantShare;
+  $("sOutList").addEventListener("click", e => {
+    const st = e.target.closest("[data-stop]"); if (st) { stopShare(st.dataset.stop); return; }
+    const ag = e.target.closest("[data-again]"); if (ag) { $("sTarget").value = ag.dataset.again; $("sPurpose").focus(); }
+  });
   $("aList").addEventListener("click", e => { const b = e.target.closest("[data-aerr]"); if (b) allergyError(b.dataset.aerr); });
   $("hList").addEventListener("click", e => {
     const r = e.target.closest("[data-hres]"); if (r) { historyResolve(r.dataset.hres); return; }
     const x = e.target.closest("[data-herr]"); if (x) historyError(x.dataset.herr);
   });
-  $("aDate").max = isoDate(new Date()); $("aDate").value = isoDate(new Date());
+  PCF.initDates(); PCF.setDate("aDate", PCF.todayISO());
 
   function mark(s) {
     const badge = $("netBadge");
@@ -480,6 +630,14 @@
     onSnapshot(query(collection(db, "pc_medical_history"), ...base), { includeMetadataChanges: true }, s => {
       history = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHistory(); renderOverview();
     }, err => { $("hList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view medical history." : "Could not load medical history.") + "</div>"; });
+    if (can("patient.consent")) {
+      onSnapshot(query(collection(db, "pc_patient_consents"), where("businessId", "==", businessId), where("patientId", "==", pid), where("facilityId", "==", facilityId), limit(100)), { includeMetadataChanges: true }, s => {
+        grantedByMe = s.docs.map(d => ({ id: d.id, ...d.data() })); renderSharing();
+      }, () => {});
+    }
+    onSnapshot(query(collection(db, "pc_patient_consents"), where("businessId", "==", businessId), where("patientId", "==", pid), where("grantedFacilityId", "==", facilityId), limit(100)), { includeMetadataChanges: true }, s => {
+      grantedToMe = s.docs.map(d => ({ id: d.id, ...d.data() })); syncShared(); renderSharing();
+    }, () => {});
     onSnapshot(query(collection(db, "pc_patient_facility_links"), where("businessId", "==", businessId), where("patientId", "==", pid)), s => {
       links = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHeader(); renderOverview();
     }, () => {});
@@ -499,7 +657,7 @@
     $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
     $("aAddCard").classList.toggle("hidden", !can("allergy.record"));
     $("hAddCard").classList.toggle("hidden", !can("history.record"));
-    renderAll(); startLists();
+    fillPeopleList(); renderAll(); renderSharing(); startLists();
     if (!loggedView) {
       loggedView = true;
       // access log: who opened this record and why (the rules cannot force this; the app always tries)

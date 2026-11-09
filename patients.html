@@ -147,6 +147,11 @@
   .op-actions{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
   .op-actions button{flex:1; min-width:120px;}
   .breakdown-line .v{text-align:right; max-width:62%;}
+  /* ===== typed or picked dates ===== */
+  .dateField{position:relative; display:flex; gap:8px; align-items:center;}
+  .dateField input[type="text"]{flex:1; min-width:0;}
+  .cal-btn{flex:0 0 46px; height:40px; background:var(--card); border:1px solid var(--border); border-radius:8px; font-size:18px; padding:0;}
+  .cal-native{position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0; padding:0;}
 </style>
 <script>
 (function(){
@@ -218,7 +223,9 @@
     <select id="fSex"><option value="">Choose…</option><option value="female">Female</option><option value="male">Male</option><option value="other">Other</option><option value="unknown">Unknown</option></select>
     <label>Age</label>
     <select id="fAgeMode"><option value="dob">I know the date of birth</option><option value="est">Estimated age</option><option value="unknown">Age is unknown</option></select>
-    <div id="dobWrap"><label>Date of birth</label><input type="date" id="fDob"></div>
+    <div id="dobWrap"><label>Date of birth</label>
+      <div class="dateField"><input type="text" id="fDob"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div>
+      <div class="hint2">Type it (for example 05/05/1990) or tap the calendar.</div></div>
     <div id="estWrap" class="hidden">
       <div class="row">
         <div><label>Years</label><input type="number" inputmode="numeric" id="fAgeY" min="0" max="120" placeholder="0"></div>
@@ -231,13 +238,13 @@
     <input type="tel" id="fPhone" placeholder="e.g. 0772 123456" autocomplete="off">
     <label>Address</label><input type="text" id="fAddress" autocomplete="off">
     <div class="row">
-      <div><label>Village</label><input type="text" id="fVillage" autocomplete="off"></div>
-      <div><label>District</label><input type="text" id="fDistrict" autocomplete="off"></div>
+      <div><label>Village</label><input type="text" id="fVillage" list="villageList" autocomplete="off"></div>
+      <div><label>District</label><input type="text" id="fDistrict" list="districtList" autocomplete="off"></div>
     </div>
     <h3 class="sub">Guardian / next of kin</h3>
     <label>Name</label><input type="text" id="fNokName" autocomplete="off">
     <div class="row">
-      <div><label>Relationship</label><input type="text" id="fNokRel" placeholder="e.g. Mother" autocomplete="off"></div>
+      <div><label>Relationship</label><input type="text" id="fNokRel" list="relList" placeholder="Type or choose" autocomplete="off"></div>
       <div><label>Phone</label><input type="tel" id="fNokPhone" autocomplete="off"></div>
     </div>
     <h3 class="sub">Emergency contact</h3>
@@ -245,7 +252,7 @@
     <div id="emWrap" class="hidden">
       <label>Name</label><input type="text" id="fEmName" autocomplete="off">
       <div class="row">
-        <div><label>Relationship</label><input type="text" id="fEmRel" autocomplete="off"></div>
+        <div><label>Relationship</label><input type="text" id="fEmRel" list="relList" placeholder="Type or choose" autocomplete="off"></div>
         <div><label>Phone</label><input type="tel" id="fEmPhone" autocomplete="off"></div>
       </div>
     </div>
@@ -255,8 +262,12 @@
     <div class="msg" id="formMsg"></div>
   </div>
   <div class="msg ok" id="doneMsg"></div>
+  <datalist id="relList"><option value="Mother"><option value="Father"><option value="Wife"><option value="Husband"><option value="Son"><option value="Daughter"><option value="Brother"><option value="Sister"><option value="Grandmother"><option value="Grandfather"><option value="Aunt"><option value="Uncle"><option value="Guardian"><option value="Friend"><option value="Neighbour"><option value="Employer"><option value="Other"></datalist>
+  <datalist id="villageList"></datalist>
+  <datalist id="districtList"></datalist>
 </div>
 
+<script src="pc-fields.js"></script>
 <script type="module">
   const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, collection, onSnapshot, serverTimestamp, query, where, getDocFromCache } = window.top.MC.api(window);
 
@@ -376,6 +387,12 @@
   const can = k => role === "owner" || perms[k] === true;
   const facilityName = id => (shopsById[id] && shopsById[id].name) || (id === facilityId && facility ? facility.name : "another facility");
 
+  // village / district suggestions come from what has already been typed for your patients (you can still type anything new)
+  function refreshPlaceLists() {
+    const top = key => { const m = {}; patients.forEach(p => { const v = String(p[key] || "").trim(); if (v) m[v] = (m[v] || 0) + 1; }); return Object.keys(m).sort((a, b) => (m[b] - m[a]) || a.localeCompare(b)).slice(0, 80); };
+    $("villageList").innerHTML = top("village").map(v => '<option value="' + esc(v) + '">').join("");
+    $("districtList").innerHTML = top("district").map(v => '<option value="' + esc(v) + '">').join("");
+  }
   function regsOf(pid) { return links.filter(l => l.patientId === pid).map(l => l.localRegNo).filter(Boolean); }
   function myLink(pid) { return links.find(l => l.patientId === pid && l.facilityId === facilityId) || null; }
 
@@ -468,7 +485,7 @@
       fullName: v("fName"), sex: $("fSex").value, phone: v("fPhone"), address: v("fAddress"), village: v("fVillage"), district: v("fDistrict"),
       dob: null, dobApprox: null, dobPrecision: "unknown", ageRecordedOn: isoDate(today), estimatedAge: null
     };
-    if (mode === "dob" && $("fDob").value) { f.dob = $("fDob").value; f.dobApprox = f.dob; f.dobPrecision = "exact"; }
+    if (mode === "dob") { const di = PCF.dateInfo("fDob"); if (di.state === "ok") { f.dob = di.iso; f.dobApprox = di.iso; f.dobPrecision = "exact"; } }
     if (mode === "est") {
       const y = parseInt($("fAgeY").value || "0", 10) || 0, m = parseInt($("fAgeM").value || "0", 10) || 0, d = parseInt($("fAgeD").value || "0", 10) || 0;
       if (y + m + d > 0) { f.estimatedAge = { years: y, months: m, days: d }; f.dobApprox = approxDobFromAge(y, m, d, today); f.dobPrecision = "estimated"; }
@@ -480,7 +497,13 @@
   function formProblem(f) {
     if (nameTokens(f.fullName).join("").length < 2) return "Enter the patient's full name.";
     if (!f.sex) return "Choose the patient's sex.";
-    if ($("fAgeMode").value === "dob" && !$("fDob").value) return "Enter the date of birth, or choose Estimated age / Age is unknown.";
+    if ($("fAgeMode").value === "dob") {
+      const st = PCF.dateInfo("fDob").state;
+      if (st === "empty") return "Enter the date of birth, or choose Estimated age / Age is unknown.";
+      if (st === "bad") return "Type the date of birth as DD/MM/YYYY (for example 05/05/1990) or tap the calendar button.";
+      if (st === "future") return "The date of birth cannot be in the future.";
+      if (st === "old") return "Check the year of birth.";
+    }
     if ($("fAgeMode").value === "est" && !f.estimatedAge) return "Enter the estimated age.";
     return "";
   }
@@ -580,7 +603,7 @@
   $("cancelBtn").onclick = () => { clearForm(); $("formCard").classList.add("hidden"); $("showFormBtn").classList.remove("hidden"); };
   $("fAgeMode").onchange = syncFormVisibility; $("fSameEm").onchange = syncFormVisibility;
   $("saveBtn").onclick = startRegister;
-  $("fDob").max = isoDate(new Date());
+  PCF.initDates();
   $("candBox").addEventListener("click", e => {
     const o = e.target.closest("[data-open]"); if (o) { openDetail(o.dataset.open); return; }
     const l = e.target.closest("[data-link]"); if (l) { linkHere(l.dataset.link); return; }
@@ -602,7 +625,7 @@
   }
   function startData() {
     onSnapshot(query(collection(db, "pc_patients"), where("businessId", "==", businessId)), { includeMetadataChanges: true }, s => {
-      patients = s.docs.map(d => ({ id: d.id, ...d.data() })); patientsReady = true; patientsErr = null; mark(s); renderList(); if (openId) openDetail(openId);
+      patients = s.docs.map(d => ({ id: d.id, ...d.data() })); patientsReady = true; patientsErr = null; mark(s); refreshPlaceLists(); renderList(); if (openId) openDetail(openId);
     }, err => { patientsErr = err && err.code === "permission-denied" ? "You do not have permission to view patients. Ask the owner to switch on your Patient Care access." : ((err && err.message) || "Could not load patients."); patientsReady = true; linksReady = true; renderList(); });
     onSnapshot(query(collection(db, "pc_patient_facility_links"), where("businessId", "==", businessId)), s => {
       links = s.docs.map(d => ({ id: d.id, ...d.data() })); linksReady = true; renderList();

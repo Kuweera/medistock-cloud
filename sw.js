@@ -1,8 +1,8 @@
 /* MediStock Cloud — keeps the app's pages and the Firebase code on the phone so it opens with no internet.
    Pages refresh themselves in the background whenever the phone is online. */
-var VERSION = "mc-v18";
+var VERSION = "mc-v19";
 var PAGES = ["app.html", "mc-core.js", "mc-notify.js", "mc-share.js", "desktop.css", "index.html", "dashboard.html", "charts.html", "reports.html", "history.html", "sales.html", "inventory.html", "purchases.html", "batches.html",
-  "expiring.html", "stocktake.html", "whattobuy.html", "expenses.html", "credit.html", "cash-position.html", "suppliers.html", "users.html", "patients.html", "patient.html",
+  "expiring.html", "stocktake.html", "whattobuy.html", "expenses.html", "credit.html", "cash-position.html", "suppliers.html", "users.html", "patients.html", "patient.html", "pc-fields.js",
   "shops.html", "settings.html", "backup.html", "guide.html", "about.html", "migrate.html", "login.html", "login.css", "login.js", "nav.js", "manifest.json",
   "mc-icon-192.png", "mc-icon-512.png", "mc-icon-maskable-512.png", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-192.png", "icons/icon-maskable-512.png", "icons/favicon-32.png", "icons/apple-touch-icon-180.png"];
 var SDK = ["https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js", "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js",
