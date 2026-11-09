@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>if(window.top===window){location.replace("app.html#"+location.pathname.split("/").pop()+location.search);}</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2abfa0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MediStock">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<title>Patient — MediStock Cloud</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  /* ===== Users page ===== */
+  .hidden{display:none !important;}
+  .btn-small{padding:8px 12px; font-size:13px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent);}
+  .btn-danger-outline{background:transparent; color:var(--danger); border:1px solid var(--danger);}
+  .op{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;}
+  .op:last-child{margin-bottom:0;}
+  .op-name{font-weight:700; font-size:14.5px; display:flex; justify-content:space-between; gap:8px; align-items:center;}
+  .op-meta{font-size:12px; color:var(--muted); margin-top:3px; line-height:1.5;}
+  .tag{font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid var(--border);}
+  .tag.on{color:var(--accent2); border-color:var(--accent2);} .tag.off{color:var(--danger); border-color:var(--danger);}
+  .op-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .cred{background:var(--bg); border:1px dashed var(--accent); border-radius:10px; padding:12px; margin:10px 0; font-size:14px; line-height:1.7;}
+  .cred b{font-size:16px; letter-spacing:.5px;}
+  .msg{font-size:13px; margin-top:8px;} .msg.err{color:var(--danger);} .msg.ok{color:var(--accent2);}
+  .pill-row{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;}
+  .pill-btn{background:var(--card); color:var(--text); border:1px solid var(--border); padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:600;}
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .day-h{font-size:11.5px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.4px; margin:12px 0 4px;}
+  .ev{display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ev:last-child{border-bottom:none;}
+  .ev-main{min-width:0;} .ev-text{overflow-wrap:anywhere;}
+  .ev-meta{font-size:11.5px; color:var(--muted);}
+  .ev-amt{font-weight:700; white-space:nowrap;} .ev-amt.out{color:var(--danger);}
+  .hint2{font-size:11.5px; color:var(--muted); line-height:1.5; margin-top:6px;}
+
+  /* ===== Patient Care ===== */
+  .sub{font-size:13px; margin:16px 0 2px; color:var(--accent); font-weight:700;}
+  .chk{display:flex; align-items:center; gap:10px; font-size:13.5px; color:var(--text); margin:8px 0;}
+  .chk input{width:22px; height:22px; flex:0 0 22px; padding:0; margin:0;}
+  .pt{padding:11px 0; border-bottom:1px solid var(--border); cursor:pointer;}
+  .pt:last-child{border-bottom:none;}
+  .pt-name{font-size:14.5px; font-weight:700; color:var(--text);}
+  .pt-meta{font-size:12.5px; color:var(--muted); margin-top:2px; line-height:1.5;}
+  .chip{display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:4px; vertical-align:middle; background:var(--border); color:var(--muted);}
+  .chip.ok{color:var(--accent2);} .chip.warn{color:var(--warn);} .chip.bad{color:var(--danger);}
+  .cand{border:1px solid var(--border); border-radius:10px; padding:10px; margin:8px 0;}
+  .cand.strong{border-color:var(--danger);}
+  .cand-head{font-size:14px; font-weight:700; color:var(--danger); margin-top:14px;}
+  .op-actions{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .breakdown-line .v{text-align:right; max-width:62%;}
+  textarea{width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px; font-family:inherit;}
+  textarea:focus{outline:none; border-color:var(--accent);}
+  .back{display:inline-block; font-size:13px; color:var(--accent); margin:0 0 10px; text-decoration:none; font-weight:600;}
+  .alert-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--danger); color:var(--danger); font-size:13px; line-height:1.5; font-weight:600;}
+  .entry{padding:10px 0; border-bottom:1px solid var(--border);} .entry:last-child{border-bottom:none;}
+  .entry.struck .pt-name{text-decoration:line-through; color:var(--muted); font-weight:500;}
+  .pill-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<body>
+
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Patient Care · Patient profile</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="mcGo('dashboard.html')">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+<div class="card hidden" id="gateCard"><div id="gateMsg" class="empty"></div><button class="btn-small btn-secondary" style="width:100%; margin-top:10px;" onclick="mcGo('patients.html')">&larr; Back to patients</button></div>
+
+<div id="mainArea" class="hidden">
+  <a class="back" href="patients.html" onclick="mcGo('patients.html'); return false;">&larr; Patients</a>
+  <div class="card">
+    <h2 id="pName"></h2>
+    <div class="pt-meta" id="pLine"></div>
+    <div id="mergedNote" class="alert-box hidden"></div>
+    <div id="allergyBanner" class="alert-box hidden"></div>
+  </div>
+
+  <div class="pill-row" id="tabs">
+    <button type="button" class="pill-btn selected" data-t="overview">Overview</button>
+    <button type="button" class="pill-btn" data-t="history">Medical history</button>
+    <button type="button" class="pill-btn" data-t="allergies">Allergies</button>
+  </div>
+
+  <div id="tab-overview" class="card"></div>
+
+  <div id="tab-history" class="hidden">
+    <div class="card hidden" id="hAddCard">
+      <h2>Add to medical history</h2>
+      <label>Type</label>
+      <select id="hType">
+        <option value="chronic_illness">Chronic illness</option>
+        <option value="previous_diagnosis">Previous diagnosis</option>
+        <option value="admission">Previous admission</option>
+        <option value="operation">Previous operation</option>
+        <option value="current_medicine">Current medicine</option>
+        <option value="previous_medicine">Previous medicine</option>
+        <option value="family_history">Family history</option>
+        <option value="social_history">Social history</option>
+        <option value="pregnancy_breastfeeding">Pregnancy / breastfeeding</option>
+      </select>
+      <label>Details *</label>
+      <textarea id="hText" rows="3" placeholder="e.g. Asthma since childhood, uses inhaler"></textarea>
+      <label>When (optional)</label>
+      <input type="text" id="hOnset" placeholder="e.g. 2019, or March 2024">
+      <button class="btn-primary" id="hAddBtn">Add to history</button>
+      <div class="msg" id="hMsg"></div>
+    </div>
+    <div class="card"><h2>Medical history</h2><div id="hList"></div></div>
+  </div>
+
+  <div id="tab-allergies" class="hidden">
+    <div class="card hidden" id="aAddCard">
+      <h2>Record an allergy</h2>
+      <label>Allergic to (substance) *</label>
+      <input type="text" id="aSubstance" placeholder="e.g. Penicillin" autocomplete="off">
+      <label>Reaction</label>
+      <input type="text" id="aReaction" placeholder="e.g. Rash, swelling" autocomplete="off">
+      <div class="row">
+        <div><label>Severity</label>
+          <select id="aSeverity"><option value="unknown">Not known</option><option value="mild">Mild</option><option value="moderate">Moderate</option><option value="severe">Severe</option></select></div>
+        <div><label>Date noted</label><input type="date" id="aDate"></div>
+      </div>
+      <button class="btn-primary" id="aAddBtn">Save allergy</button>
+      <div class="msg" id="aMsg"></div>
+    </div>
+    <div class="card"><h2>Allergies</h2><div id="aList"></div></div>
+  </div>
+  <div class="msg ok" id="doneMsg"></div>
+</div>
+
+<script type="module">
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, getDocFromCache } = window.top.MC.api(window);
+
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDocServerFirst(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDoc(ref) {
+    try { const c = await getDocFromCache(ref); if (c.exists()) return c; } catch (e) {}
+    return getDocServerFirst(ref);
+  }
+
+  const app = initializeApp({});
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  /*PURE-START*/
+  function isoDate(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+  function ageText(p, now) {
+    let base = null;
+    if (p.dobPrecision === "exact" && p.dob) base = new Date(p.dob + "T00:00:00");
+    else if (p.dobPrecision === "estimated" && p.dobApprox) base = new Date(p.dobApprox + "T00:00:00");
+    if (!base || isNaN(base.getTime())) return "Age unknown";
+    const days = Math.max(0, Math.floor((now.getTime() - base.getTime()) / 864e5));
+    let months = (now.getFullYear() - base.getFullYear()) * 12 + (now.getMonth() - base.getMonth());
+    if (now.getDate() < base.getDate()) months--;
+    if (months < 0) months = 0;
+    const pre = p.dobPrecision === "estimated" ? "~" : "";
+    if (days < 31) return pre + days + (days === 1 ? " day" : " days");
+    if (months < 24) return pre + months + (months === 1 ? " month" : " months");
+    return pre + Math.floor(months / 12) + " yrs";
+  }
+  const HIST_TYPES = [
+    ["chronic_illness", "Chronic illness"], ["previous_diagnosis", "Previous diagnosis"], ["admission", "Previous admission"],
+    ["operation", "Previous operation"], ["current_medicine", "Current medicine"], ["previous_medicine", "Previous medicine"],
+    ["family_history", "Family history"], ["social_history", "Social history"], ["pregnancy_breastfeeding", "Pregnancy / breastfeeding"]
+  ];
+  const SEV_ORDER = { severe: 0, moderate: 1, mild: 2, unknown: 3 };
+  const SEV_LABEL = { severe: "Severe", moderate: "Moderate", mild: "Mild", unknown: "Severity not known" };
+  function sortAllergies(list) {
+    return list.slice().sort((a, b) => (SEV_ORDER[a.severity] - SEV_ORDER[b.severity]) || ((b.clientCreatedAt || 0) - (a.clientCreatedAt || 0)));
+  }
+  /*PURE-END*/
+
+  let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
+  let patient = null, links = [], allergies = [], history = [], shopsById = {};
+  let showErrAllergies = false, showErrHistory = false, loggedView = false;
+  const pid = new URLSearchParams(location.search).get("id");
+  const can = k => role === "owner" || perms[k] === true;
+  const facilityName = id => (shopsById[id] && shopsById[id].name) || (id === facilityId && facility ? facility.name : "another facility");
+
+  function showGate(msg) { $("gateMsg").innerHTML = msg; $("gateCard").classList.remove("hidden"); $("mainArea").classList.add("hidden"); }
+
+  function stamp() { return { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now() }; }
+  function auditDoc(action, path, extra) {
+    return Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, action: action, recordPath: path, patientId: pid, at: serverTimestamp() }, extra || {});
+  }
+  function saveFailed(err) {
+    const denied = err && err.code === "permission-denied";
+    const text = denied ? "Firestore refused this save. Your account may not have permission for this, or Patient Care is not switched on for this shop."
+                        : "Could not save: " + ((err && err.message) || "unknown problem");
+    const el = $("doneMsg"); el.textContent = "NOT SAVED. " + text; el.className = "msg err";
+    alert(text);
+  }
+  function ok(msg) { const el = $("doneMsg"); el.className = "msg ok"; el.textContent = msg; }
+  const logAudit = (action, path, extra) => setDoc(doc(collection(db, "pc_audit_logs")), auditDoc(action, path, extra)).catch(saveFailed);
+
+  // ---------- header, overview ----------
+  function renderHeader() {
+    const p = patient;
+    $("pName").textContent = p.fullName;
+    const myL = links.find(l => l.patientId === pid && l.facilityId === facilityId);
+    $("pLine").innerHTML = esc((p.sex === "female" ? "Female" : p.sex === "male" ? "Male" : p.sex === "other" ? "Other" : "Sex unknown")) + " · " + esc(ageText(p, new Date())) +
+      (p.phone ? " · " + esc(p.phone) : "") + (myL ? ' <span class="chip ok">' + esc(myL.localRegNo) + "</span>" : ' <span class="chip warn">Not registered here</span>');
+    const mn = $("mergedNote");
+    if (p.status === "merged") { mn.innerHTML = "This record was merged into another patient record and should no longer be used."; mn.classList.remove("hidden"); } else mn.classList.add("hidden");
+  }
+  function renderBanner() {
+    const act = sortAllergies(allergies.filter(a => a.status === "active"));
+    const b = $("allergyBanner");
+    if (!act.length) { b.classList.add("hidden"); return; }
+    b.innerHTML = "<b>Allergies:</b> " + act.map(a => esc(a.substance) + (a.severity === "severe" ? " (severe)" : "")).join(", ");
+    b.classList.remove("hidden");
+  }
+  function line(k, v) { return v ? '<div class="breakdown-line"><span>' + esc(k) + '</span><span class="v">' + esc(v) + "</span></div>" : ""; }
+  function renderOverview() {
+    const p = patient, nok = p.nextOfKin || {}, em = p.emergencyContact || {};
+    const ls = links.filter(l => l.patientId === pid);
+    const act = allergies.filter(a => a.status === "active").length, hist = history.filter(h => h.status !== "entered_in_error").length;
+    $("tab-overview").innerHTML = "<h2>Overview</h2>" +
+      line("Sex", p.sex) + line("Age", ageText(p, new Date())) + line("Date of birth", p.dobPrecision === "exact" ? p.dob : "") +
+      line("Phone", p.phone) + line("Address", [p.address, p.village, p.district].filter(Boolean).join(", ")) +
+      line("Next of kin", [nok.name, nok.relationship, nok.phone].filter(Boolean).join(" · ")) +
+      line("Emergency contact", [em.name, em.relationship, em.phone].filter(Boolean).join(" · ")) +
+      line("Allergies recorded here", String(act)) + line("History entries here", String(hist)) +
+      '<h3 class="sub">Registered at</h3>' +
+      (ls.length ? ls.map(l => '<div class="breakdown-line"><span>' + esc(facilityName(l.facilityId)) + '</span><span class="v">' + esc(l.localRegNo) + "</span></div>").join("") : '<div class="empty">No facility registration found.</div>') +
+      '<div class="hint2">Allergies and history are kept by each facility. You see the ones recorded at ' + esc(facility ? facility.name : "this facility") + ".</div>";
+  }
+
+  // ---------- allergies ----------
+  function renderAllergies() {
+    const act = sortAllergies(allergies.filter(a => a.status === "active"));
+    const bad = allergies.filter(a => a.status !== "active");
+    let h = "";
+    if (!act.length) h += '<div class="empty">No allergy recorded at this facility.</div>';
+    act.forEach(a => {
+      h += '<div class="entry"><div class="pt-name">' + esc(a.substance) + ' <span class="chip ' + (a.severity === "severe" ? "bad" : a.severity === "moderate" ? "warn" : "") + '">' + esc(SEV_LABEL[a.severity] || a.severity) + "</span></div>" +
+        '<div class="pt-meta">' + (a.reaction ? "Reaction: " + esc(a.reaction) + "<br>" : "") + "Noted " + esc(a.recordedDate || "") + (a.recordedByName ? " by " + esc(a.recordedByName) : "") + "</div>" +
+        (can("allergy.record") ? '<div class="op-actions"><button class="btn-small btn-secondary" data-aerr="' + esc(a.id) + '">Entered in error</button></div>' : "") + "</div>";
+    });
+    if (bad.length) {
+      h += '<button type="button" class="btn-small btn-secondary" id="toggleAErr" style="width:100%; margin-top:10px;">' + (showErrAllergies ? "Hide" : "Show") + " entries marked as error (" + bad.length + ")</button>";
+      if (showErrAllergies) bad.forEach(a => { h += '<div class="entry struck"><div class="pt-name">' + esc(a.substance) + '</div><div class="pt-meta">Entered in error' + (a.errorReason ? ": " + esc(a.errorReason) : "") + "</div></div>"; });
+    }
+    $("aList").innerHTML = h;
+    const t = $("toggleAErr"); if (t) t.onclick = () => { showErrAllergies = !showErrAllergies; renderAllergies(); };
+  }
+  function addAllergy() {
+    const sub = $("aSubstance").value.trim().replace(/\s+/g, " ");
+    const msg = $("aMsg"); msg.textContent = ""; msg.className = "msg err";
+    if (sub.length < 2) { msg.textContent = "Enter what the patient is allergic to."; return; }
+    const ref = doc(collection(db, "pc_allergies"));
+    const d = Object.assign(stamp(), { patientId: pid, substance: sub, reaction: $("aReaction").value.trim(), severity: $("aSeverity").value, recordedDate: $("aDate").value || isoDate(new Date()), recordedBy: me.id, recordedByName: myName, status: "active" });
+    setDoc(ref, d).catch(saveFailed);
+    logAudit("allergy.add", "pc_allergies/" + ref.id, { substance: sub, severity: d.severity });
+    $("aSubstance").value = ""; $("aReaction").value = ""; $("aSeverity").value = "unknown";
+    ok("Allergy saved on this phone. It will sync when you are online.");
+  }
+  function allergyError(id) {
+    const reason = (window.prompt("Why is this entry wrong? (it will stay on record, marked as entered in error)") || "").trim();
+    if (reason.length < 3) { if (reason) alert("Please give a short reason."); return; }
+    updateDoc(doc(db, "pc_allergies", id), { status: "entered_in_error", errorReason: reason, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    logAudit("allergy.error", "pc_allergies/" + id, { reason: reason });
+  }
+
+  // ---------- medical history ----------
+  function renderHistory() {
+    const live = history.filter(h => h.status !== "entered_in_error");
+    const bad = history.filter(h => h.status === "entered_in_error");
+    let out = "";
+    if (!live.length) out += '<div class="empty">No medical history recorded at this facility.</div>';
+    HIST_TYPES.forEach(t => {
+      const rows = live.filter(h => h.type === t[0]).sort((a, b) => (b.clientCreatedAt || 0) - (a.clientCreatedAt || 0));
+      if (!rows.length) return;
+      out += '<h3 class="sub">' + esc(t[1]) + "</h3>";
+      rows.forEach(h => {
+        out += '<div class="entry"><div class="pt-name">' + esc(h.text) + (h.status === "resolved" ? ' <span class="chip">Resolved</span>' : "") + "</div>" +
+          '<div class="pt-meta">' + (h.onset ? "When: " + esc(h.onset) + "<br>" : "") + "Recorded by " + esc(h.recordedByName || "") + "</div>" +
+          (can("history.record") ? '<div class="op-actions">' + (h.status === "active" ? '<button class="btn-small btn-secondary" data-hres="' + esc(h.id) + '">Mark resolved</button>' : "") +
+            '<button class="btn-small btn-secondary" data-herr="' + esc(h.id) + '">Entered in error</button></div>' : "") + "</div>";
+      });
+    });
+    if (bad.length) {
+      out += '<button type="button" class="btn-small btn-secondary" id="toggleHErr" style="width:100%; margin-top:10px;">' + (showErrHistory ? "Hide" : "Show") + " entries marked as error (" + bad.length + ")</button>";
+      if (showErrHistory) bad.forEach(h => { out += '<div class="entry struck"><div class="pt-name">' + esc(h.text) + '</div><div class="pt-meta">Entered in error' + (h.errorReason ? ": " + esc(h.errorReason) : "") + "</div></div>"; });
+    }
+    $("hList").innerHTML = out;
+    const t = $("toggleHErr"); if (t) t.onclick = () => { showErrHistory = !showErrHistory; renderHistory(); };
+  }
+  function addHistory() {
+    const text = $("hText").value.trim();
+    const msg = $("hMsg"); msg.textContent = ""; msg.className = "msg err";
+    if (!text) { msg.textContent = "Write the details first."; return; }
+    const ref = doc(collection(db, "pc_medical_history"));
+    const d = Object.assign(stamp(), { patientId: pid, type: $("hType").value, text: text, onset: $("hOnset").value.trim(), status: "active", recordedBy: me.id, recordedByName: myName });
+    setDoc(ref, d).catch(saveFailed);
+    logAudit("history.add", "pc_medical_history/" + ref.id, { type: d.type });
+    $("hText").value = ""; $("hOnset").value = "";
+    ok("History entry saved on this phone. It will sync when you are online.");
+  }
+  function historyResolve(id) {
+    updateDoc(doc(db, "pc_medical_history", id), { status: "resolved", updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    logAudit("history.resolve", "pc_medical_history/" + id);
+  }
+  function historyError(id) {
+    const reason = (window.prompt("Why is this entry wrong? (it will stay on record, marked as entered in error)") || "").trim();
+    if (reason.length < 3) { if (reason) alert("Please give a short reason."); return; }
+    updateDoc(doc(db, "pc_medical_history", id), { status: "entered_in_error", errorReason: reason, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    logAudit("history.error", "pc_medical_history/" + id, { reason: reason });
+  }
+
+  // ---------- wiring ----------
+  function renderAll() { if (!patient) return; renderHeader(); renderBanner(); renderOverview(); renderAllergies(); renderHistory(); }
+  document.querySelectorAll("#tabs .pill-btn").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("#tabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b));
+    ["overview", "history", "allergies"].forEach(t => { $("tab-" + t).classList.toggle("hidden", t !== b.dataset.t); });
+  }));
+  $("aAddBtn").onclick = addAllergy; $("hAddBtn").onclick = addHistory;
+  $("aList").addEventListener("click", e => { const b = e.target.closest("[data-aerr]"); if (b) allergyError(b.dataset.aerr); });
+  $("hList").addEventListener("click", e => {
+    const r = e.target.closest("[data-hres]"); if (r) { historyResolve(r.dataset.hres); return; }
+    const x = e.target.closest("[data-herr]"); if (x) historyError(x.dataset.herr);
+  });
+  $("aDate").max = isoDate(new Date()); $("aDate").value = isoDate(new Date());
+
+  function mark(s) {
+    const badge = $("netBadge");
+    badge.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)";
+    badge.className = "badge " + (s.metadata.fromCache ? "offline" : "online");
+  }
+  function startLists() {
+    const base = [where("businessId", "==", businessId), where("patientId", "==", pid), where("facilityId", "==", facilityId), limit(300)];
+    onSnapshot(query(collection(db, "pc_allergies"), ...base), { includeMetadataChanges: true }, s => {
+      allergies = s.docs.map(d => ({ id: d.id, ...d.data() })); mark(s); renderBanner(); renderAllergies(); renderOverview();
+    }, err => { $("aList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view allergies." : "Could not load allergies.") + "</div>"; });
+    onSnapshot(query(collection(db, "pc_medical_history"), ...base), { includeMetadataChanges: true }, s => {
+      history = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHistory(); renderOverview();
+    }, err => { $("hList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view medical history." : "Could not load medical history.") + "</div>"; });
+    onSnapshot(query(collection(db, "pc_patient_facility_links"), where("businessId", "==", businessId), where("patientId", "==", pid)), s => {
+      links = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHeader(); renderOverview();
+    }, () => {});
+  }
+
+  async function openPatient() {
+    if (!pid) { showGate("No patient was chosen."); return; }
+    try {
+      const s = await getDoc(doc(db, "pc_patients", pid));
+      if (!s.exists() || s.data().businessId !== businessId) { showGate("This patient was not found on this phone yet. Open the Patients list while online, then try again."); return; }
+      patient = { id: s.id, ...s.data() };
+    } catch (e) {
+      showGate(e && e.code === "permission-denied" ? "You do not have permission to view this patient." : "Could not load this patient. Check your connection and try again.");
+      return;
+    }
+    $("shopIndicator").textContent = "Patient Care · " + facility.name;
+    $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
+    $("aAddCard").classList.toggle("hidden", !can("allergy.record"));
+    $("hAddCard").classList.toggle("hidden", !can("history.record"));
+    renderAll(); startLists();
+    if (!loggedView) {
+      loggedView = true;
+      // access log: who opened this record and why (the rules cannot force this; the app always tries)
+      setDoc(doc(collection(db, "pc_access_logs")), Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, patientId: pid, purpose: "Viewed patient profile", at: serverTimestamp() })).catch(() => {});
+    }
+  }
+
+  function begin() {
+    if (!facility || !(Array.isArray(facility.enabledServices) && facility.enabledServices.indexOf("patient_care") >= 0)) {
+      showGate("Patient Care is not switched on for " + esc(facility ? facility.name : "this shop") + "."); return;
+    }
+    if (!can("patient.view")) { showGate("You do not have Patient Care access yet. Ask the owner to give you access in Users."); return; }
+    openPatient();
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.mcGo("login.html"); return; }
+    let snap;
+    try { snap = await getDoc(doc(db, "users", user.uid)); } catch (e) { showGate("Could not load your account. Check your connection and reopen this page."); return; }
+    if (!snap.exists()) { window.mcGo("login.html"); return; }
+    me = { id: user.uid, ...snap.data() };
+    if (me.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
+    role = me.role; businessId = me.businessId; perms = me.perms || {}; myName = me.name || "";
+    if (role === "owner") {
+      let started = false;
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
+        shopsById = {}; s.docs.forEach(d => { shopsById[d.id] = { id: d.id, ...d.data() }; });
+        const ids = Object.keys(shopsById).sort((a, b) => String(shopsById[a].name).localeCompare(String(shopsById[b].name)));
+        const want = localStorage.getItem("mc_activeShopId");
+        facilityId = shopsById[want] ? want : ids[0];
+        facility = facilityId ? shopsById[facilityId] : null;
+        if (!started) { started = true; begin(); }
+      });
+    } else {
+      facilityId = me.shopId;
+      try { const sh = await getDoc(doc(db, "shops", facilityId)); facility = sh.exists() ? { id: sh.id, ...sh.data() } : null; } catch (e) { facility = null; }
+      if (facility) shopsById[facilityId] = facility;
+      begin();
+    }
+  });
+</script>
+</body>
+</html>

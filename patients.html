@@ -426,9 +426,11 @@
       '<h3 class="sub">Registered at</h3>' +
       (ls.length ? ls.map(l => '<div class="breakdown-line"><span>' + esc(facilityName(l.facilityId)) + '</span><span class="v">' + esc(l.localRegNo) + "</span></div>").join("") : '<div class="empty">No facility registration found.</div>') +
       (!ml && can("patient.register") ? '<button class="btn-primary" id="linkHereBtn">Register this patient at ' + esc(facility ? facility.name : "this facility") + "</button>" : "") +
+      '<button class="btn-primary" id="openProfileBtn">Open profile (allergies, history)</button>' +
       '<button class="btn-small btn-secondary" id="closeDetailBtn" style="width:100%; margin-top:8px;">Close</button>';
     $("detailCard").classList.remove("hidden");
     const lh = $("linkHereBtn"); if (lh) lh.onclick = () => { linkHere(pid); };
+    $("openProfileBtn").onclick = () => { window.mcGo("patient.html?id=" + encodeURIComponent(pid)); };
     $("closeDetailBtn").onclick = () => { $("detailCard").classList.add("hidden"); openId = null; };
     $("detailCard").scrollIntoView({ behavior: "smooth", block: "start" });
   }
