@@ -8,10 +8,21 @@
 | 1a | (c) Registration + search | **Built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (d) Profile, history, allergies | **Built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (e) Duplicate detection | Done inside (c) at registration; post-sync duplicate scan not built |
-| 1a | (f) Facility links + consent | Facility links done inside (c); consent not started |
+| 1a | (f) Facility links + consent | Facility links in (c). **Consent sharing built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (g) Merge | Not started |
 | 1a | (h) Regression | Not started |
 | 1b | Cross-business sharing | Design only |
+
+## Step (f) files
+New: `pc-fields.js`. Changed: `patients.html`, `patient.html`, `sw.js` (cache version mc-v19). Docs updated. Upload steps (c) and (d) first if you have not.
+
+## Phone test for step (f)
+1. Switch Patient Care on for two shops (Shops > Edit). Register a patient and add an allergy at the first shop (as owner).
+2. Profile > Sharing: choose the second shop, purpose, type who agreed, tick the box, Share records.
+3. Switch to the second shop (or log in as an operator of it with View patients). Open the same patient: the allergy shows in the banner and in the Allergies tab under 'From ...'.
+4. Back at the first shop press Stop sharing: the second shop no longer shows it.
+5. Dates: type 5/5/1990 in Date of birth (becomes 05/05/1990), and use the calendar button too.
+6. Try typing in Relationship, Village, Allergic to, Reaction: suggestions appear but you can type anything.
 
 ## Step (d) files
 New: `patient.html`. Changed: `patients.html` (adds the Open profile button), `sw.js` (cache version mc-v18, page added). Docs updated. Upload the step (c) zip first if you have not already.

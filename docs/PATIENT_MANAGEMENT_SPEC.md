@@ -141,3 +141,17 @@ Billing will depend on facility type (drug shop, clinic, hospital, medical centr
 - **Corrections:** entries are never deleted or edited. "Entered in error" needs a reason and keeps the entry on record (hidden unless "Show entries marked as error" is tapped). History entries can also be "Marked resolved". To correct a wrong entry, mark it as error and add a new one. A true edit-with-version flow is not built.
 - **Logs:** every add, resolve and error writes `pc_audit_logs`. Opening a profile writes `pc_access_logs` (purpose "Viewed patient profile"); a failed access log is silent, a failed audit log is reported.
 - **Not in this step:** editing patient details, merge, consent sharing, printing.
+
+## 16. Step (f) decisions – consent sharing between facilities, typed dates, type-or-choose fields (built 2026-11-09)
+**Sharing (same business only)**
+- Sharing tab on the patient profile. A user with `patient.consent` (the owner always) picks another facility that has Patient Care switched on, says why, who agreed (patient or guardian) and how (said yes / signed), and ticks that the patient agreed. This creates the consent record `pc_patient_consents/{patientId}_{facilityId}`.
+- The other facility then sees this facility's **allergies and medical history** (read-only) in its own Allergies and Medical history tabs, and shared allergies appear in the red banner marked "Shared by other facilities". Nothing is copied.
+- "Stop sharing" ends access immediately (`revokedAt`). "Share again" re-grants the same record. The history stays in the audit log.
+- Who agreed, how, and why are kept in `pc_audit_logs` (the consent record itself only has the purpose, because the published rules limit which fields can change on a re-grant). Every time a facility opens shared records, `pc_access_logs` records it with the purpose.
+- **Limitation:** operators can read only their own facility, so only the owner can see the list of other facilities. An operator with sharing permission can stop sharing, but the owner must pick a new facility. Changing this needs a rules change.
+- The owner can read all facilities' records under the published rules (owner = full business access); the consent screens control access for operators.
+- No expiry date on consents yet.
+
+**Dates:** every date box in Patient Care can be typed (`05/05/1990`, `5/5/1990` or `05051990`) or picked with the calendar button. The slashes appear by themselves. Real dates only, not in the future. Stored as yyyy-mm-dd. Shared code is in `pc-fields.js`. Other screens (Sales, Purchases, Reports...) were not changed.
+
+**Type or choose:** relationship (next of kin, emergency contact), village, district (learned from patients already registered), allergy substance, allergy reaction, sharing purpose and "who agreed" accept typing and also offer a list. Fixed lists (sex, severity, history type, facility) stay as choices only.

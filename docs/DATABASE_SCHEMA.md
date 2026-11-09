@@ -69,3 +69,9 @@ No new rules were needed for step (c); the published v10 rules are enough.
 `pc_access_logs`: `actorUid, actorName, patientId, purpose, at`.
 Audit actions added: `allergy.add`, `allergy.error`, `history.add`, `history.resolve`, `history.error`.
 No new rules were needed; the published v10 rules cover these writes. Not yet confirmed against real Firebase.
+
+## Step (f) additions
+`pc_patient_consents/{patientId}_{grantedFacilityId}`: `patientId, facilityId (source), grantedFacilityId, grantedFacilityName, facilityName (source name), purpose, grantedBy, grantedAt, revokedAt, revokedBy`.
+Audit actions added: `consent.grant` (with `consentMethod`, `consentGivenBy`, `purpose`, `granteeFacilityId`), `consent.revoke`.
+`pc_access_logs` also gets `sourceFacilityId` when shared records are opened.
+No new rules were needed. Not yet confirmed against the real security rules.
