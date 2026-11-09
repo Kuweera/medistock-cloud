@@ -17,6 +17,7 @@
     ["credit.html", "Credit / Loans"],
     ["cash-position.html", "Cash Position"],
     ["suppliers.html", "Suppliers"],
+    ["patients.html", "Patient Care"],
     ["users.html", "Users"],
     ["shops.html", "Shops"],
     ["backup.html", "Backup & Export"],
