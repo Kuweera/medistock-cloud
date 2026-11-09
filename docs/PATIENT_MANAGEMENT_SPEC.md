@@ -133,3 +133,11 @@ Goal: the same person is recognised as one patient in every business, without an
 
 ## 14. Future usage-based billing (owner note, 2026-11-09)
 Billing will depend on facility type (drug shop, clinic, hospital, medical centre) and how many facilities an account has. Hooks already in place: `shops.facilityType`, `shops.enabledServices`. Warning: today the owner can switch services on or off themselves on the Shops page, which would let an account bypass paid services. Before billing starts, service entitlements should move to a field only you (a platform administrator) can write, and the Shops switch should read from it. Counting facilities and enforcing limits also cannot be done reliably with Firestore rules alone on the free plan; decide that when billing is designed.
+
+## 15. Step (d) decisions – profile, medical history, allergies (built 2026-11-09)
+- **Page:** `patient.html?id=` opens from "Open profile" on a patient in the list. Tabs: Overview, Medical history, Allergies. A red allergy banner shows at the top when the patient has active allergies recorded at this facility.
+- **Facility-scoped:** allergies and history show only what this facility recorded. Records from other facilities stay hidden until the consent feature (step f) is built.
+- **Loading:** these lists use direct Firestore queries (not the in-memory store used for patients) because the security rules only allow a facility-filtered query. They still work offline through Firestore's own cache.
+- **Corrections:** entries are never deleted or edited. "Entered in error" needs a reason and keeps the entry on record (hidden unless "Show entries marked as error" is tapped). History entries can also be "Marked resolved". To correct a wrong entry, mark it as error and add a new one. A true edit-with-version flow is not built.
+- **Logs:** every add, resolve and error writes `pc_audit_logs`. Opening a profile writes `pc_access_logs` (purpose "Viewed patient profile"); a failed access log is silent, a failed audit log is reported.
+- **Not in this step:** editing patient details, merge, consent sharing, printing.

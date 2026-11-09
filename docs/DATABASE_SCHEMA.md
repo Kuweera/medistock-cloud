@@ -62,3 +62,10 @@ Written and reviewed by reading only. **Not yet run against Firebase.** Step (a)
 `pc_patient_facility_links`: `patientId, localRegNo, registeredAt, registeredBy, status`.
 `pc_audit_logs` (actions so far): `patient.register` (with `duplicateOverrideReason`, `duplicateCandidates`), `patient.link`.
 No new rules were needed for step (c); the published v10 rules are enough.
+
+## Step (d) additions
+`pc_allergies`: `patientId, substance, reaction, severity, recordedDate, recordedBy, recordedByName, status, errorReason`.
+`pc_medical_history`: `patientId, type, text, onset (free text), status (active/resolved/entered_in_error), recordedBy, recordedByName, errorReason`.
+`pc_access_logs`: `actorUid, actorName, patientId, purpose, at`.
+Audit actions added: `allergy.add`, `allergy.error`, `history.add`, `history.resolve`, `history.error`.
+No new rules were needed; the published v10 rules cover these writes. Not yet confirmed against real Firebase.

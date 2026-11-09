@@ -6,12 +6,22 @@
 | 1a | (a) Rules v10 + migration notes | Published by the owner (2026-11-09). Playground checks not run |
 | 1a | (b) Permissions on Users page + Patient Care switch on Shops page | Delivered, awaiting owner confirmation |
 | 1a | (c) Registration + search | **Built and tested on a mock database; awaiting upload and phone test** |
-| 1a | (d) Profile, history, allergies | Not started |
+| 1a | (d) Profile, history, allergies | **Built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (e) Duplicate detection | Done inside (c) at registration; post-sync duplicate scan not built |
 | 1a | (f) Facility links + consent | Facility links done inside (c); consent not started |
 | 1a | (g) Merge | Not started |
 | 1a | (h) Regression | Not started |
 | 1b | Cross-business sharing | Design only |
+
+## Step (d) files
+New: `patient.html`. Changed: `patients.html` (adds the Open profile button), `sw.js` (cache version mc-v18, page added). Docs updated. Upload the step (c) zip first if you have not already.
+
+## Phone test for step (d)
+1. Patient Care > tap a patient > Open profile.
+2. Allergies tab: save an allergy. A red banner appears at the top. Mark it as entered in error with a reason; the banner goes away and the entry stays under 'Show entries marked as error'.
+3. Medical history tab: add an entry, then mark it resolved.
+4. Log in as an operator with only View patients: the add forms must not appear.
+5. Airplane mode: add an allergy, go online, check there is no red NOT SAVED message.
 
 ## Step (c) files
 New: `patients.html`. Changed: `nav.js` (menu item "Patient Care"), `sw.js` (cache version mc-v17, page added to offline list). Docs updated.
