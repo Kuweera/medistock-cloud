@@ -11,7 +11,19 @@
 | 1a | (f) Facility links + consent | Facility links in (c). **Consent sharing built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (g) Merge | Not started |
 | 1a | (h) Regression | Not started |
-| 1b | Cross-business sharing | Design only |
+| 1b | Cross-business sharing | **Built as part of (f2): directory + shares between facilities and businesses (see spec section 17). Cross-business duplicate matching not built** |
+
+## Step (f2) files (redesign after owner feedback)
+New: `directory.html`, firestore.rules v11. Changed: `patients.html`, `patient.html`, `nav.js` (menu item Facility Directory), `sw.js` (mc-v20). Fixed: the menu (hamburger) button did not work on Patient Care pages. Fixed: other facilities could list all patients of the business.
+Order: (1) publish rules v11, (2) upload files, (3) owner lists facilities in Facility Directory, (4) test.
+
+## Phone test for step (f2)
+1. Menu button works on Patient Care pages.
+2. Patients: Main shop shows only patients registered at Main shop; switch to another shop and its list is different.
+3. Facility Directory (owner): List in directory, add X-ray / Laboratory / a typed service, description, Save profile.
+4. Patient > Sharing: choose the service, type a business name, choose a facility, fill who agreed, tick the box, Share patient.
+5. In the other business (or another facility), Patients > Shared with this facility shows the patient; open it (read-only, allergies and history visible).
+6. Register as our patient fills the form. Stop sharing removes access.
 
 ## Step (f) files
 New: `pc-fields.js`. Changed: `patients.html`, `patient.html`, `sw.js` (cache version mc-v19). Docs updated. Upload steps (c) and (d) first if you have not.

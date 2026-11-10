@@ -155,3 +155,19 @@ Billing will depend on facility type (drug shop, clinic, hospital, medical centr
 **Dates:** every date box in Patient Care can be typed (`05/05/1990`, `5/5/1990` or `05051990`) or picked with the calendar button. The slashes appear by themselves. Real dates only, not in the future. Stored as yyyy-mm-dd. Shared code is in `pc-fields.js`. Other screens (Sales, Purchases, Reports...) were not changed.
 
 **Type or choose:** relationship (next of kin, emergency contact), village, district (learned from patients already registered), allergy substance, allergy reaction, sharing purpose and "who agreed" accept typing and also offer a list. Fixed lists (sex, severity, history type, facility) stay as choices only.
+
+## 17. Redesign: facility-only patients, directory, and sharing with any business (built 2026-11-09)
+This replaces the "identity visible to the whole business" assumption (section 2) and the consent screens of section 16.
+
+**Patients belong to the facility that registered them.** Only that facility's staff (and the business owner) can read a patient. Other facilities of the same business no longer see them in the Patients list. This is enforced by the security rules (v11), not just hidden on screen. Because of this, similar-name duplicate checks work only inside one facility; matching across facilities and businesses is not built yet.
+
+**Facility Directory (`pc_directory`).** The owner opens Facility Directory, ticks "List in directory" for a facility, adds what it offers (X-ray, CT scan, laboratory, ...: tap a suggestion or type your own), a description of what it can handle, district and phone. Every signed-in user can search the directory by business, facility, district or service. No patient information is published. Listing is the owner's choice per facility.
+
+**Sharing (`pc_shares`).** On a patient's profile > Sharing, choose a service (optional), type or choose a business, choose one of its facilities, say why, who agreed and how, and tick that the patient agreed. It works for another facility in your own business and for a facility in another business listed in the directory. The receiving facility must have Patient Care switched on. One share is allowed per patient, source facility and receiving business at a time; to change the facility, stop and share again.
+- The share carries a **snapshot** of who the patient is (name, sex, age, phone, village, district, next of kin). The receiving facility sees it under "Shared with this facility" in Patients, opens a **read-only** profile, and reads the allergies and medical history live from the source while sharing is on.
+- "Register as our patient" opens the registration form filled in from the snapshot, to be checked and saved as the receiving facility's own patient (kept with `sharedFrom`). Nothing else is copied.
+- "Stop sharing" cuts access at once. "Share again" can pick a different facility of the same business and refreshes the snapshot.
+- The old per-patient consent collection (`pc_patient_consents`) and its screens are retired.
+
+**Owner:** the owner reads all facilities' patients under the rules; the Patients list and profiles show the active facility. The owner of a receiving business can open shares addressed to any of that business's facilities.
+**Known limits:** operators see only their own facility, so within a business an operator can choose a sibling facility only if it is listed in the directory. The directory is readable by every signed-in user. No expiry on shares. Cross-business duplicate matching (hash lookup) not built.

@@ -75,3 +75,11 @@ No new rules were needed; the published v10 rules cover these writes. Not yet co
 Audit actions added: `consent.grant` (with `consentMethod`, `consentGivenBy`, `purpose`, `granteeFacilityId`), `consent.revoke`.
 `pc_access_logs` also gets `sourceFacilityId` when shared records are opened.
 No new rules were needed. Not yet confirmed against the real security rules.
+
+## Step (f2) – rules v11 and new collections
+**Retired:** `pc_patient_consents` (unused; any test documents can be ignored).
+**`pc_shares/{patientId}_{sourceFacilityId}_{granteeBusinessId}`**: `businessId, facilityId (source), patientId, granteeBusinessId, granteeBusinessName, granteeFacilityId, granteeFacilityName, sourceBusinessName, sourceFacilityName, purpose, consentMethod (verbal/written), consentGivenBy, patientSnapshot{...}, grantedBy, grantedAt, revokedAt, revokedBy`.
+**`pc_directory/{facilityId}`**: `businessId, businessName, facilityId, facilityName, facilityType, district, phone, description, services[], listed, schemaVersion, updatedBy, updatedAt`.
+**`pc_patients`**: new optional field `sharedFrom` (the share it was prefilled from).
+**Rule changes in v11:** `pc_patients` and `pc_patient_facility_links` readable only by the owning facility (or owner); allergies/history also readable by a facility with a live share; `pc_shares` and `pc_directory` rules added. Everything above the Patient Care section is unchanged from v9.
+**Not tested against Firebase.** Syntax and logic reviewed by reading; use the Rules Playground after publishing.
