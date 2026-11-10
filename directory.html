@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>if(window.top===window){location.replace("app.html#"+location.pathname.split("/").pop()+location.search);}</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2abfa0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MediStock">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<title>Facility Directory — MediStock Cloud</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  /* ===== Users page ===== */
+  .hidden{display:none !important;}
+  .btn-small{padding:8px 12px; font-size:13px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent);}
+  .btn-danger-outline{background:transparent; color:var(--danger); border:1px solid var(--danger);}
+  .op{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;}
+  .op:last-child{margin-bottom:0;}
+  .op-name{font-weight:700; font-size:14.5px; display:flex; justify-content:space-between; gap:8px; align-items:center;}
+  .op-meta{font-size:12px; color:var(--muted); margin-top:3px; line-height:1.5;}
+  .tag{font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid var(--border);}
+  .tag.on{color:var(--accent2); border-color:var(--accent2);} .tag.off{color:var(--danger); border-color:var(--danger);}
+  .op-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .cred{background:var(--bg); border:1px dashed var(--accent); border-radius:10px; padding:12px; margin:10px 0; font-size:14px; line-height:1.7;}
+  .cred b{font-size:16px; letter-spacing:.5px;}
+  .msg{font-size:13px; margin-top:8px;} .msg.err{color:var(--danger);} .msg.ok{color:var(--accent2);}
+  .pill-row{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;}
+  .pill-btn{background:var(--card); color:var(--text); border:1px solid var(--border); padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:600;}
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .day-h{font-size:11.5px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.4px; margin:12px 0 4px;}
+  .ev{display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ev:last-child{border-bottom:none;}
+  .ev-main{min-width:0;} .ev-text{overflow-wrap:anywhere;}
+  .ev-meta{font-size:11.5px; color:var(--muted);}
+  .ev-amt{font-weight:700; white-space:nowrap;} .ev-amt.out{color:var(--danger);}
+  .hint2{font-size:11.5px; color:var(--muted); line-height:1.5; margin-top:6px;}
+
+  /* ===== Patient Care ===== */
+  .sub{font-size:13px; margin:16px 0 2px; color:var(--accent); font-weight:700;}
+  .chk{display:flex; align-items:center; gap:10px; font-size:13.5px; color:var(--text); margin:8px 0;}
+  .chk input{width:22px; height:22px; flex:0 0 22px; padding:0; margin:0;}
+  .pt{padding:11px 0; border-bottom:1px solid var(--border); cursor:pointer;}
+  .pt:last-child{border-bottom:none;}
+  .pt-name{font-size:14.5px; font-weight:700; color:var(--text);}
+  .pt-meta{font-size:12.5px; color:var(--muted); margin-top:2px; line-height:1.5;}
+  .chip{display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:4px; vertical-align:middle; background:var(--border); color:var(--muted);}
+  .chip.ok{color:var(--accent2);} .chip.warn{color:var(--warn);} .chip.bad{color:var(--danger);}
+  .cand{border:1px solid var(--border); border-radius:10px; padding:10px; margin:8px 0;}
+  .cand.strong{border-color:var(--danger);}
+  .cand-head{font-size:14px; font-weight:700; color:var(--danger); margin-top:14px;}
+  .op-actions{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .breakdown-line .v{text-align:right; max-width:62%;}
+  textarea{width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px; font-family:inherit;}
+  textarea:focus{outline:none; border-color:var(--accent);}
+  .back{display:inline-block; font-size:13px; color:var(--accent); margin:0 0 10px; text-decoration:none; font-weight:600;}
+  .alert-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--danger); color:var(--danger); font-size:13px; line-height:1.5; font-weight:600;}
+  .entry{padding:10px 0; border-bottom:1px solid var(--border);} .entry:last-child{border-bottom:none;}
+  .entry.struck .pt-name{text-decoration:line-through; color:var(--muted); font-weight:500;}
+  .pill-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}
+  /* ===== typed or picked dates ===== */
+  .dateField{position:relative; display:flex; gap:8px; align-items:center;}
+  .dateField input[type="text"]{flex:1; min-width:0;}
+  .cal-btn{flex:0 0 46px; height:40px; background:var(--card); border:1px solid var(--border); border-radius:8px; font-size:18px; padding:0;}
+  .cal-native{position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0; padding:0;}
+  .info-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--accent); color:var(--text); font-size:13px; line-height:1.5;}
+  .perm-warn{font-size:12px; color:var(--warn); margin-bottom:8px; line-height:1.5;}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Patient Care · Facility directory</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="mcGo('dashboard.html')">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+<div class="card hidden" id="gateCard"><div id="gateMsg" class="empty"></div></div>
+
+<div id="mainArea" class="hidden">
+  <div class="card">
+    <h2>Find a facility</h2>
+    <div class="hint2" style="margin-top:0;">Facilities that other businesses have chosen to publish. Use this to see who offers X-ray, CT scan, laboratory and other services.</div>
+    <input type="search" id="dq" placeholder="Business, facility, district or service" autocomplete="off">
+    <label>Service</label>
+    <select id="dService"><option value="">Any service</option></select>
+    <div class="hint2" id="dInfo"></div>
+    <div id="dList" style="margin-top:8px;"></div>
+  </div>
+
+  <div id="ownerArea" class="hidden">
+    <div class="card">
+      <h2>Your public profile</h2>
+      <div class="hint2" style="margin-top:0;">Only what you tick "List in directory" for is shown to other businesses. No patient information is ever published here.</div>
+      <label>Business name shown to others</label>
+      <input type="text" id="oBizName" autocomplete="off">
+    </div>
+    <div id="ownerCards"></div>
+  </div>
+  <div class="msg ok" id="doneMsg"></div>
+  <datalist id="svcList"></datalist>
+</div>
+
+<script src="pc-fields.js"></script>
+<script type="module">
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, collection, onSnapshot, serverTimestamp, query, where, limit, getDocFromCache } = window.top.MC.api(window);
+
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDocServerFirst(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDoc(ref) {
+    try { const c = await getDocFromCache(ref); if (c.exists()) return c; } catch (e) {}
+    return getDocServerFirst(ref);
+  }
+
+  const app = initializeApp({});
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  const SERVICES = ["General outpatient", "Laboratory", "X-ray", "Ultrasound scan", "CT scan", "MRI", "ECG", "Pharmacy", "Maternity and antenatal", "Theatre and surgery", "Inpatient wards", "Emergency care", "Dental", "Eye clinic", "Physiotherapy", "Immunisation", "HIV care", "TB care", "Mental health", "Blood bank", "Ambulance"];
+  const TYPE_LABEL = { drug_shop: "Drug shop", pharmacy: "Pharmacy", clinic: "Clinic", hospital: "Hospital" };
+
+  let me = null, role = null, businessId = null, bizName = "";
+  let dirDocs = [], shopsById = {}, dirReady = false, shopsReady = false;
+  let draft = {}, built = false;
+
+  function showGate(msg) { $("gateMsg").innerHTML = msg; $("gateCard").classList.remove("hidden"); $("mainArea").classList.add("hidden"); }
+  function chips(list) { return (list || []).map(s => '<span class="chip">' + esc(s) + "</span>").join(" "); }
+
+  // ---------- browse ----------
+  function allServices() {
+    const set = {}; SERVICES.forEach(s => { set[s] = true; });
+    dirDocs.forEach(d => (d.services || []).forEach(s => { set[s] = true; }));
+    return Object.keys(set).sort((a, b) => a.localeCompare(b));
+  }
+  function fillServiceFilter() {
+    const sel = $("dService"), cur = sel.value;
+    const used = {}; dirDocs.filter(d => d.listed === true).forEach(d => (d.services || []).forEach(s => { used[s] = true; }));
+    const names = Object.keys(used).sort((a, b) => a.localeCompare(b));
+    sel.innerHTML = '<option value="">Any service</option>' + names.map(n => '<option value="' + esc(n) + '">' + esc(n) + "</option>").join("");
+    if (cur && used[cur]) sel.value = cur;
+  }
+  function renderBrowse() {
+    if (!dirReady) { $("dList").innerHTML = '<div class="empty">Loading…</div>'; return; }
+    const q = $("dq").value.trim().toLowerCase(), svc = $("dService").value;
+    const rows = dirDocs.filter(d => d.listed === true).filter(d => {
+      if (svc && (d.services || []).indexOf(svc) < 0) return false;
+      if (!q) return true;
+      return (String(d.businessName) + " " + d.facilityName + " " + (d.district || "") + " " + (d.services || []).join(" ")).toLowerCase().indexOf(q) >= 0;
+    });
+    $("dInfo").textContent = rows.length + " facilit" + (rows.length === 1 ? "y" : "ies") + " listed";
+    if (!rows.length) { $("dList").innerHTML = '<div class="empty">No facility found.</div>'; return; }
+    const byBiz = {};
+    rows.forEach(d => { (byBiz[d.businessId] = byBiz[d.businessId] || []).push(d); });
+    $("dList").innerHTML = Object.keys(byBiz).sort((a, b) => String(byBiz[a][0].businessName).localeCompare(String(byBiz[b][0].businessName))).map(bid => {
+      const list = byBiz[bid].sort((a, b) => String(a.facilityName).localeCompare(String(b.facilityName)));
+      return '<div class="entry"><div class="pt-name">' + esc(list[0].businessName) + (bid === businessId ? ' <span class="chip ok">Your business</span>' : "") + "</div>" +
+        list.map(d => '<div class="cand"><div class="pt-name">' + esc(d.facilityName) + ' <span class="chip">' + esc(TYPE_LABEL[d.facilityType] || "Facility") + "</span></div>" +
+          '<div class="pt-meta">' + [d.district, d.phone].filter(Boolean).map(esc).join(" · ") + "</div>" +
+          (d.services && d.services.length ? '<div style="margin-top:6px;">' + chips(d.services) + "</div>" : "") +
+          (d.description ? '<div class="pt-meta" style="margin-top:6px;">' + esc(d.description) + "</div>" : "") + "</div>").join("") + "</div>";
+    }).join("");
+  }
+
+  // ---------- owner profile cards ----------
+  function draftOf(sh) {
+    if (!draft[sh.id]) {
+      const d = dirDocs.find(x => x.id === sh.id) || {};
+      draft[sh.id] = { listed: d.listed === true, description: d.description || "", services: (d.services || []).slice(), district: d.district || "", phone: d.phone || sh.phone || "" };
+    }
+    return draft[sh.id];
+  }
+  function chipEditor(id) {
+    const d = draft[id];
+    return '<div id="chips-' + id + '">' + (d.services.length ? d.services.map((s, i) => '<span class="chip ok">' + esc(s) + ' <a href="#" data-rm="' + id + '|' + i + '" style="text-decoration:none;color:inherit;">&times;</a></span>').join(" ") : '<span class="pt-meta">No service added yet.</span>') + "</div>" +
+      '<div class="pt-meta" style="margin-top:8px;">Tap to add:</div><div>' + SERVICES.filter(s => d.services.indexOf(s) < 0).map(s => '<button type="button" class="pill-btn" data-add="' + id + '|' + esc(s) + '">' + esc(s) + "</button>").join(" ") + "</div>";
+  }
+  function buildOwner() {
+    const ids = Object.keys(shopsById).sort((a, b) => String(shopsById[a].name).localeCompare(String(shopsById[b].name)));
+    $("ownerCards").innerHTML = ids.map(id => {
+      const sh = shopsById[id], d = draftOf(sh);
+      const pc = Array.isArray(sh.enabledServices) && sh.enabledServices.indexOf("patient_care") >= 0;
+      return '<div class="card" id="own-' + id + '"><h2>' + esc(sh.name) + ' <span class="chip">' + esc(TYPE_LABEL[sh.facilityType] || "Drug shop") + "</span></h2>" +
+        (pc ? "" : '<div class="perm-warn">Patient Care is not switched on for this shop (Shops &rarr; Edit). Other facilities cannot share patients with it until it is.</div>') +
+        '<label class="chk"><input type="checkbox" data-listed="' + id + '"' + (d.listed ? " checked" : "") + "><span>List in directory</span></label>" +
+        "<label>What this facility offers</label>" + '<div id="svcBox-' + id + '">' + chipEditor(id) + "</div>" +
+        '<div class="row" style="margin-top:8px;"><div><input type="text" id="svcIn-' + id + '" list="svcList" placeholder="Type another service" autocomplete="off"></div><div style="flex:0 0 80px;"><button type="button" class="btn-small btn-secondary" style="width:100%;height:40px;" data-addtyped="' + id + '">Add</button></div></div>' +
+        "<label>About this facility (what you can handle)</label>" +
+        '<textarea id="desc-' + id + '" rows="3" placeholder="e.g. 24-hour clinic with laboratory, X-ray and ultrasound. Referrals welcome.">' + esc(d.description) + "</textarea>" +
+        '<div class="row"><div><label>District</label><input type="text" id="dist-' + id + '" value="' + esc(d.district) + '" autocomplete="off"></div><div><label>Phone</label><input type="tel" id="ph-' + id + '" value="' + esc(d.phone) + '" autocomplete="off"></div></div>' +
+        '<button class="btn-primary" data-save="' + id + '">Save profile</button><div class="msg" id="msg-' + id + '"></div></div>';
+    }).join("");
+    built = true;
+  }
+  function rebuildCard(id) { const box = $("svcBox-" + id); if (box) box.innerHTML = chipEditor(id); }
+  function saveProfile(id) {
+    const sh = shopsById[id], d = draft[id];
+    const name = $("oBizName").value.trim(), msg = $("msg-" + id);
+    msg.className = "msg err"; msg.textContent = "";
+    if (name.length < 2) { msg.textContent = "Enter the business name at the top first."; return; }
+    d.description = $("desc-" + id).value.trim(); d.district = $("dist-" + id).value.trim(); d.phone = $("ph-" + id).value.trim();
+    d.listed = !!document.querySelector('[data-listed="' + id + '"]').checked;
+    const payload = { businessId: businessId, businessName: name, facilityId: id, facilityName: sh.name, facilityType: sh.facilityType || "drug_shop",
+      district: d.district, phone: d.phone, description: d.description, services: d.services.slice(), listed: d.listed,
+      schemaVersion: 1, updatedBy: me.id, updatedAt: serverTimestamp(), clientUpdatedAt: Date.now() };
+    setDoc(doc(db, "pc_directory", id), payload).catch(err => {
+      const t = err && err.code === "permission-denied" ? "Firestore refused this save. Check the security rules are the latest version." : "Could not save: " + ((err && err.message) || "unknown problem");
+      msg.className = "msg err"; msg.textContent = "NOT SAVED. " + t; alert(t);
+    });
+    msg.className = "msg ok"; msg.textContent = d.listed ? "Saved on this phone. This facility will show in the directory once it syncs." : "Saved on this phone. This facility is not listed.";
+  }
+
+  // ---------- wiring ----------
+  $("dq").addEventListener("input", renderBrowse); $("dService").addEventListener("change", renderBrowse);
+  $("ownerCards").addEventListener("click", e => {
+    const rm = e.target.closest("[data-rm]"); if (rm) { e.preventDefault(); const p = rm.dataset.rm.split("|"); draft[p[0]].services.splice(parseInt(p[1], 10), 1); rebuildCard(p[0]); return; }
+    const ad = e.target.closest("[data-add]"); if (ad) { const p = ad.dataset.add.split("|"); if (draft[p[0]].services.indexOf(p[1]) < 0) draft[p[0]].services.push(p[1]); rebuildCard(p[0]); return; }
+    const at = e.target.closest("[data-addtyped]"); if (at) { addTyped(at.dataset.addtyped); return; }
+    const sv = e.target.closest("[data-save]"); if (sv) saveProfile(sv.dataset.save);
+  });
+  $("ownerCards").addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id && e.target.id.indexOf("svcIn-") === 0) { e.preventDefault(); addTyped(e.target.id.slice(6)); } });
+  function addTyped(id) {
+    const inp = $("svcIn-" + id), v = inp.value.trim().replace(/\s+/g, " ");
+    if (v.length < 2) return;
+    const exists = draft[id].services.some(s => s.toLowerCase() === v.toLowerCase());
+    if (!exists) draft[id].services.push(v);
+    inp.value = ""; rebuildCard(id);
+    const again = $("svcIn-" + id); if (again) again.focus();
+  }
+
+  function mark(s) {
+    const badge = $("netBadge");
+    badge.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)";
+    badge.className = "badge " + (s.metadata.fromCache ? "offline" : "online");
+  }
+  function maybeBuildOwner() { if (role === "owner" && shopsReady && dirReady && !built) buildOwner(); }
+
+  async function begin() {
+    $("mainArea").classList.remove("hidden"); $("gateCard").classList.add("hidden");
+    $("svcList").innerHTML = SERVICES.map(s => '<option value="' + esc(s) + '">').join("");
+    onSnapshot(query(collection(db, "pc_directory"), limit(500)), { includeMetadataChanges: true }, s => {
+      dirDocs = s.docs.map(d => ({ id: d.id, ...d.data() })); dirReady = true; mark(s); fillServiceFilter(); renderBrowse(); maybeBuildOwner();
+    }, err => { dirReady = true; $("dList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "The directory is not available yet. The owner must publish the latest security rules." : "Could not load the directory.") + "</div>"; });
+    if (role === "owner") {
+      $("ownerArea").classList.remove("hidden");
+      try { const b = await getDoc(doc(db, "businesses", businessId)); bizName = b.exists() ? (b.data().name || "") : ""; } catch (e) {}
+      $("oBizName").value = bizName;
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
+        shopsById = {}; s.docs.forEach(d => { shopsById[d.id] = { id: d.id, ...d.data() }; });
+        shopsReady = true; maybeBuildOwner();
+      });
+    }
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.mcGo("login.html"); return; }
+    let snap;
+    try { snap = await getDoc(doc(db, "users", user.uid)); } catch (e) { showGate("Could not load your account. Check your connection and reopen this page."); return; }
+    if (!snap.exists()) { window.mcGo("login.html"); return; }
+    me = { id: user.uid, ...snap.data() };
+    if (me.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
+    role = me.role; businessId = me.businessId;
+    begin();
+  });
+</script>
+</body>
+</html>

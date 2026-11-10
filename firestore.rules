@@ -1,9 +1,10 @@
 rules_version = '2';
 
-// MediStock Cloud — multi-shop roles & security (v10 PROPOSED)
-// v10: adds Patient Care (pc_*) rules for Phase 1a (identity, facility links, allergies, history,
-// consents, merges, audit/access logs). Everything above the PATIENT CARE section is UNCHANGED from v9.
-// Cross-business sharing (Phase 1b) is NOT in this file yet.
+// MediStock Cloud — multi-shop roles & security (v11)
+// v10: Patient Care (pc_*) rules. v11: patients are visible only to the facility that registered them;
+// sharing a patient with another facility (same business or another business) uses pc_shares;
+// pc_directory lists facilities (with services) that owners choose to publish.
+// Everything above the PATIENT CARE section is UNCHANGED from v9.
 // v9: operators can only reach shops of THEIR OWN business; drug classes, dosage forms and
 // expense categories are now per business (businesses/{id}/...) instead of one shared global list.
 // v8 change: operator accounts can only be created from an owner's invite (see /invites below),
@@ -239,7 +240,10 @@ service cloud.firestore {
 
     // ---- Patient identity (shared inside one business) ----
     match /pc_patients/{patientId} {
-      allow read: if hasPerm(resource.data.businessId, 'patient.view');
+      // only the facility that registered the patient (or the owner) can read it; other facilities get a share (pc_shares)
+      allow read: if hasPerm(resource.data.businessId, 'patient.view')
+        && (isOwnerOfBusiness(resource.data.businessId)
+            || canAccessShop(resource.data.businessId, resource.data.registeredFacilityId));
 
       allow create: if pcCreateOk(request.resource.data)
         && hasPerm(request.resource.data.businessId, 'patient.register')
@@ -278,7 +282,8 @@ service cloud.firestore {
 
     // ---- Which facility has registered the patient (id = patientId_facilityId, so no duplicates) ----
     match /pc_patient_facility_links/{linkId} {
-      allow read: if hasPerm(resource.data.businessId, 'patient.view');
+      allow read: if hasPerm(resource.data.businessId, 'patient.view')
+        && canAccessShop(resource.data.businessId, resource.data.facilityId);
       allow create: if pcCreateOk(request.resource.data)
         && hasPerm(request.resource.data.businessId, 'patient.register')
         && linkId == request.resource.data.patientId + '_' + request.resource.data.facilityId
@@ -293,57 +298,100 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ---- Consent granted by a patient's source facility to another facility of the same business ----
-    // id = patientId_grantedFacilityId. Revoking sets revokedAt; re-granting clears it again.
-    function consentPath(patientId, granteeFacilityId) {
-      return /databases/$(database)/documents/pc_patient_consents/$(patientId + '_' + granteeFacilityId);
+    // ---- Sharing a patient with another facility (same business or another business) ----
+    // id = patientId_sourceFacilityId_granteeBusinessId. The share carries a snapshot of who the patient is;
+    // allergies and history are then read live from the source facility while the share is not stopped.
+    function sharePath(patientId, sourceFacilityId, granteeBusinessId) {
+      return /databases/$(database)/documents/pc_shares/$(patientId + '_' + sourceFacilityId + '_' + granteeBusinessId);
     }
-    // true when MY facility has a live consent from the facility that owns this clinical record
-    function myFacilityHasConsent(d) {
-      return isSignedIn() && myProfile().role == 'operator' && myProfile().active == true
-        && myProfile().businessId == d.businessId
-        && myProfile().get('perms', {}).get('patient.view', false) == true
-        && exists(consentPath(d.patientId, myProfile().shopId))
-        && get(consentPath(d.patientId, myProfile().shopId)).data.businessId == d.businessId
-        && get(consentPath(d.patientId, myProfile().shopId)).data.facilityId == d.facilityId
-        && get(consentPath(d.patientId, myProfile().shopId)).data.get('revokedAt', null) == null;
+    function shareOkForMe(patientId, sourceFacilityId) {
+      return isSignedIn()
+        && hasPerm(myProfile().businessId, 'patient.view')
+        && exists(sharePath(patientId, sourceFacilityId, myProfile().businessId))
+        && get(sharePath(patientId, sourceFacilityId, myProfile().businessId)).data.get('revokedAt', null) == null
+        && (myProfile().role == 'owner'
+            || get(sharePath(patientId, sourceFacilityId, myProfile().businessId)).data.granteeFacilityId == myProfile().shopId);
+    }
+    // the receiving facility is either one of this business's own shops with Patient Care on, or a facility listed in the directory
+    function granteeOk(d) {
+      return (d.granteeBusinessId == d.businessId
+              && exists(/databases/$(database)/documents/shops/$(d.granteeFacilityId))
+              && shopDoc(d.granteeFacilityId).businessId == d.businessId
+              && shopDoc(d.granteeFacilityId).get('enabledServices', []).hasAny(['patient_care']))
+        || (exists(/databases/$(database)/documents/pc_directory/$(d.granteeFacilityId))
+              && get(/databases/$(database)/documents/pc_directory/$(d.granteeFacilityId)).data.businessId == d.granteeBusinessId
+              && get(/databases/$(database)/documents/pc_directory/$(d.granteeFacilityId)).data.get('listed', false) == true
+              && exists(/databases/$(database)/documents/shops/$(d.granteeFacilityId))
+              && shopDoc(d.granteeFacilityId).businessId == d.granteeBusinessId
+              && shopDoc(d.granteeFacilityId).get('enabledServices', []).hasAny(['patient_care']));
+    }
+    function shareFieldsOk(d) {
+      return d.purpose is string && d.purpose.size() >= 3
+        && d.consentGivenBy is string && d.consentGivenBy.size() >= 2
+        && d.consentMethod in ['verbal', 'written']
+        && d.patientSnapshot is map
+        && d.granteeFacilityId is string && d.granteeBusinessId is string
+        && !(d.granteeBusinessId == d.businessId && d.granteeFacilityId == d.facilityId)
+        && granteeOk(d);
     }
 
-    match /pc_patient_consents/{consentId} {
+    match /pc_shares/{shareId} {
       allow read: if (canAccessShop(resource.data.businessId, resource.data.facilityId)
                       && hasPerm(resource.data.businessId, 'patient.consent'))
+        || isOwnerOfBusiness(resource.data.granteeBusinessId)
         || (isSignedIn() && myProfile().role == 'operator' && myProfile().active == true
-            && myProfile().businessId == resource.data.businessId
-            && myProfile().shopId == resource.data.grantedFacilityId);
+            && myProfile().businessId == resource.data.granteeBusinessId
+            && myProfile().shopId == resource.data.granteeFacilityId
+            && myProfile().get('perms', {}).get('patient.view', false) == true);
       allow create: if pcCreateOk(request.resource.data)
         && hasPerm(request.resource.data.businessId, 'patient.consent')
-        && consentId == request.resource.data.patientId + '_' + request.resource.data.grantedFacilityId
-        && request.resource.data.grantedFacilityId != request.resource.data.facilityId
+        && shareId == request.resource.data.patientId + '_' + request.resource.data.facilityId + '_' + request.resource.data.granteeBusinessId
         && patientInBusiness(request.resource.data.patientId, request.resource.data.businessId)
-        && exists(/databases/$(database)/documents/shops/$(request.resource.data.grantedFacilityId))
-        && shopDoc(request.resource.data.grantedFacilityId).businessId == request.resource.data.businessId
-        && request.resource.data.purpose is string && request.resource.data.purpose.size() >= 3
+        && get(patientPath(request.resource.data.patientId)).data.registeredFacilityId == request.resource.data.facilityId
         && request.resource.data.grantedBy == request.auth.uid
-        && request.resource.data.get('revokedAt', null) == null;
+        && request.resource.data.get('revokedAt', null) == null
+        && shareFieldsOk(request.resource.data);
       allow update: if hasPerm(resource.data.businessId, 'patient.consent')
         && canAccessShop(resource.data.businessId, resource.data.facilityId)
         && pcUpdateStamped()
         && (
-          // revoke
+          // stop sharing
           (resource.data.get('revokedAt', null) == null
             && request.resource.data.revokedAt != null
             && request.resource.data.revokedBy == request.auth.uid
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['revokedAt', 'revokedBy', 'updatedAt', 'updatedBy']))
           ||
-          // grant again after a revoke (the earlier history stays in pc_audit_logs)
+          // share again (can pick another facility of the same receiving business; the patient snapshot is refreshed)
           (resource.data.get('revokedAt', null) != null
             && request.resource.data.get('revokedAt', null) == null
             && request.resource.data.grantedBy == request.auth.uid
-            && request.resource.data.purpose is string && request.resource.data.purpose.size() >= 3
+            && shareFieldsOk(request.resource.data)
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['revokedAt', 'revokedBy', 'grantedAt', 'grantedBy', 'purpose', 'updatedAt', 'updatedBy']))
+                 .hasOnly(['revokedAt', 'revokedBy', 'grantedAt', 'grantedBy', 'purpose', 'consentMethod', 'consentGivenBy',
+                           'granteeFacilityId', 'granteeFacilityName', 'patientSnapshot', 'updatedAt', 'updatedBy']))
         );
+      allow delete: if false;
+    }
+
+    // ---- Facility directory: facilities the owner chooses to publish (name, services, description). No patient data. ----
+    match /pc_directory/{facilityId} {
+      allow read: if isSignedIn() && myProfile().active == true;
+      allow create: if isOwnerOfBusiness(request.resource.data.businessId)
+        && exists(/databases/$(database)/documents/shops/$(facilityId))
+        && shopDoc(facilityId).businessId == request.resource.data.businessId
+        && request.resource.data.facilityId == facilityId
+        && request.resource.data.facilityName is string && request.resource.data.facilityName.size() > 0
+        && request.resource.data.businessName is string && request.resource.data.businessName.size() > 0
+        && request.resource.data.services is list
+        && request.resource.data.listed is bool;
+      allow update: if isOwnerOfBusiness(resource.data.businessId)
+        && request.resource.data.businessId == resource.data.businessId
+        && request.resource.data.facilityId == facilityId
+        && request.resource.data.facilityName is string && request.resource.data.facilityName.size() > 0
+        && request.resource.data.businessName is string && request.resource.data.businessName.size() > 0
+        && request.resource.data.services is list
+        && request.resource.data.listed is bool;
       allow delete: if false;
     }
 
@@ -351,7 +399,7 @@ service cloud.firestore {
     match /pc_allergies/{docId} {
       allow read: if (canAccessShop(resource.data.businessId, resource.data.facilityId)
                       && hasPerm(resource.data.businessId, 'patient.view'))
-        || myFacilityHasConsent(resource.data);
+        || shareOkForMe(resource.data.patientId, resource.data.facilityId);
       allow create: if pcCreateOk(request.resource.data)
         && hasPerm(request.resource.data.businessId, 'allergy.record')
         && patientInBusiness(request.resource.data.patientId, request.resource.data.businessId)
@@ -375,7 +423,7 @@ service cloud.firestore {
     match /pc_medical_history/{docId} {
       allow read: if (canAccessShop(resource.data.businessId, resource.data.facilityId)
                       && hasPerm(resource.data.businessId, 'patient.view'))
-        || myFacilityHasConsent(resource.data);
+        || shareOkForMe(resource.data.patientId, resource.data.facilityId);
       allow create: if pcCreateOk(request.resource.data)
         && hasPerm(request.resource.data.businessId, 'history.record')
         && patientInBusiness(request.resource.data.patientId, request.resource.data.businessId)

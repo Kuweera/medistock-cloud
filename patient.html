@@ -159,6 +159,8 @@
   .dateField input[type="text"]{flex:1; min-width:0;}
   .cal-btn{flex:0 0 46px; height:40px; background:var(--card); border:1px solid var(--border); border-radius:8px; font-size:18px; padding:0;}
   .cal-native{position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0; padding:0;}
+  .info-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--accent); color:var(--text); font-size:13px; line-height:1.5;}
+  .perm-warn{font-size:12px; color:var(--warn); margin-bottom:8px; line-height:1.5;}
 </style>
 <script>
 (function(){
@@ -170,6 +172,8 @@
 })();
 </script>
 </head>
+<body>
+
 <body>
 
 <body>
@@ -206,6 +210,35 @@
   <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
 </nav>
 <script src="nav.js"></script>
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
 
 <div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
 <div class="card hidden" id="gateCard"><div id="gateMsg" class="empty"></div><button class="btn-small btn-secondary" style="width:100%; margin-top:10px;" onclick="mcGo('patients.html')">&larr; Back to patients</button></div>
@@ -215,6 +248,7 @@
   <div class="card">
     <h2 id="pName"></h2>
     <div class="pt-meta" id="pLine"></div>
+    <div id="sharedNote" class="info-box hidden"></div>
     <div id="mergedNote" class="alert-box hidden"></div>
     <div id="allergyBanner" class="alert-box hidden"></div>
   </div>
@@ -223,7 +257,7 @@
     <button type="button" class="pill-btn selected" data-t="overview">Overview</button>
     <button type="button" class="pill-btn" data-t="history">Medical history</button>
     <button type="button" class="pill-btn" data-t="allergies">Allergies</button>
-    <button type="button" class="pill-btn" data-t="sharing">Sharing</button>
+    <button type="button" class="pill-btn" data-t="sharing" id="sharingTab">Sharing</button>
   </div>
 
   <div id="tab-overview" class="card"></div>
@@ -251,7 +285,6 @@
       <div class="msg" id="hMsg"></div>
     </div>
     <div class="card"><h2>Medical history</h2><div id="hList"></div></div>
-    <div id="hShared"></div>
   </div>
 
   <div id="tab-allergies" class="hidden">
@@ -271,34 +304,38 @@
       <div class="msg" id="aMsg"></div>
     </div>
     <div class="card"><h2>Allergies</h2><div id="aList"></div></div>
-    <div id="aShared"></div>
   </div>
 
   <div id="tab-sharing" class="hidden">
-    <div class="card"><h2>Shared with this facility</h2><div id="sInList"></div></div>
-    <div class="card hidden" id="sOutCard">
-      <h2>Share this patient's records with another facility</h2>
-      <div class="hint2" style="margin-top:0;">The allergies and medical history recorded here become visible to the facility you choose, until you stop sharing. Do this only with the patient's (or guardian's) agreement.</div>
-      <div id="sOutList"></div>
-      <label>Share with</label>
-      <select id="sTarget"></select>
+    <div class="card"><h2>Shared by this facility</h2><div id="sOutList"></div></div>
+    <div class="card hidden" id="sNewCard">
+      <h2>Share this patient with another facility</h2>
+      <div class="hint2" style="margin-top:0;">The facility you choose will be able to read this patient's details, allergies and medical history, until you stop sharing. Do this only with the patient's (or guardian's) agreement. It can be a facility in your own business or in another business that has published itself in the Facility Directory.</div>
+      <label>Service needed (optional)</label>
+      <select id="sService"><option value="">Any service</option></select>
+      <label>Business (type to search, or choose)</label>
+      <input type="text" id="sBiz" list="bizList" placeholder="Business name" autocomplete="off">
+      <label>Facility</label>
+      <select id="sTarget"><option value="">Choose a business first</option></select>
+      <div id="sFacInfo" class="pt-meta" style="margin-top:6px;"></div>
       <label>Why (type or choose)</label>
-      <input type="text" id="sPurpose" list="purposeList" placeholder="e.g. Referral" autocomplete="off">
+      <input type="text" id="sPurpose" list="purposeList" placeholder="e.g. Referral for X-ray" autocomplete="off">
       <div class="row">
         <div><label>How did they agree?</label>
           <select id="sMethod"><option value="verbal">Said yes (verbal)</option><option value="written">Signed (written)</option></select></div>
         <div><label>Who agreed? *</label><input type="text" id="sBy" list="byList" placeholder="Name" autocomplete="off"></div>
       </div>
       <label class="chk"><input type="checkbox" id="sAgree"><span>The patient (or guardian) agrees to share these records</span></label>
-      <button class="btn-primary" id="sGrantBtn">Share records</button>
+      <button class="btn-primary" id="sGrantBtn">Share patient</button>
       <div class="msg" id="sMsg"></div>
     </div>
   </div>
   <div class="msg ok" id="doneMsg"></div>
   <datalist id="substanceList"><option value="Penicillin"><option value="Amoxicillin"><option value="Ampicillin"><option value="Cotrimoxazole (Septrin)"><option value="Sulfonamides"><option value="Aspirin"><option value="Ibuprofen"><option value="Diclofenac"><option value="Paracetamol"><option value="Chloroquine"><option value="Quinine"><option value="Artemether-lumefantrine"><option value="Metronidazole"><option value="Ciprofloxacin"><option value="Erythromycin"><option value="Tetracycline"><option value="Latex"><option value="Eggs"><option value="Peanuts"><option value="Milk"><option value="Fish"><option value="Dust"><option value="Bee sting"></datalist>
   <datalist id="reactionList"><option value="Rash"><option value="Itching"><option value="Hives"><option value="Swelling of face or lips"><option value="Difficulty breathing"><option value="Wheezing"><option value="Anaphylaxis"><option value="Vomiting"><option value="Diarrhoea"><option value="Fever"><option value="Dizziness"></datalist>
-  <datalist id="purposeList"><option value="Referral"><option value="Follow-up care"><option value="Shared treatment"><option value="Second opinion"><option value="Patient moved"></datalist>
+  <datalist id="purposeList"><option value="Referral"><option value="Referral for X-ray"><option value="Referral for laboratory tests"><option value="Referral for CT scan"><option value="Follow-up care"><option value="Shared treatment"><option value="Second opinion"><option value="Patient moved"></datalist>
   <datalist id="byList"></datalist>
+  <datalist id="bizList"></datalist>
 </div>
 
 <script src="pc-fields.js"></script>
@@ -348,31 +385,42 @@
   function sortAllergies(list) {
     return list.slice().sort((a, b) => (SEV_ORDER[a.severity] - SEV_ORDER[b.severity]) || ((b.clientCreatedAt || 0) - (a.clientCreatedAt || 0)));
   }
+  function snapshotOf(p) {
+    return { fullName: p.fullName || "", sex: p.sex || "unknown", dob: p.dob || null, dobApprox: p.dobApprox || null, dobPrecision: p.dobPrecision || "unknown",
+      ageRecordedOn: p.ageRecordedOn || null, estimatedAge: p.estimatedAge || null, phone: p.phone || "", village: p.village || "", district: p.district || "",
+      nextOfKin: { name: (p.nextOfKin && p.nextOfKin.name) || "", relationship: (p.nextOfKin && p.nextOfKin.relationship) || "", phone: (p.nextOfKin && p.nextOfKin.phone) || "" } };
+  }
   /*PURE-END*/
 
-  let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
-  let patient = null, links = [], allergies = [], history = [], shopsById = {};
-  let grantedByMe = [], grantedToMe = [], shared = {};
+  const params = new URLSearchParams(location.search);
+  const shareParam = params.get("share");
+  const mode = shareParam ? "share" : "own";
+  let pid = params.get("id");
+  let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "", bizName = "";
+  let patient = null, share = null, srcBusinessId = null, srcFacilityId = null;
+  let links = [], allergies = [], history = [], shopsById = {}, dirDocs = [], sharesByMe = [];
   let showErrAllergies = false, showErrHistory = false, loggedView = false;
-  const pid = new URLSearchParams(location.search).get("id");
   const can = k => role === "owner" || perms[k] === true;
-  const facilityName = id => (shopsById[id] && shopsById[id].name) || (id === facilityId && facility ? facility.name : "another facility");
+  const readOnly = () => mode === "share";
 
   function showGate(msg) { $("gateMsg").innerHTML = msg; $("gateCard").classList.remove("hidden"); $("mainArea").classList.add("hidden"); }
-
   function stamp() { return { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now() }; }
   function auditDoc(action, path, extra) {
     return Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, action: action, recordPath: path, patientId: pid, at: serverTimestamp() }, extra || {});
   }
   function saveFailed(err) {
     const denied = err && err.code === "permission-denied";
-    const text = denied ? "Firestore refused this save. Your account may not have permission for this, or Patient Care is not switched on for this shop."
+    const text = denied ? "Firestore refused this save. Your account may not have permission for this, Patient Care may not be switched on, or the security rules are not the latest version."
                         : "Could not save: " + ((err && err.message) || "unknown problem");
     const el = $("doneMsg"); el.textContent = "NOT SAVED. " + text; el.className = "msg err";
     alert(text);
   }
   function ok(msg) { const el = $("doneMsg"); el.className = "msg ok"; el.textContent = msg; }
   const logAudit = (action, path, extra) => setDoc(doc(collection(db, "pc_audit_logs")), auditDoc(action, path, extra)).catch(saveFailed);
+  function dateOf(ts) {
+    const d = ts && ts.toDate ? ts.toDate() : (ts && ts.seconds ? new Date(ts.seconds * 1000) : null);
+    return d && !isNaN(d.getTime()) ? PCF.toTyped(isoDate(d)) : "";
+  }
 
   // ---------- header, overview ----------
   function renderHeader() {
@@ -380,34 +428,38 @@
     $("pName").textContent = p.fullName;
     const myL = links.find(l => l.patientId === pid && l.facilityId === facilityId);
     $("pLine").innerHTML = esc((p.sex === "female" ? "Female" : p.sex === "male" ? "Male" : p.sex === "other" ? "Other" : "Sex unknown")) + " · " + esc(ageText(p, new Date())) +
-      (p.phone ? " · " + esc(p.phone) : "") + (myL ? ' <span class="chip ok">' + esc(myL.localRegNo) + "</span>" : ' <span class="chip warn">Not registered here</span>');
+      (p.phone ? " · " + esc(p.phone) : "") + (!readOnly() && myL ? ' <span class="chip ok">' + esc(myL.localRegNo) + "</span>" : "");
     const mn = $("mergedNote");
-    if (p.status === "merged") { mn.innerHTML = "This record was merged into another patient record and should no longer be used."; mn.classList.remove("hidden"); } else mn.classList.add("hidden");
+    if (!readOnly() && p.status === "merged") { mn.innerHTML = "This record was merged into another patient record and should no longer be used."; mn.classList.remove("hidden"); } else mn.classList.add("hidden");
+    const sn = $("sharedNote");
+    if (readOnly() && share) {
+      sn.innerHTML = "Shared with you by <b>" + esc(share.sourceFacilityName || "a facility") + "</b>" + (share.sourceBusinessName ? " (" + esc(share.sourceBusinessName) + ")" : "") +
+        ". Reason: " + esc(share.purpose || "") + (dateOf(share.grantedAt) ? " · since " + esc(dateOf(share.grantedAt)) : "") + ". Read-only." +
+        (can("patient.register") ? '<div class="op-actions"><button type="button" class="btn-small btn-primary" id="regOursBtn">Register as our patient</button></div>' : "");
+      sn.classList.remove("hidden");
+      const rb = $("regOursBtn"); if (rb) rb.onclick = () => window.mcGo("patients.html?fromShare=" + encodeURIComponent(share.id));
+    } else sn.classList.add("hidden");
   }
   function renderBanner() {
     const act = sortAllergies(allergies.filter(a => a.status === "active"));
     const b = $("allergyBanner");
-    const sh = [];
-    Object.keys(shared).forEach(id => sortAllergies((shared[id].allergies || []).filter(a => a.status === "active")).forEach(a => sh.push({ a: a, from: srcName(id) })));
-    if (!act.length && !sh.length) { b.classList.add("hidden"); return; }
-    b.innerHTML = (act.length ? "<b>Allergies:</b> " + act.map(a => esc(a.substance) + (a.severity === "severe" ? " (severe)" : "")).join(", ") : "") +
-      (sh.length ? (act.length ? "<br>" : "") + "<b>Shared by other facilities:</b> " + sh.map(x => esc(x.a.substance) + (x.a.severity === "severe" ? " (severe)" : "") + " (" + esc(x.from) + ")").join(", ") : "");
+    if (!act.length) { b.classList.add("hidden"); return; }
+    b.innerHTML = "<b>Allergies:</b> " + act.map(a => esc(a.substance) + (a.severity === "severe" ? " (severe)" : "")).join(", ");
     b.classList.remove("hidden");
   }
   function line(k, v) { return v ? '<div class="breakdown-line"><span>' + esc(k) + '</span><span class="v">' + esc(v) + "</span></div>" : ""; }
   function renderOverview() {
     const p = patient, nok = p.nextOfKin || {}, em = p.emergencyContact || {};
-    const ls = links.filter(l => l.patientId === pid);
+    const ls = links.filter(l => l.patientId === pid && l.facilityId === facilityId);
     const act = allergies.filter(a => a.status === "active").length, hist = history.filter(h => h.status !== "entered_in_error").length;
     $("tab-overview").innerHTML = "<h2>Overview</h2>" +
-      line("Sex", p.sex) + line("Age", ageText(p, new Date())) + line("Date of birth", p.dobPrecision === "exact" ? p.dob : "") +
+      (readOnly() ? "" : line("Registration no.", ls[0] ? ls[0].localRegNo : "")) +
+      line("Sex", p.sex) + line("Age", ageText(p, new Date())) + line("Date of birth", p.dobPrecision === "exact" ? PCF.toTyped(p.dob) : "") +
       line("Phone", p.phone) + line("Address", [p.address, p.village, p.district].filter(Boolean).join(", ")) +
       line("Next of kin", [nok.name, nok.relationship, nok.phone].filter(Boolean).join(" · ")) +
-      line("Emergency contact", [em.name, em.relationship, em.phone].filter(Boolean).join(" · ")) +
-      line("Allergies recorded here", String(act)) + line("History entries here", String(hist)) +
-      '<h3 class="sub">Registered at</h3>' +
-      (ls.length ? ls.map(l => '<div class="breakdown-line"><span>' + esc(facilityName(l.facilityId)) + '</span><span class="v">' + esc(l.localRegNo) + "</span></div>").join("") : '<div class="empty">No facility registration found.</div>') +
-      '<div class="hint2">Allergies and history are kept by each facility. You see the ones recorded at ' + esc(facility ? facility.name : "this facility") + ", plus anything another facility has shared with you (Sharing tab).</div>";
+      (readOnly() ? "" : line("Emergency contact", [em.name, em.relationship, em.phone].filter(Boolean).join(" · "))) +
+      line("Allergies recorded", String(act)) + line("History entries", String(hist)) +
+      '<div class="hint2">' + (readOnly() ? "These details were shared with you and cannot be changed here." : "Allergies and history are kept by the facility that recorded them. Use the Sharing tab to let another facility read this patient.") + "</div>";
   }
 
   // ---------- allergies ----------
@@ -415,11 +467,11 @@
     const act = sortAllergies(allergies.filter(a => a.status === "active"));
     const bad = allergies.filter(a => a.status !== "active");
     let h = "";
-    if (!act.length) h += '<div class="empty">No allergy recorded at this facility.</div>';
+    if (!act.length) h += '<div class="empty">No allergy recorded.</div>';
     act.forEach(a => {
       h += '<div class="entry"><div class="pt-name">' + esc(a.substance) + ' <span class="chip ' + (a.severity === "severe" ? "bad" : a.severity === "moderate" ? "warn" : "") + '">' + esc(SEV_LABEL[a.severity] || a.severity) + "</span></div>" +
         '<div class="pt-meta">' + (a.reaction ? "Reaction: " + esc(a.reaction) + "<br>" : "") + "Noted " + esc(a.recordedDate || "") + (a.recordedByName ? " by " + esc(a.recordedByName) : "") + "</div>" +
-        (can("allergy.record") ? '<div class="op-actions"><button class="btn-small btn-secondary" data-aerr="' + esc(a.id) + '">Entered in error</button></div>' : "") + "</div>";
+        (!readOnly() && can("allergy.record") ? '<div class="op-actions"><button class="btn-small btn-secondary" data-aerr="' + esc(a.id) + '">Entered in error</button></div>' : "") + "</div>";
     });
     if (bad.length) {
       h += '<button type="button" class="btn-small btn-secondary" id="toggleAErr" style="width:100%; margin-top:10px;">' + (showErrAllergies ? "Hide" : "Show") + " entries marked as error (" + bad.length + ")</button>";
@@ -453,7 +505,7 @@
     const live = history.filter(h => h.status !== "entered_in_error");
     const bad = history.filter(h => h.status === "entered_in_error");
     let out = "";
-    if (!live.length) out += '<div class="empty">No medical history recorded at this facility.</div>';
+    if (!live.length) out += '<div class="empty">No medical history recorded.</div>';
     HIST_TYPES.forEach(t => {
       const rows = live.filter(h => h.type === t[0]).sort((a, b) => (b.clientCreatedAt || 0) - (a.clientCreatedAt || 0));
       if (!rows.length) return;
@@ -461,7 +513,7 @@
       rows.forEach(h => {
         out += '<div class="entry"><div class="pt-name">' + esc(h.text) + (h.status === "resolved" ? ' <span class="chip">Resolved</span>' : "") + "</div>" +
           '<div class="pt-meta">' + (h.onset ? "When: " + esc(h.onset) + "<br>" : "") + "Recorded by " + esc(h.recordedByName || "") + "</div>" +
-          (can("history.record") ? '<div class="op-actions">' + (h.status === "active" ? '<button class="btn-small btn-secondary" data-hres="' + esc(h.id) + '">Mark resolved</button>' : "") +
+          (!readOnly() && can("history.record") ? '<div class="op-actions">' + (h.status === "active" ? '<button class="btn-small btn-secondary" data-hres="' + esc(h.id) + '">Mark resolved</button>' : "") +
             '<button class="btn-small btn-secondary" data-herr="' + esc(h.id) + '">Entered in error</button></div>' : "") + "</div>";
       });
     });
@@ -494,104 +546,93 @@
     logAudit("history.error", "pc_medical_history/" + id, { reason: reason });
   }
 
-
-  // ---------- sharing between facilities (needs the patient's agreement; stored as a consent record) ----------
-  function dateOf(ts) {
-    const d = ts && ts.toDate ? ts.toDate() : (ts && ts.seconds ? new Date(ts.seconds * 1000) : null);
-    return d && !isNaN(d.getTime()) ? PCF.toTyped(isoDate(d)) : "";
-  }
-  function srcName(id) {
-    const c = grantedToMe.find(x => x.facilityId === id);
-    return (shopsById[id] && shopsById[id].name) || (c && c.facilityName) || "another facility";
-  }
-  function targetName(c) { return (shopsById[c.grantedFacilityId] && shopsById[c.grantedFacilityId].name) || c.grantedFacilityName || "another facility"; }
-
-  function renderShared() {
-    const ids = Object.keys(shared);
-    let ah = "", hh = "";
-    ids.forEach(id => {
-      const e = shared[id], name = esc(srcName(id));
-      const act = sortAllergies((e.allergies || []).filter(a => a.status === "active"));
-      ah += '<div class="card"><h2>From ' + name + ' (shared with consent)</h2>' + (e.err ? '<div class="empty">Could not load. Sharing may have been stopped.</div>' :
-        (act.length ? act.map(a => '<div class="entry"><div class="pt-name">' + esc(a.substance) + ' <span class="chip ' + (a.severity === "severe" ? "bad" : a.severity === "moderate" ? "warn" : "") + '">' + esc(SEV_LABEL[a.severity] || a.severity) + "</span></div>" +
-          '<div class="pt-meta">' + (a.reaction ? "Reaction: " + esc(a.reaction) + "<br>" : "") + "Noted " + esc(a.recordedDate || "") + "</div></div>").join("") : '<div class="empty">No allergy recorded there.</div>')) + "</div>";
-      const live = (e.history || []).filter(h => h.status !== "entered_in_error");
-      hh += '<div class="card"><h2>From ' + name + ' (shared with consent)</h2>' + (e.err ? '<div class="empty">Could not load. Sharing may have been stopped.</div>' :
-        (live.length ? HIST_TYPES.map(t => {
-          const rows = live.filter(h => h.type === t[0]); if (!rows.length) return "";
-          return '<h3 class="sub">' + esc(t[1]) + "</h3>" + rows.map(h => '<div class="entry"><div class="pt-name">' + esc(h.text) + (h.status === "resolved" ? ' <span class="chip">Resolved</span>' : "") + '</div><div class="pt-meta">' + (h.onset ? "When: " + esc(h.onset) : "") + "</div></div>").join("");
-        }).join("") : '<div class="empty">No medical history recorded there.</div>')) + "</div>";
+  // ---------- sharing this patient with another facility (same business or another business) ----------
+  function targets() {
+    const out = [], seen = {};
+    dirDocs.filter(d => d.listed === true && d.facilityId !== facilityId).forEach(d => {
+      if (d.businessId === businessId && shopsById[d.facilityId] && !(Array.isArray(shopsById[d.facilityId].enabledServices) && shopsById[d.facilityId].enabledServices.indexOf("patient_care") >= 0)) return;
+      out.push({ businessId: d.businessId, businessName: d.businessName, facilityId: d.facilityId, facilityName: d.facilityName, services: d.services || [], district: d.district || "", description: d.description || "" });
+      seen[d.facilityId] = true;
     });
-    $("aShared").innerHTML = ah; $("hShared").innerHTML = hh;
-  }
-
-  function logSharedView(id) {
-    setDoc(doc(collection(db, "pc_access_logs")), Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, patientId: pid, sourceFacilityId: id,
-      purpose: "Viewed records shared by " + srcName(id) + " (patient consent)", at: serverTimestamp() })).catch(() => {});
-  }
-  function syncShared() {
-    const active = grantedToMe.filter(c => !c.revokedAt);
-    const keep = {}; active.forEach(c => { keep[c.facilityId] = true; });
-    Object.keys(shared).forEach(id => { if (!keep[id]) { try { if (shared[id].ua) shared[id].ua(); if (shared[id].uh) shared[id].uh(); } catch (e) {} delete shared[id]; } });
-    active.forEach(c => {
-      const id = c.facilityId; if (shared[id]) return;
-      const e = shared[id] = { allergies: [], history: [], err: false };
-      const base = [where("businessId", "==", businessId), where("patientId", "==", pid), where("facilityId", "==", id), limit(300)];
-      e.ua = onSnapshot(query(collection(db, "pc_allergies"), ...base), s => { e.allergies = s.docs.map(d => ({ id: d.id, ...d.data() })); e.err = false; renderBanner(); renderShared(); }, () => { e.err = true; renderShared(); });
-      e.uh = onSnapshot(query(collection(db, "pc_medical_history"), ...base), s => { e.history = s.docs.map(d => ({ id: d.id, ...d.data() })); renderShared(); }, () => { e.err = true; renderShared(); });
-      logSharedView(id);
+    if (role === "owner") Object.keys(shopsById).forEach(id => {
+      const sh = shopsById[id];
+      if (id === facilityId || seen[id] || !(Array.isArray(sh.enabledServices) && sh.enabledServices.indexOf("patient_care") >= 0)) return;
+      out.push({ businessId: businessId, businessName: bizName || "My business", facilityId: id, facilityName: sh.name, services: [], district: "", description: "" });
     });
-    renderBanner(); renderShared();
+    return out;
   }
-
+  function filteredTargets() {
+    const svc = $("sService").value;
+    return targets().filter(t => !svc || t.services.indexOf(svc) >= 0);
+  }
+  function renderPicker() {
+    if (!can("patient.consent") || readOnly()) return;
+    const all = targets();
+    const svcSel = $("sService"), cur = svcSel.value, used = {};
+    all.forEach(t => t.services.forEach(s => { used[s] = true; }));
+    const names = Object.keys(used).sort((a, b) => a.localeCompare(b));
+    svcSel.innerHTML = '<option value="">Any service</option>' + names.map(n => '<option value="' + esc(n) + '">' + esc(n) + "</option>").join("");
+    if (cur && used[cur]) svcSel.value = cur;
+    const ft = filteredTargets();
+    const bizNames = {}; ft.forEach(t => { bizNames[t.businessName] = true; });
+    $("bizList").innerHTML = Object.keys(bizNames).sort((a, b) => a.localeCompare(b)).map(n => '<option value="' + esc(n) + '">').join("");
+    renderFacilities();
+  }
+  function renderFacilities() {
+    const typed = $("sBiz").value.trim().toLowerCase();
+    const ft = filteredTargets();
+    const matches = typed ? ft.filter(t => String(t.businessName).toLowerCase() === typed) : [];
+    const loose = typed && !matches.length ? ft.filter(t => String(t.businessName).toLowerCase().indexOf(typed) >= 0) : [];
+    const list = matches.length ? matches : loose;
+    const sel = $("sTarget"), keep = sel.value;
+    sel.innerHTML = list.length ? list.map(t => '<option value="' + esc(t.facilityId) + '">' + esc(t.facilityName) + (loose.length && !matches.length ? " (" + esc(t.businessName) + ")" : "") + "</option>").join("")
+      : '<option value="">' + (typed ? "No matching facility" : "Choose a business first") + "</option>";
+    if (keep && list.some(t => t.facilityId === keep)) sel.value = keep;
+    const t = list.find(x => x.facilityId === sel.value);
+    $("sFacInfo").innerHTML = t ? (t.services.length ? t.services.map(s => '<span class="chip">' + esc(s) + "</span>").join(" ") : "") + (t.description ? "<br>" + esc(t.description) : "") + (t.district ? "<br>" + esc(t.district) : "") : "";
+    $("sGrantBtn").disabled = !t;
+  }
   function renderSharing() {
-    const inc = grantedToMe.filter(c => !c.revokedAt);
-    $("sInList").innerHTML = inc.length ? inc.map(c => '<div class="entry"><div class="pt-name">' + esc(srcName(c.facilityId)) + '</div><div class="pt-meta">Why: ' + esc(c.purpose || "") + (dateOf(c.grantedAt) ? " · since " + esc(dateOf(c.grantedAt)) : "") +
-      "<br>Their allergies and history are shown in the Allergies and Medical history tabs.</div></div>").join("") : '<div class="empty">No other facility has shared this patient with you.</div>';
-    $("sOutCard").classList.toggle("hidden", !can("patient.consent"));
-    if (!can("patient.consent")) return;
-    $("sOutList").innerHTML = grantedByMe.length ? '<h3 class="sub">Facilities you share with</h3>' + grantedByMe.map(c => {
+    if (readOnly()) return;
+    $("sOutList").innerHTML = sharesByMe.length ? sharesByMe.map(c => {
       const live = !c.revokedAt;
-      return '<div class="entry"><div class="pt-name">' + esc(targetName(c)) + ' <span class="chip ' + (live ? "ok" : "") + '">' + (live ? "Sharing" : "Stopped") + "</span></div>" +
-        '<div class="pt-meta">Why: ' + esc(c.purpose || "") + (dateOf(c.grantedAt) ? " · from " + esc(dateOf(c.grantedAt)) : "") + (!live && dateOf(c.revokedAt) ? " · stopped " + esc(dateOf(c.revokedAt)) : "") + "</div>" +
-        '<div class="op-actions">' + (live ? '<button class="btn-small btn-secondary" data-stop="' + esc(c.grantedFacilityId) + '">Stop sharing</button>' : '<button class="btn-small btn-secondary" data-again="' + esc(c.grantedFacilityId) + '">Share again</button>') + "</div></div>";
-    }).join("") : "";
-    const liveIds = {}; grantedByMe.forEach(c => { if (!c.revokedAt) liveIds[c.grantedFacilityId] = true; });
-    const opts = Object.keys(shopsById).filter(id => id !== facilityId && !liveIds[id] && Array.isArray(shopsById[id].enabledServices) && shopsById[id].enabledServices.indexOf("patient_care") >= 0)
-      .sort((a, b) => String(shopsById[a].name).localeCompare(String(shopsById[b].name)));
-    const sel = $("sTarget"), keepVal = sel.value;
-    sel.innerHTML = opts.length ? opts.map(id => '<option value="' + esc(id) + '">' + esc(shopsById[id].name) + "</option>").join("") : '<option value="">No other facility available</option>';
-    if (keepVal && opts.indexOf(keepVal) >= 0) sel.value = keepVal;
-    $("sGrantBtn").disabled = !opts.length;
-    if (!opts.length && role !== "owner" && !$("sMsg").textContent) $("sMsg").innerHTML = "You can only see your own facility. Ask the owner to share this patient with another facility.";
+      return '<div class="entry"><div class="pt-name">' + esc(c.granteeFacilityName || "a facility") + (c.granteeBusinessName ? " (" + esc(c.granteeBusinessName) + ")" : "") + ' <span class="chip ' + (live ? "ok" : "") + '">' + (live ? "Sharing" : "Stopped") + "</span></div>" +
+        '<div class="pt-meta">Why: ' + esc(c.purpose || "") + (c.consentGivenBy ? "<br>Agreed by " + esc(c.consentGivenBy) + " (" + (c.consentMethod === "written" ? "signed" : "verbal") + ")" : "") +
+        (dateOf(c.grantedAt) ? " · from " + esc(dateOf(c.grantedAt)) : "") + (!live && dateOf(c.revokedAt) ? " · stopped " + esc(dateOf(c.revokedAt)) : "") + "</div>" +
+        (can("patient.consent") ? '<div class="op-actions">' + (live ? '<button class="btn-small btn-secondary" data-stop="' + esc(c.granteeBusinessId) + '">Stop sharing</button>' : '<button class="btn-small btn-secondary" data-again="' + esc(c.granteeBusinessId) + '">Share again</button>') + "</div>" : "") + "</div>";
+    }).join("") : '<div class="empty">Not shared with any other facility.</div>';
+    $("sNewCard").classList.toggle("hidden", !can("patient.consent"));
+    renderPicker();
   }
   function setSMsg(t, err) { const m = $("sMsg"); m.textContent = t || ""; m.className = "msg " + (err ? "err" : "ok"); }
   function grantShare() {
     setSMsg("");
-    const target = $("sTarget").value, purpose = $("sPurpose").value.trim(), by = $("sBy").value.trim().replace(/\s+/g, " "), method = $("sMethod").value;
-    if (!target) { setSMsg("Choose a facility.", true); return; }
-    if (purpose.length < 3) { setSMsg("Say why the records are being shared.", true); return; }
+    const fid = $("sTarget").value, purpose = $("sPurpose").value.trim(), by = $("sBy").value.trim().replace(/\s+/g, " "), method = $("sMethod").value;
+    const t = targets().find(x => x.facilityId === fid);
+    if (!t) { setSMsg("Choose a business and a facility.", true); return; }
+    if (purpose.length < 3) { setSMsg("Say why this patient is being shared.", true); return; }
     if (by.length < 2) { setSMsg("Enter the name of the person who agreed.", true); return; }
     if (!$("sAgree").checked) { setSMsg("Tick the box only if the patient or guardian agreed.", true); return; }
-    const existing = grantedByMe.find(c => c.grantedFacilityId === target);
-    if (existing && !existing.revokedAt) { setSMsg("Already shared with that facility.", true); return; }
-    const id = pid + "_" + target, ref = doc(db, "pc_patient_consents", id);
-    const evidence = { granteeFacilityId: target, purpose: purpose, consentMethod: method, consentGivenBy: by };
+    const existing = sharesByMe.find(c => c.granteeBusinessId === t.businessId);
+    if (existing && !existing.revokedAt) { setSMsg("This patient is already shared with " + t.businessName + ". Stop sharing first to change the facility.", true); return; }
+    const id = pid + "_" + facilityId + "_" + t.businessId, ref = doc(db, "pc_shares", id), snap = snapshotOf(patient);
     if (existing) {
-      updateDoc(ref, { revokedAt: null, revokedBy: null, grantedAt: serverTimestamp(), grantedBy: me.id, purpose: purpose, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+      updateDoc(ref, { revokedAt: null, revokedBy: null, grantedAt: serverTimestamp(), grantedBy: me.id, purpose: purpose, consentMethod: method, consentGivenBy: by,
+        granteeFacilityId: t.facilityId, granteeFacilityName: t.facilityName, patientSnapshot: snap, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
     } else {
-      setDoc(ref, Object.assign(stamp(), { patientId: pid, grantedFacilityId: target, grantedFacilityName: (shopsById[target] && shopsById[target].name) || "", facilityName: facility ? facility.name : "",
-        purpose: purpose, grantedBy: me.id, grantedAt: serverTimestamp(), revokedAt: null, revokedBy: null })).catch(saveFailed);
+      setDoc(ref, Object.assign(stamp(), { patientId: pid, granteeBusinessId: t.businessId, granteeBusinessName: t.businessName, granteeFacilityId: t.facilityId, granteeFacilityName: t.facilityName,
+        sourceBusinessName: bizName, sourceFacilityName: facility ? facility.name : "", purpose: purpose, consentMethod: method, consentGivenBy: by, patientSnapshot: snap,
+        grantedBy: me.id, grantedAt: serverTimestamp(), revokedAt: null, revokedBy: null })).catch(saveFailed);
     }
-    logAudit("consent.grant", "pc_patient_consents/" + id, evidence);
+    logAudit("share.grant", "pc_shares/" + id, { granteeBusinessId: t.businessId, granteeFacilityId: t.facilityId, purpose: purpose, consentMethod: method, consentGivenBy: by });
     $("sPurpose").value = ""; $("sBy").value = ""; $("sAgree").checked = false;
-    setSMsg("Sharing saved on this phone. It will sync when you are online.");
+    setSMsg("Saved on this phone. " + t.facilityName + " will see the patient once it syncs.");
   }
-  function stopShare(target) {
-    if (!window.confirm("Stop sharing this patient's records with that facility?")) return;
-    const id = pid + "_" + target;
-    updateDoc(doc(db, "pc_patient_consents", id), { revokedAt: serverTimestamp(), revokedBy: me.id, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
-    logAudit("consent.revoke", "pc_patient_consents/" + id, { granteeFacilityId: target });
+  function stopShare(granteeBusinessId) {
+    if (!window.confirm("Stop sharing this patient with that facility?")) return;
+    const id = pid + "_" + facilityId + "_" + granteeBusinessId;
+    updateDoc(doc(db, "pc_shares", id), { revokedAt: serverTimestamp(), revokedBy: me.id, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    logAudit("share.revoke", "pc_shares/" + id, { granteeBusinessId: granteeBusinessId });
   }
   function fillPeopleList() {
     const names = []; const add = n => { n = String(n || "").trim(); if (n && names.indexOf(n) < 0) names.push(n); };
@@ -606,9 +647,14 @@
     ["overview", "history", "allergies", "sharing"].forEach(t => { $("tab-" + t).classList.toggle("hidden", t !== b.dataset.t); });
   }));
   $("aAddBtn").onclick = addAllergy; $("hAddBtn").onclick = addHistory; $("sGrantBtn").onclick = grantShare;
+  $("sBiz").addEventListener("input", renderFacilities); $("sBiz").addEventListener("change", renderFacilities);
+  $("sService").addEventListener("change", renderPicker); $("sTarget").addEventListener("change", renderFacilities);
   $("sOutList").addEventListener("click", e => {
     const st = e.target.closest("[data-stop]"); if (st) { stopShare(st.dataset.stop); return; }
-    const ag = e.target.closest("[data-again]"); if (ag) { $("sTarget").value = ag.dataset.again; $("sPurpose").focus(); }
+    const ag = e.target.closest("[data-again]"); if (ag) {
+      const c = sharesByMe.find(x => x.granteeBusinessId === ag.dataset.again);
+      if (c) { $("sService").value = ""; $("sBiz").value = c.granteeBusinessName || ""; renderPicker(); if (c.granteeFacilityId) $("sTarget").value = c.granteeFacilityId; renderFacilities(); $("sPurpose").focus(); }
+    }
   });
   $("aList").addEventListener("click", e => { const b = e.target.closest("[data-aerr]"); if (b) allergyError(b.dataset.aerr); });
   $("hList").addEventListener("click", e => {
@@ -623,45 +669,62 @@
     badge.className = "badge " + (s.metadata.fromCache ? "offline" : "online");
   }
   function startLists() {
-    const base = [where("businessId", "==", businessId), where("patientId", "==", pid), where("facilityId", "==", facilityId), limit(300)];
+    const base = [where("businessId", "==", srcBusinessId), where("patientId", "==", pid), where("facilityId", "==", srcFacilityId), limit(300)];
     onSnapshot(query(collection(db, "pc_allergies"), ...base), { includeMetadataChanges: true }, s => {
       allergies = s.docs.map(d => ({ id: d.id, ...d.data() })); mark(s); renderBanner(); renderAllergies(); renderOverview();
     }, err => { $("aList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view allergies." : "Could not load allergies.") + "</div>"; });
     onSnapshot(query(collection(db, "pc_medical_history"), ...base), { includeMetadataChanges: true }, s => {
       history = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHistory(); renderOverview();
     }, err => { $("hList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view medical history." : "Could not load medical history.") + "</div>"; });
-    if (can("patient.consent")) {
-      onSnapshot(query(collection(db, "pc_patient_consents"), where("businessId", "==", businessId), where("patientId", "==", pid), where("facilityId", "==", facilityId), limit(100)), { includeMetadataChanges: true }, s => {
-        grantedByMe = s.docs.map(d => ({ id: d.id, ...d.data() })); renderSharing();
-      }, () => {});
-    }
-    onSnapshot(query(collection(db, "pc_patient_consents"), where("businessId", "==", businessId), where("patientId", "==", pid), where("grantedFacilityId", "==", facilityId), limit(100)), { includeMetadataChanges: true }, s => {
-      grantedToMe = s.docs.map(d => ({ id: d.id, ...d.data() })); syncShared(); renderSharing();
-    }, () => {});
-    onSnapshot(query(collection(db, "pc_patient_facility_links"), where("businessId", "==", businessId), where("patientId", "==", pid)), s => {
+    if (readOnly()) return;
+    onSnapshot(query(collection(db, "pc_patient_facility_links"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", pid), limit(20)), s => {
       links = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHeader(); renderOverview();
     }, () => {});
+    if (can("patient.consent")) {
+      onSnapshot(query(collection(db, "pc_shares"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", pid), limit(50)), { includeMetadataChanges: true }, s => {
+        sharesByMe = s.docs.map(d => ({ id: d.id, ...d.data() })); renderSharing();
+      }, () => {});
+      onSnapshot(query(collection(db, "pc_directory"), limit(500)), s => { dirDocs = s.docs.map(d => ({ id: d.id, ...d.data() })); renderPicker(); }, () => {});
+    }
   }
 
   async function openPatient() {
-    if (!pid) { showGate("No patient was chosen."); return; }
     try {
-      const s = await getDoc(doc(db, "pc_patients", pid));
-      if (!s.exists() || s.data().businessId !== businessId) { showGate("This patient was not found on this phone yet. Open the Patients list while online, then try again."); return; }
-      patient = { id: s.id, ...s.data() };
+      if (mode === "share") {
+        const s = await getDoc(doc(db, "pc_shares", shareParam));
+        if (!s.exists()) { showGate("This shared patient was not found on this phone yet. Open the Patients list while online, then try again."); return; }
+        share = { id: s.id, ...s.data() };
+        if (share.granteeBusinessId !== businessId || (role !== "owner" && share.granteeFacilityId !== facilityId)) { showGate("This patient was not shared with this facility."); return; }
+        if (share.revokedAt) { showGate("Sharing of this patient has been stopped by " + esc(share.sourceFacilityName || "the other facility") + "."); return; }
+        pid = share.patientId; patient = Object.assign({ id: pid, status: "active" }, share.patientSnapshot || {});
+        srcBusinessId = share.businessId; srcFacilityId = share.facilityId;
+      } else {
+        if (!pid) { showGate("No patient was chosen."); return; }
+        const s = await getDoc(doc(db, "pc_patients", pid));
+        if (!s.exists() || s.data().businessId !== businessId) { showGate("This patient was not found on this phone yet. Open the Patients list while online, then try again."); return; }
+        patient = { id: s.id, ...s.data() };
+        if (patient.registeredFacilityId && patient.registeredFacilityId !== facilityId) {
+          if (role === "owner" && shopsById[patient.registeredFacilityId]) { facilityId = patient.registeredFacilityId; facility = shopsById[facilityId]; }
+          else { showGate("This patient belongs to another facility."); return; }
+        }
+        srcBusinessId = businessId; srcFacilityId = facilityId;
+      }
     } catch (e) {
       showGate(e && e.code === "permission-denied" ? "You do not have permission to view this patient." : "Could not load this patient. Check your connection and try again.");
       return;
     }
-    $("shopIndicator").textContent = "Patient Care · " + facility.name;
+    $("shopIndicator").textContent = "Patient Care · " + (facility ? facility.name : "");
     $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
-    $("aAddCard").classList.toggle("hidden", !can("allergy.record"));
-    $("hAddCard").classList.toggle("hidden", !can("history.record"));
+    const ro = readOnly();
+    $("aAddCard").classList.toggle("hidden", ro || !can("allergy.record"));
+    $("hAddCard").classList.toggle("hidden", ro || !can("history.record"));
+    $("sharingTab").classList.toggle("hidden", ro);
     fillPeopleList(); renderAll(); renderSharing(); startLists();
     if (!loggedView) {
       loggedView = true;
       // access log: who opened this record and why (the rules cannot force this; the app always tries)
-      setDoc(doc(collection(db, "pc_access_logs")), Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, patientId: pid, purpose: "Viewed patient profile", at: serverTimestamp() })).catch(() => {});
+      setDoc(doc(collection(db, "pc_access_logs")), Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, patientId: pid,
+        purpose: ro ? "Viewed shared patient (patient consent)" : "Viewed patient profile", sourceFacilityId: ro ? srcFacilityId : null, sourceBusinessId: ro ? srcBusinessId : null, at: serverTimestamp() })).catch(() => {});
     }
   }
 
@@ -670,7 +733,7 @@
       showGate("Patient Care is not switched on for " + esc(facility ? facility.name : "this shop") + "."); return;
     }
     if (!can("patient.view")) { showGate("You do not have Patient Care access yet. Ask the owner to give you access in Users."); return; }
-    openPatient();
+    getDoc(doc(db, "businesses", businessId)).then(b => { bizName = b.exists() ? (b.data().name || "") : ""; }).catch(() => {}).then(openPatient);
   }
 
   onAuthStateChanged(auth, async (user) => {
@@ -689,7 +752,7 @@
         const want = localStorage.getItem("mc_activeShopId");
         facilityId = shopsById[want] ? want : ids[0];
         facility = facilityId ? shopsById[facilityId] : null;
-        if (!started) { started = true; begin(); }
+        if (!started) { started = true; begin(); } else renderPicker();
       });
     } else {
       facilityId = me.shopId;

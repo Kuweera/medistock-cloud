@@ -147,11 +147,20 @@
   .op-actions{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
   .op-actions button{flex:1; min-width:120px;}
   .breakdown-line .v{text-align:right; max-width:62%;}
+  textarea{width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px; font-family:inherit;}
+  textarea:focus{outline:none; border-color:var(--accent);}
+  .back{display:inline-block; font-size:13px; color:var(--accent); margin:0 0 10px; text-decoration:none; font-weight:600;}
+  .alert-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--danger); color:var(--danger); font-size:13px; line-height:1.5; font-weight:600;}
+  .entry{padding:10px 0; border-bottom:1px solid var(--border);} .entry:last-child{border-bottom:none;}
+  .entry.struck .pt-name{text-decoration:line-through; color:var(--muted); font-weight:500;}
+  .pill-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}
   /* ===== typed or picked dates ===== */
   .dateField{position:relative; display:flex; gap:8px; align-items:center;}
   .dateField input[type="text"]{flex:1; min-width:0;}
   .cal-btn{flex:0 0 46px; height:40px; background:var(--card); border:1px solid var(--border); border-radius:8px; font-size:18px; padding:0;}
   .cal-native{position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0; padding:0;}
+  .info-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--accent); color:var(--text); font-size:13px; line-height:1.5;}
+  .perm-warn{font-size:12px; color:var(--warn); margin-bottom:8px; line-height:1.5;}
 </style>
 <script>
 (function(){
@@ -163,6 +172,10 @@
 })();
 </script>
 </head>
+<body>
+
+<body>
+
 <body>
 
 <body>
@@ -197,6 +210,35 @@
   <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
 </nav>
 <script src="nav.js"></script>
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
 
 <div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
 
@@ -209,6 +251,12 @@
     <div class="hint2" id="listInfo"></div>
     <div id="results" style="margin-top:8px;"></div>
     <button class="btn-small btn-secondary hidden" id="moreBtn" style="width:100%; margin-top:10px;">Show more</button>
+  </div>
+
+  <div class="card hidden" id="sharedCard">
+    <h2>Shared with this facility</h2>
+    <div class="hint2" style="margin-top:0;">Patients that other facilities have shared with you. You can read them but not change them.</div>
+    <div id="sharedList"></div>
   </div>
 
   <div class="card hidden" id="detailCard"></div>
@@ -269,7 +317,7 @@
 
 <script src="pc-fields.js"></script>
 <script type="module">
-  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, collection, onSnapshot, serverTimestamp, query, where, getDocFromCache } = window.top.MC.api(window);
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, collection, onSnapshot, serverTimestamp, query, where, limit, getDocFromCache } = window.top.MC.api(window);
 
   // ---- same cache-first reading the other screens use ----
   const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
@@ -381,11 +429,10 @@
 
   // ---------- state ----------
   let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "", myOperatorId = "";
-  let patients = [], links = [], shopsById = {};
+  let patients = [], links = [], shopsById = {}, shares = [], pendingShareId = null;
   let patientsReady = false, linksReady = false, patientsErr = null;
   let shown = 30, openId = null, pendingForm = null;
   const can = k => role === "owner" || perms[k] === true;
-  const facilityName = id => (shopsById[id] && shopsById[id].name) || (id === facilityId && facility ? facility.name : "another facility");
 
   // village / district suggestions come from what has already been typed for your patients (you can still type anything new)
   function refreshPlaceLists() {
@@ -420,33 +467,40 @@
     if (!total) { $("results").innerHTML = '<div class="empty">' + (String(q).trim() ? "No patient found. Check the spelling or register a new patient below." : "No patients yet.") + "</div>"; return; }
     $("results").innerHTML = list.map(p => {
       const ml = myLink(p.id);
-      const tag = ml ? '<span class="chip ok">' + esc(ml.localRegNo) + "</span>" : '<span class="chip warn">Not registered here</span>';
+      const tag = ml ? '<span class="chip ok">' + esc(ml.localRegNo) + "</span>" : "";
       return '<div class="pt" data-pid="' + esc(p.id) + '"><div class="pt-name">' + esc(p.fullName) + " " + tag + "</div>" +
         '<div class="pt-meta">' + esc(p.sex === "female" ? "Female" : p.sex === "male" ? "Male" : p.sex === "other" ? "Other" : "Sex unknown") + " · " + esc(ageText(p, now)) +
         (p.phone ? " · " + esc(p.phone) : "") + (p.village ? " · " + esc(p.village) : "") + "</div></div>";
     }).join("");
   }
 
+  // ---------- patients other facilities have shared with this facility ----------
+  function renderShared() {
+    const live = shares.filter(x => !x.revokedAt).sort((a, b) => String(a.patientSnapshot && a.patientSnapshot.fullName).localeCompare(String(b.patientSnapshot && b.patientSnapshot.fullName)));
+    $("sharedCard").classList.toggle("hidden", !live.length);
+    const now = new Date();
+    $("sharedList").innerHTML = live.map(x => {
+      const p = x.patientSnapshot || {};
+      return '<div class="pt" data-share="' + esc(x.id) + '"><div class="pt-name">' + esc(p.fullName) + ' <span class="chip">Shared</span></div>' +
+        '<div class="pt-meta">' + esc(p.sex || "") + " · " + esc(ageText(p, now)) + (p.phone ? " · " + esc(p.phone) : "") +
+        "<br>From " + esc(x.sourceFacilityName || "a facility") + (x.sourceBusinessName ? " (" + esc(x.sourceBusinessName) + ")" : "") + " · " + esc(x.purpose || "") + "</div></div>";
+    }).join("");
+  }
   function openDetail(pid) {
     const p = patients.find(x => x.id === pid); if (!p) return;
     openId = pid;
-    const ls = links.filter(l => l.patientId === pid);
     const ml = myLink(pid);
     const nok = p.nextOfKin || {}, em = p.emergencyContact || {};
     const line = (k, v) => v ? '<div class="breakdown-line"><span>' + esc(k) + '</span><span class="v">' + esc(v) + "</span></div>" : "";
     $("detailCard").innerHTML = '<h2>' + esc(p.fullName) + "</h2>" +
-      line("Sex", p.sex) + line("Age", ageText(p, new Date())) +
-      line("Date of birth", p.dobPrecision === "exact" ? p.dob : "") +
+      line("Registration no.", ml ? ml.localRegNo : "") + line("Sex", p.sex) + line("Age", ageText(p, new Date())) +
+      line("Date of birth", p.dobPrecision === "exact" ? PCF.toTyped(p.dob) : "") +
       line("Phone", p.phone) + line("Address", [p.address, p.village, p.district].filter(Boolean).join(", ")) +
       line("Next of kin", [nok.name, nok.relationship, nok.phone].filter(Boolean).join(" · ")) +
       line("Emergency contact", [em.name, em.relationship, em.phone].filter(Boolean).join(" · ")) +
-      '<h3 class="sub">Registered at</h3>' +
-      (ls.length ? ls.map(l => '<div class="breakdown-line"><span>' + esc(facilityName(l.facilityId)) + '</span><span class="v">' + esc(l.localRegNo) + "</span></div>").join("") : '<div class="empty">No facility registration found.</div>') +
-      (!ml && can("patient.register") ? '<button class="btn-primary" id="linkHereBtn">Register this patient at ' + esc(facility ? facility.name : "this facility") + "</button>" : "") +
-      '<button class="btn-primary" id="openProfileBtn">Open profile (allergies, history)</button>' +
+      '<button class="btn-primary" id="openProfileBtn">Open profile (allergies, history, sharing)</button>' +
       '<button class="btn-small btn-secondary" id="closeDetailBtn" style="width:100%; margin-top:8px;">Close</button>';
     $("detailCard").classList.remove("hidden");
-    const lh = $("linkHereBtn"); if (lh) lh.onclick = () => { linkHere(pid); };
     $("openProfileBtn").onclick = () => { window.mcGo("patient.html?id=" + encodeURIComponent(pid)); };
     $("closeDetailBtn").onclick = () => { $("detailCard").classList.add("hidden"); openId = null; };
     $("detailCard").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -526,11 +580,10 @@
     const strong = cands.some(c => c.level === "strong");
     $("candBox").innerHTML = '<div class="cand-head">' + (strong ? "This patient may already be registered" : "Possible matches found") + "</div>" +
       cands.map(c => {
-        const p = c.patient, ml = myLink(p.id);
+        const p = c.patient;
         return '<div class="cand ' + c.level + '"><div class="pt-name">' + esc(p.fullName) + ' <span class="chip ' + (c.level === "strong" ? "bad" : "warn") + '">' + (c.level === "strong" ? "Strong match" : "Possible") + "</span></div>" +
           '<div class="pt-meta">' + esc(p.sex) + " · " + esc(ageText(p, now)) + (p.phone ? " · " + esc(p.phone) : "") + (p.village ? " · " + esc(p.village) : "") + "<br>Why: " + esc(c.why.join(", ")) + "</div>" +
-          '<div class="op-actions"><button class="btn-small btn-secondary" data-open="' + esc(p.id) + '">View</button>' +
-          (!ml && can("patient.register") ? '<button class="btn-small btn-secondary" data-link="' + esc(p.id) + '">Same person: register here</button>' : "") + "</div></div>";
+          '<div class="op-actions"><button class="btn-small btn-secondary" data-open="' + esc(p.id) + '">View</button></div></div>';
       }).join("") +
       '<label>Different person? Say why' + (strong ? " (required)" : " (optional)") + '</label><input type="text" id="dupReason" placeholder="e.g. Different village and age">' +
       '<button class="btn-small btn-primary" id="forceNewBtn" style="margin-top:8px; width:100%;" data-strong="' + (strong ? "1" : "0") + '">This is a different person — register as new</button>';
@@ -554,7 +607,7 @@
       dob: f.dob, dobApprox: f.dobApprox, dobPrecision: f.dobPrecision, ageRecordedOn: f.ageRecordedOn, estimatedAge: f.estimatedAge,
       phone: f.phone, phoneKey: phoneKeyOf(f.phone), address: f.address, village: f.village, district: f.district,
       nextOfKin: f.nextOfKin, emergencyContact: f.emergencyContact,
-      status: "active", createdByName: myName, updatedBy: me.id, updatedAt: serverTimestamp()
+      status: "active", createdByName: myName, updatedBy: me.id, updatedAt: serverTimestamp(), sharedFrom: pendingShareId || null
     });
     const lRef = doc(db, "pc_patient_facility_links", pRef.id + "_" + facilityId);
     const ldoc = Object.assign({}, stamp(), { patientId: pRef.id, localRegNo: regNo, registeredAt: serverTimestamp(), registeredBy: me.id, status: "active" });
@@ -563,28 +616,12 @@
     const jobs = [
       setDoc(pRef, pdoc),
       setDoc(lRef, ldoc),
-      setDoc(aRef, audit("patient.register", pRef.id, { localRegNo: regNo, duplicateOverrideReason: reason || null, duplicateCandidates: candIds || [] }))
+      setDoc(aRef, audit("patient.register", pRef.id, { localRegNo: regNo, duplicateOverrideReason: reason || null, duplicateCandidates: candIds || [], sharedFrom: pendingShareId || null }))
     ];
     Promise.all(jobs).catch(saveFailed);
     $("doneMsg").className = "msg ok"; $("doneMsg").textContent = "Saved on this phone: " + f.fullName + " · " + regNo + ". It will sync when you are online.";
-    clearForm(); $("formCard").classList.add("hidden"); $("showFormBtn").classList.remove("hidden");
+    pendingShareId = null; clearForm(); $("formCard").classList.add("hidden"); $("showFormBtn").classList.remove("hidden");
     $("q").value = ""; renderList();
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  function linkHere(pid) {
-    if (!can("patient.register") || myLink(pid)) return;
-    const p = patients.find(x => x.id === pid); if (!p) return;
-    const regNo = nextRegNo();
-    const lRef = doc(db, "pc_patient_facility_links", pid + "_" + facilityId);
-    const ldoc = Object.assign({}, stamp(), { patientId: pid, localRegNo: regNo, registeredAt: serverTimestamp(), registeredBy: me.id, status: "active" });
-    Promise.all([
-      setDoc(lRef, ldoc),
-      setDoc(doc(collection(db, "pc_audit_logs")), audit("patient.link", pid, { localRegNo: regNo }))
-    ]).catch(saveFailed);
-    $("doneMsg").className = "msg ok"; $("doneMsg").textContent = "Saved on this phone: " + p.fullName + " is now registered here as " + regNo + ".";
-    hideCandidates(); $("formCard").classList.add("hidden"); $("showFormBtn").classList.remove("hidden");
-    renderList(); if (openId === pid) openDetail(pid);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -598,15 +635,15 @@
   // ---------- wiring ----------
   $("q").addEventListener("input", () => { shown = 30; renderList(); });
   $("moreBtn").onclick = () => { shown += 30; renderList(); };
+  $("sharedList").addEventListener("click", e => { const r = e.target.closest("[data-share]"); if (r) window.mcGo("patient.html?share=" + encodeURIComponent(r.dataset.share)); });
   $("results").addEventListener("click", e => { const r = e.target.closest("[data-pid]"); if (r) openDetail(r.dataset.pid); });
   $("showFormBtn").onclick = () => { $("doneMsg").textContent = ""; $("formCard").classList.remove("hidden"); $("showFormBtn").classList.add("hidden"); syncFormVisibility(); $("fName").focus(); };
-  $("cancelBtn").onclick = () => { clearForm(); $("formCard").classList.add("hidden"); $("showFormBtn").classList.remove("hidden"); };
+  $("cancelBtn").onclick = () => { pendingShareId = null; clearForm(); $("formCard").classList.add("hidden"); $("showFormBtn").classList.remove("hidden"); };
   $("fAgeMode").onchange = syncFormVisibility; $("fSameEm").onchange = syncFormVisibility;
   $("saveBtn").onclick = startRegister;
   PCF.initDates();
   $("candBox").addEventListener("click", e => {
     const o = e.target.closest("[data-open]"); if (o) { openDetail(o.dataset.open); return; }
-    const l = e.target.closest("[data-link]"); if (l) { linkHere(l.dataset.link); return; }
     const fb = e.target.closest("#forceNewBtn");
     if (fb) {
       const reason = ($("dupReason").value || "").trim();
@@ -624,12 +661,38 @@
     badge.className = "badge " + (s.metadata.fromCache ? "offline" : "online");
   }
   function startData() {
-    onSnapshot(query(collection(db, "pc_patients"), where("businessId", "==", businessId)), { includeMetadataChanges: true }, s => {
+    // each facility only loads (and can only read) the patients it registered itself
+    onSnapshot(query(collection(db, "pc_patients"), where("businessId", "==", businessId), where("registeredFacilityId", "==", facilityId), limit(3000)), { includeMetadataChanges: true }, s => {
       patients = s.docs.map(d => ({ id: d.id, ...d.data() })); patientsReady = true; patientsErr = null; mark(s); refreshPlaceLists(); renderList(); if (openId) openDetail(openId);
-    }, err => { patientsErr = err && err.code === "permission-denied" ? "You do not have permission to view patients. Ask the owner to switch on your Patient Care access." : ((err && err.message) || "Could not load patients."); patientsReady = true; linksReady = true; renderList(); });
-    onSnapshot(query(collection(db, "pc_patient_facility_links"), where("businessId", "==", businessId)), s => {
+    }, err => { patientsErr = err && err.code === "permission-denied" ? "You do not have permission to view patients. Ask the owner to switch on your Patient Care access, or publish the latest security rules." : ((err && err.message) || "Could not load patients."); patientsReady = true; linksReady = true; renderList(); });
+    onSnapshot(query(collection(db, "pc_patient_facility_links"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), limit(3000)), s => {
       links = s.docs.map(d => ({ id: d.id, ...d.data() })); linksReady = true; renderList();
     }, () => { linksReady = true; renderList(); });
+    onSnapshot(query(collection(db, "pc_shares"), where("granteeBusinessId", "==", businessId), where("granteeFacilityId", "==", facilityId), limit(300)), { includeMetadataChanges: true }, s => {
+      shares = s.docs.map(d => ({ id: d.id, ...d.data() })); renderShared();
+    }, () => {});
+  }
+
+  // "Register as our patient" on a shared patient opens the form here, already filled in for checking
+  async function prefillFromShare() {
+    const sid = new URLSearchParams(location.search).get("fromShare"); if (!sid) return;
+    try {
+      const sh = await getDoc(doc(db, "pc_shares", sid));
+      if (!sh.exists()) return;
+      const x = sh.data(), p = x.patientSnapshot || {};
+      $("showFormBtn").click();
+      $("fName").value = p.fullName || ""; $("fSex").value = p.sex || ""; $("fPhone").value = p.phone || "";
+      $("fVillage").value = p.village || ""; $("fDistrict").value = p.district || "";
+      const nok = p.nextOfKin || {}; $("fNokName").value = nok.name || ""; $("fNokRel").value = nok.relationship || ""; $("fNokPhone").value = nok.phone || "";
+      if (p.dobPrecision === "exact" && p.dob) { $("fAgeMode").value = "dob"; PCF.setDate("fDob", p.dob); }
+      else if (p.dobApprox) {
+        const b = new Date(p.dobApprox + "T00:00:00"), n = new Date();
+        let m = (n.getFullYear() - b.getFullYear()) * 12 + (n.getMonth() - b.getMonth()); if (n.getDate() < b.getDate()) m--;
+        $("fAgeMode").value = "est"; $("fAgeY").value = Math.floor(Math.max(m, 0) / 12); $("fAgeM").value = Math.max(m, 0) % 12; $("fAgeD").value = "";
+      }
+      syncFormVisibility(); pendingShareId = sid;
+      setFormMsg("Filled in from the patient shared by " + (x.sourceFacilityName || "another facility") + ". Check the details, then register.");
+    } catch (e) {}
   }
 
   function begin() {
@@ -641,6 +704,7 @@
     $("shopIndicator").textContent = "Patient Care · " + facility.name;
     showMain();
     startData();
+    prefillFromShare();
   }
 
   onAuthStateChanged(auth, async (user) => {
