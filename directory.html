@@ -180,6 +180,8 @@
 
 <body>
 
+<body>
+
 <header class="app-header">
   <h1>MediStock Cloud</h1>
   <p>Patient Care · Facility directory</p>
@@ -353,6 +355,7 @@
       const pc = Array.isArray(sh.enabledServices) && sh.enabledServices.indexOf("patient_care") >= 0;
       return '<div class="card" id="own-' + id + '"><h2>' + esc(sh.name) + ' <span class="chip">' + esc(TYPE_LABEL[sh.facilityType] || "Drug shop") + "</span></h2>" +
         (pc ? "" : '<div class="perm-warn">Patient Care is not switched on for this shop (Shops &rarr; Edit). Other facilities cannot share patients with it until it is.</div>') +
+        '<div class="pt-meta" id="state-' + id + '"></div>' +
         '<label class="chk"><input type="checkbox" data-listed="' + id + '"' + (d.listed ? " checked" : "") + "><span>List in directory</span></label>" +
         "<label>What this facility offers</label>" + '<div id="svcBox-' + id + '">' + chipEditor(id) + "</div>" +
         '<div class="row" style="margin-top:8px;"><div><input type="text" id="svcIn-' + id + '" list="svcList" placeholder="Type another service" autocomplete="off"></div><div style="flex:0 0 80px;"><button type="button" class="btn-small btn-secondary" style="width:100%;height:40px;" data-addtyped="' + id + '">Add</button></div></div>' +
@@ -374,11 +377,17 @@
     const payload = { businessId: businessId, businessName: name, facilityId: id, facilityName: sh.name, facilityType: sh.facilityType || "drug_shop",
       district: d.district, phone: d.phone, description: d.description, services: d.services.slice(), listed: d.listed,
       schemaVersion: 1, updatedBy: me.id, updatedAt: serverTimestamp(), clientUpdatedAt: Date.now() };
-    setDoc(doc(db, "pc_directory", id), payload).catch(err => {
-      const t = err && err.code === "permission-denied" ? "Firestore refused this save. Check the security rules are the latest version." : "Could not save: " + ((err && err.message) || "unknown problem");
+    msg.className = d.listed ? "msg ok" : "msg err";
+    msg.textContent = d.listed ? "Saving…" : "Saving… NOT LISTED: tick \"List in directory\" if other businesses should find this facility.";
+    setDoc(doc(db, "pc_directory", id), payload).then(() => {
+      msg.className = d.listed ? "msg ok" : "msg err";
+      msg.textContent = d.listed ? "Saved and synced. This facility is listed in the directory." : "Saved and synced, but NOT LISTED. Tick \"List in directory\" and save again so other businesses can find it.";
+    }).catch(err => {
+      const t = err && err.code === "permission-denied" ? "Firestore refused this save. The latest security rules (v11) may not be published yet." : "Could not save: " + ((err && err.message) || "unknown problem");
       msg.className = "msg err"; msg.textContent = "NOT SAVED. " + t; alert(t);
     });
-    msg.className = "msg ok"; msg.textContent = d.listed ? "Saved on this phone. This facility will show in the directory once it syncs." : "Saved on this phone. This facility is not listed.";
+    // offline: the line above stays on "Saving…" until the phone reaches the server
+    if (navigator.onLine === false) { msg.className = "msg ok"; msg.textContent = "Saved on this phone only. It will reach the server when you are online."; }
   }
 
   // ---------- wiring ----------
@@ -404,7 +413,14 @@
     badge.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)";
     badge.className = "badge " + (s.metadata.fromCache ? "offline" : "online");
   }
-  function maybeBuildOwner() { if (role === "owner" && shopsReady && dirReady && !built) buildOwner(); }
+  function renderOwnerState() {
+    Object.keys(shopsById).forEach(id => {
+      const el = document.getElementById("state-" + id); if (!el) return;
+      const d = dirDocs.find(x => x.id === id);
+      el.innerHTML = d && d.listed === true ? '<span class="chip ok">Listed in the directory</span>' : '<span class="chip warn">Not listed yet</span>';
+    });
+  }
+  function maybeBuildOwner() { if (role === "owner" && shopsReady && dirReady && !built) buildOwner(); renderOwnerState(); }
 
   async function begin() {
     $("mainArea").classList.remove("hidden"); $("gateCard").classList.add("hidden");

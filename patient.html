@@ -180,6 +180,8 @@
 
 <body>
 
+<body>
+
 <header class="app-header">
   <h1>MediStock Cloud</h1>
   <p>Patient Care · Patient profile</p>
@@ -315,6 +317,7 @@
       <select id="sService"><option value="">Any service</option></select>
       <label>Business (type to search, or choose)</label>
       <input type="text" id="sBiz" list="bizList" placeholder="Business name" autocomplete="off">
+      <div class="hint2" id="sPickInfo"></div>
       <label>Facility</label>
       <select id="sTarget"><option value="">Choose a business first</option></select>
       <div id="sFacInfo" class="pt-meta" style="margin-top:6px;"></div>
@@ -398,7 +401,7 @@
   let pid = params.get("id");
   let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "", bizName = "";
   let patient = null, share = null, srcBusinessId = null, srcFacilityId = null;
-  let links = [], allergies = [], history = [], shopsById = {}, dirDocs = [], sharesByMe = [];
+  let links = [], allergies = [], history = [], shopsById = {}, dirDocs = [], sharesByMe = [], dirError = false;
   let showErrAllergies = false, showErrHistory = false, loggedView = false;
   const can = k => role === "owner" || perms[k] === true;
   const readOnly = () => mode === "share";
@@ -576,6 +579,11 @@
     const ft = filteredTargets();
     const bizNames = {}; ft.forEach(t => { bizNames[t.businessName] = true; });
     $("bizList").innerHTML = Object.keys(bizNames).sort((a, b) => a.localeCompare(b)).map(n => '<option value="' + esc(n) + '">').join("");
+    const others = {}; ft.forEach(t => { if (t.businessId !== businessId) others[t.businessId] = t.businessName; });
+    const nOthers = Object.keys(others).length;
+    $("sPickInfo").textContent = dirError ? "The Facility Directory could not be read, so other businesses cannot be shown. The owner must publish the latest security rules (v11)."
+      : nOthers ? nOthers + " other business" + (nOthers === 1 ? "" : "es") + " available: " + Object.keys(others).map(k => others[k]).join(", ")
+      : "No other business is available yet. Another business appears here only after its owner opens Facility Directory, ticks \"List in directory\" and has Patient Care switched on" + ($("sService").value ? " (and offers the service you chose)." : ".");
     renderFacilities();
   }
   function renderFacilities() {
@@ -684,7 +692,7 @@
       onSnapshot(query(collection(db, "pc_shares"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", pid), limit(50)), { includeMetadataChanges: true }, s => {
         sharesByMe = s.docs.map(d => ({ id: d.id, ...d.data() })); renderSharing();
       }, () => {});
-      onSnapshot(query(collection(db, "pc_directory"), limit(500)), s => { dirDocs = s.docs.map(d => ({ id: d.id, ...d.data() })); renderPicker(); }, () => {});
+      onSnapshot(query(collection(db, "pc_directory"), limit(500)), s => { dirDocs = s.docs.map(d => ({ id: d.id, ...d.data() })); dirError = false; renderPicker(); }, () => { dirError = true; renderPicker(); });
     }
   }
 
