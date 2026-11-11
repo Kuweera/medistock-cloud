@@ -182,6 +182,8 @@
 
 <body>
 
+<body>
+
 <header class="app-header">
   <h1>MediStock Cloud</h1>
   <p>Patient Care · Patient profile</p>
@@ -264,6 +266,26 @@
 
   <div id="tab-overview" class="card"></div>
 
+  <div class="card hidden" id="mergeCard">
+    <h2>Merge a duplicate record</h2>
+    <div class="hint2" style="margin-top:0;">Use this only when two records are the same person. Nothing is deleted: the record you do not keep is hidden and marked as merged, and its allergies and history show on the kept record. This cannot be undone from the app.</div>
+    <div id="mSuggest"></div>
+    <label>Find the other record</label>
+    <input type="search" id="mQ" placeholder="Name, phone or registration number" autocomplete="off">
+    <div id="mResults"></div>
+    <div id="mCompare" class="hidden"></div>
+    <div id="mConfirm" class="hidden">
+      <label>Which record do you keep?</label>
+      <select id="mKeep"></select>
+      <label>Reason (type or choose) *</label>
+      <input type="text" id="mReason" list="mergeReasonList" placeholder="e.g. Same person registered twice" autocomplete="off">
+      <label class="chk"><input type="checkbox" id="mSure"><span>I checked that these are the same person</span></label>
+      <button class="btn-primary" id="mDoBtn">Merge records</button>
+    </div>
+    <button class="btn-small btn-secondary" id="mCancel" style="width:100%; margin-top:8px;">Cancel</button>
+    <div class="msg" id="mMsg"></div>
+  </div>
+
   <div id="tab-history" class="hidden">
     <div class="card hidden" id="hAddCard">
       <h2>Add to medical history</h2>
@@ -339,11 +361,12 @@
   <datalist id="purposeList"><option value="Referral"><option value="Referral for X-ray"><option value="Referral for laboratory tests"><option value="Referral for CT scan"><option value="Follow-up care"><option value="Shared treatment"><option value="Second opinion"><option value="Patient moved"></datalist>
   <datalist id="byList"></datalist>
   <datalist id="bizList"></datalist>
+  <datalist id="mergeReasonList"><option value="Same person registered twice"><option value="Spelling mistake in the name"><option value="Registered at reception and at the clinic"><option value="Patient gave a different name the second time"></datalist>
 </div>
 
 <script src="pc-fields.js"></script>
 <script type="module">
-  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, getDocFromCache } = window.top.MC.api(window);
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, writeBatch, getDocFromCache } = window.top.MC.api(window);
 
   const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
   async function getDocServerFirst(ref) {
@@ -388,6 +411,45 @@
   function sortAllergies(list) {
     return list.slice().sort((a, b) => (SEV_ORDER[a.severity] - SEV_ORDER[b.severity]) || ((b.clientCreatedAt || 0) - (a.clientCreatedAt || 0)));
   }
+  function nameTokens(s) {
+    return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
+  }
+  function phoneKeyOf(s) { const d = String(s || "").replace(/\D/g, ""); return d.length > 9 ? d.slice(-9) : d; }
+  function lev1(a, b) {
+    if (a === b) return true;
+    if (Math.abs(a.length - b.length) > 1) return false;
+    let i = 0, j = 0, edits = 0;
+    while (i < a.length && j < b.length) {
+      if (a[i] === b[j]) { i++; j++; continue; }
+      if (++edits > 1) return false;
+      if (a.length > b.length) i++; else if (a.length < b.length) j++; else { i++; j++; }
+    }
+    return edits + (a.length - i) + (b.length - j) <= 1;
+  }
+  function tokensClose(a, b) { return a === b || (a.length >= 4 && b.length >= 4 && a[0] === b[0] && lev1(a, b)); }
+  function nameSim(ta, tb) {
+    if (!ta.length || !tb.length) return 0;
+    const used = new Set(); let hit = 0;
+    ta.forEach(x => { for (let i = 0; i < tb.length; i++) if (!used.has(i) && tokensClose(x, tb[i])) { used.add(i); hit++; break; } });
+    return hit / Math.max(ta.length, tb.length);
+  }
+  function inputOf(p) {
+    return { tokens: nameTokens(p.fullName), phoneKey: p.phoneKey || phoneKeyOf(p.phone), dob: p.dobPrecision === "exact" ? p.dob : null, dobApprox: p.dobApprox || null,
+      nokPhoneKey: phoneKeyOf(p.nextOfKin && p.nextOfKin.phone) };
+  }
+  function scoreCandidate(inp, p) {
+    const sim = nameSim(inp.tokens, nameTokens(p.fullName));
+    if (sim < 0.5) return null;
+    let s = 0; const why = [];
+    if (sim >= 0.99) { s += 40; why.push("same name"); } else if (sim >= 0.66) { s += 28; why.push("similar name"); } else { s += 12; why.push("partly similar name"); }
+    if (inp.phoneKey && inp.phoneKey.length >= 7 && inp.phoneKey === (p.phoneKey || phoneKeyOf(p.phone))) { s += 40; why.push("same phone"); }
+    if (inp.dob && p.dobPrecision === "exact" && p.dob === inp.dob) { s += 30; why.push("same date of birth"); }
+    else if (inp.dobApprox && p.dobApprox && inp.dobApprox.slice(0, 4) === p.dobApprox.slice(0, 4)) { s += 8; why.push("same birth year"); }
+    const pk = p.nextOfKin ? phoneKeyOf(p.nextOfKin.phone) : "";
+    if (inp.nokPhoneKey && inp.nokPhoneKey.length >= 7 && inp.nokPhoneKey === pk) { s += 12; why.push("same next of kin phone"); }
+    if (s < 40) return null;
+    return { patient: p, score: s, level: s >= 70 ? "strong" : "possible", why: why };
+  }
   function snapshotOf(p) {
     return { fullName: p.fullName || "", sex: p.sex || "unknown", dob: p.dob || null, dobApprox: p.dobApprox || null, dobPrecision: p.dobPrecision || "unknown",
       ageRecordedOn: p.ageRecordedOn || null, estimatedAge: p.estimatedAge || null, phone: p.phone || "", village: p.village || "", district: p.district || "",
@@ -403,8 +465,11 @@
   let patient = null, share = null, srcBusinessId = null, srcFacilityId = null;
   let links = [], allergies = [], history = [], shopsById = {}, dirDocs = [], sharesByMe = [], dirError = false;
   let showErrAllergies = false, showErrHistory = false, loggedView = false;
+  let facPatients = [], facLoaded = false, mergeOther = null, mergedFromIds = [], unsubA = null, unsubH = null;
+  const mergeParam = params.get("merge");
   const can = k => role === "owner" || perms[k] === true;
   const readOnly = () => mode === "share";
+  const locked = () => mode === "share" || (patient && patient.status === "merged");
 
   function showGate(msg) { $("gateMsg").innerHTML = msg; $("gateCard").classList.remove("hidden"); $("mainArea").classList.add("hidden"); }
   function stamp() { return { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now() }; }
@@ -433,7 +498,7 @@
     $("pLine").innerHTML = esc((p.sex === "female" ? "Female" : p.sex === "male" ? "Male" : p.sex === "other" ? "Other" : "Sex unknown")) + " · " + esc(ageText(p, new Date())) +
       (p.phone ? " · " + esc(p.phone) : "") + (!readOnly() && myL ? ' <span class="chip ok">' + esc(myL.localRegNo) + "</span>" : "");
     const mn = $("mergedNote");
-    if (!readOnly() && p.status === "merged") { mn.innerHTML = "This record was merged into another patient record and should no longer be used."; mn.classList.remove("hidden"); } else mn.classList.add("hidden");
+    if (!readOnly() && p.status === "merged") { mn.innerHTML = "This record was merged into another patient record and is read-only. Use the record that was kept."; mn.classList.remove("hidden"); } else mn.classList.add("hidden");
     const sn = $("sharedNote");
     if (readOnly() && share) {
       sn.innerHTML = "Shared with you by <b>" + esc(share.sourceFacilityName || "a facility") + "</b>" + (share.sourceBusinessName ? " (" + esc(share.sourceBusinessName) + ")" : "") +
@@ -462,7 +527,11 @@
       line("Next of kin", [nok.name, nok.relationship, nok.phone].filter(Boolean).join(" · ")) +
       (readOnly() ? "" : line("Emergency contact", [em.name, em.relationship, em.phone].filter(Boolean).join(" · "))) +
       line("Allergies recorded", String(act)) + line("History entries", String(hist)) +
-      '<div class="hint2">' + (readOnly() ? "These details were shared with you and cannot be changed here." : "Allergies and history are kept by the facility that recorded them. Use the Sharing tab to let another facility read this patient.") + "</div>";
+      '<div class="hint2">' + (readOnly() ? "These details were shared with you and cannot be changed here." : "Allergies and history are kept by the facility that recorded them. Use the Sharing tab to let another facility read this patient.") + "</div>" +
+      (!readOnly() && patient.status === "active" && can("patient.merge") ? '<button type="button" class="btn-small btn-secondary" id="openMergeBtn" style="width:100%; margin-top:10px;">Merge a duplicate record</button>' : "") +
+      (!readOnly() && patient.status === "merged" && patient.mergedInto ? '<button type="button" class="btn-small btn-primary" id="openKeptBtn" style="width:100%; margin-top:10px;">Open the record that was kept</button>' : "");
+    const mb = $("openMergeBtn"); if (mb) mb.onclick = () => openMerge(null);
+    const kb = $("openKeptBtn"); if (kb) kb.onclick = () => window.mcGo("patient.html?id=" + encodeURIComponent(patient.mergedInto));
   }
 
   // ---------- allergies ----------
@@ -648,12 +717,76 @@
     $("byList").innerHTML = names.map(n => '<option value="' + esc(n) + '">').join("");
   }
 
+
+  // ---------- merging two records of the same person (nothing is deleted) ----------
+  function loadFacPatients(cb) {
+    if (facLoaded) { cb(); return; }
+    onSnapshot(query(collection(db, "pc_patients"), where("businessId", "==", businessId), where("registeredFacilityId", "==", facilityId), limit(3000)), s => {
+      facPatients = s.docs.map(d => ({ id: d.id, ...d.data() })); const first = !facLoaded; facLoaded = true; if (first) cb(); else renderMergeLists();
+    }, () => { facLoaded = true; cb(); });
+  }
+  function pRow(p) { return esc(p.fullName) + " · " + esc(p.sex || "") + " · " + esc(ageText(p, new Date())) + (p.phone ? " · " + esc(p.phone) : "") + (p.village ? " · " + esc(p.village) : ""); }
+  function renderMergeLists() {
+    if ($("mergeCard").classList.contains("hidden")) return;
+    const others = facPatients.filter(x => x.id !== pid && x.status !== "merged");
+    const sug = others.map(x => scoreCandidate(inputOf(patient), x)).filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 5);
+    $("mSuggest").innerHTML = sug.length ? '<div class="pt-meta" style="margin-top:6px;"><b>Likely matches</b></div>' + sug.map(c => '<div class="pt" data-mpick="' + esc(c.patient.id) + '"><div class="pt-name">' + pRow(c.patient) + ' <span class="chip ' + (c.level === "strong" ? "bad" : "warn") + '">' + (c.level === "strong" ? "Strong" : "Possible") + '</span></div><div class="pt-meta">Why: ' + esc(c.why.join(", ")) + "</div></div>").join("") : '<div class="pt-meta" style="margin-top:6px;">No likely match found automatically. Search for the other record below.</div>';
+    const q = $("mQ").value.trim().toLowerCase();
+    let res = [];
+    if (q) {
+      const qt = nameTokens(q), digits = q.replace(/\D/g, "");
+      res = others.filter(x => /^[\d\s+()\-]+$/.test(q) ? digits.length >= 3 && (x.phoneKey || "").indexOf(digits.replace(/^(256|0)/, "")) >= 0 : (qt.length && qt.every(t => nameTokens(x.fullName).some(y => y.indexOf(t) === 0)))).slice(0, 8);
+    }
+    $("mResults").innerHTML = res.map(x => '<div class="pt" data-mpick="' + esc(x.id) + '"><div class="pt-name">' + pRow(x) + "</div></div>").join("");
+  }
+  function openMerge(preId) {
+    $("mMsg").textContent = ""; mergeOther = null; $("mCompare").classList.add("hidden"); $("mConfirm").classList.add("hidden"); $("mQ").value = ""; $("mSure").checked = false; $("mReason").value = "";
+    $("mergeCard").classList.remove("hidden");
+    loadFacPatients(() => { renderMergeLists(); if (preId) chooseOther(preId); });
+    $("mergeCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function chooseOther(id) {
+    const o = facPatients.find(x => x.id === id); if (!o) return;
+    mergeOther = o;
+    const row = (k, a, b) => (a || b) ? '<tr><td class="pt-meta">' + esc(k) + "</td><td>" + esc(a || "—") + "</td><td>" + esc(b || "—") + "</td></tr>" : "";
+    const A = patient, B = o, nA = A.nextOfKin || {}, nB = B.nextOfKin || {};
+    $("mCompare").innerHTML = '<table style="width:100%; font-size:13px; border-collapse:collapse;"><tr><th></th><th style="text-align:left;">This record</th><th style="text-align:left;">Other record</th></tr>' +
+      row("Name", A.fullName, B.fullName) + row("Sex", A.sex, B.sex) + row("Age", ageText(A, new Date()), ageText(B, new Date())) + row("Date of birth", A.dobPrecision === "exact" ? PCF.toTyped(A.dob) : "", B.dobPrecision === "exact" ? PCF.toTyped(B.dob) : "") +
+      row("Phone", A.phone, B.phone) + row("Village", A.village, B.village) + row("District", A.district, B.district) + row("Next of kin", [nA.name, nA.phone].filter(Boolean).join(" · "), [nB.name, nB.phone].filter(Boolean).join(" · ")) + "</table>";
+    $("mCompare").classList.remove("hidden");
+    $("mKeep").innerHTML = '<option value="this">Keep THIS record (' + esc(A.fullName) + ')</option><option value="other">Keep the OTHER record (' + esc(B.fullName) + ")</option>";
+    $("mConfirm").classList.remove("hidden");
+    $("mConfirm").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+  function setMMsg(t, err) { const m = $("mMsg"); m.textContent = t || ""; m.className = "msg " + (err ? "err" : "ok"); }
+  function doMerge() {
+    if (!mergeOther) { setMMsg("Choose the other record first.", true); return; }
+    const reason = $("mReason").value.trim();
+    if (reason.length < 5) { setMMsg("Give a reason (at least a few words).", true); return; }
+    if (!$("mSure").checked) { setMMsg("Tick the box to confirm these are the same person.", true); return; }
+    const keepThis = $("mKeep").value === "this";
+    const survivor = keepThis ? patient : mergeOther, gone = keepThis ? mergeOther : patient;
+    const batch = writeBatch(db);
+    batch.set(doc(db, "pc_patient_merges", gone.id), Object.assign(stamp(), { mergedId: gone.id, survivorId: survivor.id, reason: reason, mergedBy: me.id,
+      beforeSnapshot: { survivor: Object.assign({ id: survivor.id }, snapshotOf(survivor)), merged: Object.assign({ id: gone.id }, snapshotOf(gone)) } }));
+    batch.update(doc(db, "pc_patients", gone.id), { status: "merged", mergedInto: survivor.id, updatedAt: serverTimestamp(), updatedBy: me.id });
+    batch.set(doc(collection(db, "pc_audit_logs")), Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, action: "patient.merge", recordPath: "pc_patients/" + gone.id,
+      patientId: survivor.id, mergedId: gone.id, survivorId: survivor.id, reason: reason, at: serverTimestamp() }));
+    batch.commit().catch(saveFailed);
+    ok("Merged on this phone: " + gone.fullName + " was merged into " + survivor.fullName + ". It will sync when you are online.");
+    $("mergeCard").classList.add("hidden"); mergeOther = null;
+    if (gone.id === pid) window.mcGo("patient.html?id=" + encodeURIComponent(survivor.id));
+  }
+
   // ---------- wiring ----------
   function renderAll() { if (!patient) return; renderHeader(); renderBanner(); renderOverview(); renderAllergies(); renderHistory(); }
   document.querySelectorAll("#tabs .pill-btn").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll("#tabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b));
     ["overview", "history", "allergies", "sharing"].forEach(t => { $("tab-" + t).classList.toggle("hidden", t !== b.dataset.t); });
   }));
+  $("mQ").addEventListener("input", renderMergeLists); $("mCancel").onclick = () => { $("mergeCard").classList.add("hidden"); mergeOther = null; };
+  $("mDoBtn").onclick = doMerge;
+  $("mergeCard").addEventListener("click", e => { const r = e.target.closest("[data-mpick]"); if (r) chooseOther(r.dataset.mpick); });
   $("aAddBtn").onclick = addAllergy; $("hAddBtn").onclick = addHistory; $("sGrantBtn").onclick = grantShare;
   $("sBiz").addEventListener("input", renderFacilities); $("sBiz").addEventListener("change", renderFacilities);
   $("sService").addEventListener("change", renderPicker); $("sTarget").addEventListener("change", renderFacilities);
@@ -676,15 +809,26 @@
     badge.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)";
     badge.className = "badge " + (s.metadata.fromCache ? "offline" : "online");
   }
-  function startLists() {
-    const base = [where("businessId", "==", srcBusinessId), where("patientId", "==", pid), where("facilityId", "==", srcFacilityId), limit(300)];
-    onSnapshot(query(collection(db, "pc_allergies"), ...base), { includeMetadataChanges: true }, s => {
+  function subscribeClinical() {
+    if (unsubA) { try { unsubA(); } catch (e) {} } if (unsubH) { try { unsubH(); } catch (e) {} }
+    const ids = [pid].concat(mergedFromIds).slice(0, 30);
+    const pidWhere = ids.length > 1 ? where("patientId", "in", ids) : where("patientId", "==", pid);
+    const base = [where("businessId", "==", srcBusinessId), pidWhere, where("facilityId", "==", srcFacilityId), limit(300)];
+    unsubA = onSnapshot(query(collection(db, "pc_allergies"), ...base), { includeMetadataChanges: true }, s => {
       allergies = s.docs.map(d => ({ id: d.id, ...d.data() })); mark(s); renderBanner(); renderAllergies(); renderOverview();
     }, err => { $("aList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view allergies." : "Could not load allergies.") + "</div>"; });
-    onSnapshot(query(collection(db, "pc_medical_history"), ...base), { includeMetadataChanges: true }, s => {
+    unsubH = onSnapshot(query(collection(db, "pc_medical_history"), ...base), { includeMetadataChanges: true }, s => {
       history = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHistory(); renderOverview();
     }, err => { $("hList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view medical history." : "Could not load medical history.") + "</div>"; });
+  }
+  function startLists() {
+    subscribeClinical();
     if (readOnly()) return;
+    // duplicates that were merged into this record: their allergies and history show here too
+    onSnapshot(query(collection(db, "pc_patients"), where("businessId", "==", businessId), where("registeredFacilityId", "==", facilityId), where("mergedInto", "==", pid), limit(50)), s => {
+      const ids = s.docs.map(d => d.id).sort();
+      if (ids.join(",") !== mergedFromIds.slice().sort().join(",")) { mergedFromIds = ids; subscribeClinical(); }
+    }, () => {});
     onSnapshot(query(collection(db, "pc_patient_facility_links"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", pid), limit(20)), s => {
       links = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHeader(); renderOverview();
     }, () => {});
@@ -724,10 +868,12 @@
     $("shopIndicator").textContent = "Patient Care · " + (facility ? facility.name : "");
     $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
     const ro = readOnly();
-    $("aAddCard").classList.toggle("hidden", ro || !can("allergy.record"));
-    $("hAddCard").classList.toggle("hidden", ro || !can("history.record"));
-    $("sharingTab").classList.toggle("hidden", ro);
+    const lk = locked();
+    $("aAddCard").classList.toggle("hidden", lk || !can("allergy.record"));
+    $("hAddCard").classList.toggle("hidden", lk || !can("history.record"));
+    $("sharingTab").classList.toggle("hidden", lk);
     fillPeopleList(); renderAll(); renderSharing(); startLists();
+    if (mergeParam && !ro && can("patient.merge") && patient.status === "active") openMerge(mergeParam);
     if (!loggedView) {
       loggedView = true;
       // access log: who opened this record and why (the rules cannot force this; the app always tries)
