@@ -10,8 +10,11 @@
 | 1a | (e) Duplicate detection | Done inside (c) at registration; post-sync duplicate scan not built |
 | 1a | (f) Facility links + consent | Facility links in (c). **Consent sharing built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (g) Merge | **Built and tested on a mock database; awaiting upload and phone test** |
-| 1a | (h) Regression | Not started |
+| 1a | (h) Regression | **Automated and file-level checks done (see REGRESSION_REPORT.md). Owner phone checklist and Rules Playground checks pending** |
 | 1b | Cross-business sharing | **Built as part of (f2): directory + shares between facilities and businesses (see spec section 17). Cross-business duplicate matching not built** |
+
+## Step (h) files
+Changed: `patients.html` (the duplicate scan button is now shown only to users who may merge). New: `docs/REGRESSION_REPORT.md`.
 
 ## Step (g) files
 Changed: `patients.html` (Find possible duplicate patients), `patient.html` (merge tool, merged-record view). No new security rules needed (v11 already has the merge rules). Docs updated.
