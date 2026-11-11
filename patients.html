@@ -483,6 +483,7 @@
   function showMain() {
     $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
     $("showFormBtn").classList.toggle("hidden", !can("patient.register"));
+    $("dupScanBtn").classList.toggle("hidden", !can("patient.merge")); // the scan leads to merging, so only people who may merge see it
     renderList();
   }
 
