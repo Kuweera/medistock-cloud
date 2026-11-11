@@ -171,3 +171,10 @@ This replaces the "identity visible to the whole business" assumption (section 2
 
 **Owner:** the owner reads all facilities' patients under the rules; the Patients list and profiles show the active facility. The owner of a receiving business can open shares addressed to any of that business's facilities.
 **Known limits:** operators see only their own facility, so within a business an operator can choose a sibling facility only if it is listed in the directory. The directory is readable by every signed-in user. No expiry on shares. Cross-business duplicate matching (hash lookup) not built.
+
+## 18. Step (g) decisions – duplicate scan and merging (built 2026-11-11)
+- **Find possible duplicate patients** (Patients page): compares patients of this facility that share a name word, using the same scoring as the registration warning (similar name, same phone, same date of birth or birth year, same next-of-kin phone). Shows up to 50 pairs, strongest first. A different name with the same phone (for example a family phone) is never flagged.
+- **Merge** (patient profile > Overview > "Merge a duplicate record", needs `patient.merge`; the owner always has it): shows likely matches and a search, a side-by-side comparison, a choice of which record to keep, a reason, and a tick that they are the same person.
+- **What a merge does (one atomic save):** writes a merge record (`pc_patient_merges/{mergedPatientId}` with a before-snapshot of both records), marks the other record `status: merged` with `mergedInto`, and writes an audit entry. **Nothing is deleted.** Original ids stay.
+- **After a merge:** the merged record disappears from the Patients list, opens read-only with a button to the kept record, and its allergies and medical history now also show on the kept record (they keep their original patient id). New entries go to the kept record. Existing shares of the merged record are not moved.
+- **Limits:** merging works inside one facility only (patients are facility-only). There is no un-merge in the app. Merging across facilities or businesses is not built.

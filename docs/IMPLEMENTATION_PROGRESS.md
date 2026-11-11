@@ -9,9 +9,18 @@
 | 1a | (d) Profile, history, allergies | **Built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (e) Duplicate detection | Done inside (c) at registration; post-sync duplicate scan not built |
 | 1a | (f) Facility links + consent | Facility links in (c). **Consent sharing built and tested on a mock database; awaiting upload and phone test** |
-| 1a | (g) Merge | Not started |
+| 1a | (g) Merge | **Built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (h) Regression | Not started |
 | 1b | Cross-business sharing | **Built as part of (f2): directory + shares between facilities and businesses (see spec section 17). Cross-business duplicate matching not built** |
+
+## Step (g) files
+Changed: `patients.html` (Find possible duplicate patients), `patient.html` (merge tool, merged-record view). No new security rules needed (v11 already has the merge rules). Docs updated.
+
+## Phone test for step (g)
+1. Register two test patients that are really the same person (same name, same phone). Then Patients > Find possible duplicate patients: the pair appears.
+2. Tap Compare / merge. As owner: choose which to keep, type a reason, tick the box, Merge records.
+3. The merged patient disappears from the list. Open the kept patient: nothing was lost; allergies of the merged one show here.
+4. Log in as an operator without merge permission: the profile shows no merge button.
 
 ## Step (f2) files (redesign after owner feedback)
 New: `directory.html`, firestore.rules v11. Changed: `patients.html`, `patient.html`, `nav.js` (menu item Facility Directory), `sw.js` (mc-v20). Fixed: the menu (hamburger) button did not work on Patient Care pages. Fixed: other facilities could list all patients of the business.
