@@ -11,7 +11,18 @@
 | 1a | (f) Facility links + consent | Facility links in (c). **Consent sharing built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (g) Merge | **Built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (h) Regression | **Automated and file-level checks done (see REGRESSION_REPORT.md). Owner phone checklist and Rules Playground checks pending** |
+| 2 | Encounters, triage, consultation | **Built and tested on a mock database; awaiting rules v12, upload and phone test** |
 | 1b | Cross-business sharing | **Built as part of (f2): directory + shares between facilities and businesses (see spec section 17). Cross-business duplicate matching not built** |
+
+## Phase 2 files
+New: `encounters.html` (queue, start visit, warning ranges), `encounter.html` (triage, consultation, notes, closing). Changed: `patient.html` (Visits tab), `users.html` (six new permissions), `nav.js` (menu item Visits & Queue), `sw.js` (mc-v21). Rules: v12 (new Phase 2 rules added at the end). Specs: ENCOUNTER_TRIAGE_SPEC.md, CLINICAL_CONSULTATION_SPEC.md.
+
+## Phone test for Phase 2
+1. Users: tick the new permissions for a test operator (Clinician quick-fill).
+2. Visits & Queue: start a visit for a test patient; start an Emergency visit and check it goes to the top.
+3. Open a visit: save triage with a temperature and blood pressure. Add a complaint and a medicine taken before.
+4. Write a note, save as draft, edit it, sign it. Try to change the signed note: you can only amend it.
+5. Close the visit. Airplane mode: record triage, go online, check it synced.
 
 ## Step (h) files
 Changed: `patients.html` (the duplicate scan button is now shown only to users who may merge). New: `docs/REGRESSION_REPORT.md`.

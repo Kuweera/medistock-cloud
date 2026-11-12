@@ -83,3 +83,13 @@ No new rules were needed. Not yet confirmed against the real security rules.
 **`pc_patients`**: new optional field `sharedFrom` (the share it was prefilled from).
 **Rule changes in v11:** `pc_patients` and `pc_patient_facility_links` readable only by the owning facility (or owner); allergies/history also readable by a facility with a live share; `pc_shares` and `pc_directory` rules added. Everything above the Patient Care section is unchanged from v9.
 **Not tested against Firebase.** Syntax and logic reviewed by reading; use the Rules Playground after publishing.
+
+## Phase 2 – collections (rules v12)
+All have `businessId, facilityId, schemaVersion, createdBy, createdAt, clientCreatedAt`. Child records also `encounterId, patientId, status (active/entered_in_error), errorReason, recordedBy, recordedByName, recordedAt`.
+- `pc_encounters/{id}`: `encId (= id), patientId, patientName/Sex/Dob/DobApprox/DobPrecision (copy for the queue), encounterNo, type, reason, status (open/closed/cancelled), stage (registered/triaged/in_consultation), triageCategory, arrivalAt, arrivalDay, openedBy, openedByName, closedAt, closedBy, closeNote, cancelReason`.
+- `pc_triage`: `temperatureC, bpSys, bpDia, pulse, respRate, spo2, weightKg, heightCm, bmi, glucose, glucoseUnit, painScore, consciousness, muacCm, category, notes`.
+- `pc_complaints`: `name, onset, durationValue, durationUnit, severity, progression, associated, aggravating, relieving, previousEpisodes, notes`.
+- `pc_prior_medications`: `medicineName, strength, dose, frequency, route, duration, lastDose, course, response, reportedBy`.
+- `pc_clinical_notes`: `noteType (hpi/examination/assessment/progress/other/amendment), content, structured, authorId, authorName, status (draft/signed/entered_in_error), signedBy, signedByName, signedAt, amends, errorReason`.
+- `pc_obs_rules/{facilityId}`: `ranges{field:{min,max}}, source, effectiveDate, version, approvedBy, approvedByName`.
+Rules v12 are only added after the existing Patient Care rules. Not yet confirmed against real Firebase.
