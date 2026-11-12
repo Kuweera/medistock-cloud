@@ -184,6 +184,8 @@
 
 <body>
 
+<body>
+
 <header class="app-header">
   <h1>MediStock Cloud</h1>
   <p>Patient Care · Patient profile</p>
@@ -261,6 +263,7 @@
     <button type="button" class="pill-btn selected" data-t="overview">Overview</button>
     <button type="button" class="pill-btn" data-t="history">Medical history</button>
     <button type="button" class="pill-btn" data-t="allergies">Allergies</button>
+    <button type="button" class="pill-btn" data-t="encounters" id="encTab">Visits</button>
     <button type="button" class="pill-btn" data-t="sharing" id="sharingTab">Sharing</button>
   </div>
 
@@ -328,6 +331,14 @@
       <div class="msg" id="aMsg"></div>
     </div>
     <div class="card"><h2>Allergies</h2><div id="aList"></div></div>
+  </div>
+
+  <div id="tab-encounters" class="hidden">
+    <div class="card">
+      <h2>Visits (encounters)</h2>
+      <div id="encList"></div>
+      <button class="btn-primary hidden" id="newVisitBtn">Start a new visit for this patient</button>
+    </div>
   </div>
 
   <div id="tab-sharing" class="hidden">
@@ -463,7 +474,7 @@
   let pid = params.get("id");
   let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "", bizName = "";
   let patient = null, share = null, srcBusinessId = null, srcFacilityId = null;
-  let links = [], allergies = [], history = [], shopsById = {}, dirDocs = [], sharesByMe = [], dirError = false;
+  let links = [], allergies = [], history = [], shopsById = {}, dirDocs = [], sharesByMe = [], dirError = false, patientEncs = [];
   let showErrAllergies = false, showErrHistory = false, loggedView = false;
   let facPatients = [], facLoaded = false, mergeOther = null, mergedFromIds = [], unsubA = null, unsubH = null;
   const mergeParam = params.get("merge");
@@ -616,6 +627,18 @@
     if (reason.length < 3) { if (reason) alert("Please give a short reason."); return; }
     updateDoc(doc(db, "pc_medical_history", id), { status: "entered_in_error", errorReason: reason, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
     logAudit("history.error", "pc_medical_history/" + id, { reason: reason });
+  }
+
+  // ---------- visits (encounters) ----------
+  const E_TYPE = { outpatient: "Outpatient", emergency: "Emergency", followup: "Follow-up", procedure: "Procedure", pharmacy: "Pharmacy" };
+  function renderEncounters() {
+    const list = patientEncs.slice().sort((a, b) => (b.arrivalAt || 0) - (a.arrivalAt || 0));
+    $("encList").innerHTML = list.length ? list.map(e => '<div class="pt" data-enc="' + esc(e.id) + '"><div class="pt-name">' + esc(e.encounterNo) + ' <span class="chip ' + (e.type === "emergency" ? "bad" : "") + '">' + esc(E_TYPE[e.type] || e.type) + '</span> <span class="chip ' + (e.status === "open" ? "ok" : "") + '">' + (e.status === "open" ? "Open" : e.status === "closed" ? "Closed" : "Cancelled") + '</span></div><div class="pt-meta">' +
+      esc(PCF.toTyped(e.arrivalDay || "")) + (e.reason ? " · " + esc(e.reason) : "") + "</div></div>").join("") : '<div class="empty">No visits recorded yet.</div>';
+    const openOne = list.find(e => e.status === "open");
+    $("newVisitBtn").classList.toggle("hidden", !(can("encounter.open") && patient && patient.status === "active"));
+    $("newVisitBtn").textContent = openOne ? "Open the current visit (" + openOne.encounterNo + ")" : "Start a new visit for this patient";
+    $("newVisitBtn").onclick = () => window.mcGo(openOne ? "encounter.html?id=" + encodeURIComponent(openOne.id) : "encounters.html?newFor=" + encodeURIComponent(pid));
   }
 
   // ---------- sharing this patient with another facility (same business or another business) ----------
@@ -782,11 +805,12 @@
   function renderAll() { if (!patient) return; renderHeader(); renderBanner(); renderOverview(); renderAllergies(); renderHistory(); }
   document.querySelectorAll("#tabs .pill-btn").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll("#tabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b));
-    ["overview", "history", "allergies", "sharing"].forEach(t => { $("tab-" + t).classList.toggle("hidden", t !== b.dataset.t); });
+    ["overview", "history", "allergies", "encounters", "sharing"].forEach(t => { $("tab-" + t).classList.toggle("hidden", t !== b.dataset.t); });
   }));
   $("mQ").addEventListener("input", renderMergeLists); $("mCancel").onclick = () => { $("mergeCard").classList.add("hidden"); mergeOther = null; };
   $("mDoBtn").onclick = doMerge;
   $("mergeCard").addEventListener("click", e => { const r = e.target.closest("[data-mpick]"); if (r) chooseOther(r.dataset.mpick); });
+  $("encList").addEventListener("click", e => { const r = e.target.closest("[data-enc]"); if (r) window.mcGo("encounter.html?id=" + encodeURIComponent(r.dataset.enc)); });
   $("aAddBtn").onclick = addAllergy; $("hAddBtn").onclick = addHistory; $("sGrantBtn").onclick = grantShare;
   $("sBiz").addEventListener("input", renderFacilities); $("sBiz").addEventListener("change", renderFacilities);
   $("sService").addEventListener("change", renderPicker); $("sTarget").addEventListener("change", renderFacilities);
@@ -828,6 +852,9 @@
     onSnapshot(query(collection(db, "pc_patients"), where("businessId", "==", businessId), where("registeredFacilityId", "==", facilityId), where("mergedInto", "==", pid), limit(50)), s => {
       const ids = s.docs.map(d => d.id).sort();
       if (ids.join(",") !== mergedFromIds.slice().sort().join(",")) { mergedFromIds = ids; subscribeClinical(); }
+    }, () => {});
+    onSnapshot(query(collection(db, "pc_encounters"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", pid), limit(100)), s => {
+      patientEncs = s.docs.map(d => ({ id: d.id, ...d.data() })); renderEncounters();
     }, () => {});
     onSnapshot(query(collection(db, "pc_patient_facility_links"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", pid), limit(20)), s => {
       links = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHeader(); renderOverview();
@@ -872,6 +899,7 @@
     $("aAddCard").classList.toggle("hidden", lk || !can("allergy.record"));
     $("hAddCard").classList.toggle("hidden", lk || !can("history.record"));
     $("sharingTab").classList.toggle("hidden", lk);
+    $("encTab").classList.toggle("hidden", ro);
     fillPeopleList(); renderAll(); renderSharing(); startLists();
     if (mergeParam && !ro && can("patient.merge") && patient.status === "active") openMerge(mergeParam);
     if (!loggedView) {

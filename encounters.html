@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>if(window.top===window){location.replace("app.html#"+location.pathname.split("/").pop()+location.search);}</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2abfa0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MediStock">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<title>Visits — MediStock Cloud</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  /* ===== Users page ===== */
+  .hidden{display:none !important;}
+  .btn-small{padding:8px 12px; font-size:13px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent);}
+  .btn-danger-outline{background:transparent; color:var(--danger); border:1px solid var(--danger);}
+  .op{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;}
+  .op:last-child{margin-bottom:0;}
+  .op-name{font-weight:700; font-size:14.5px; display:flex; justify-content:space-between; gap:8px; align-items:center;}
+  .op-meta{font-size:12px; color:var(--muted); margin-top:3px; line-height:1.5;}
+  .tag{font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid var(--border);}
+  .tag.on{color:var(--accent2); border-color:var(--accent2);} .tag.off{color:var(--danger); border-color:var(--danger);}
+  .op-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .cred{background:var(--bg); border:1px dashed var(--accent); border-radius:10px; padding:12px; margin:10px 0; font-size:14px; line-height:1.7;}
+  .cred b{font-size:16px; letter-spacing:.5px;}
+  .msg{font-size:13px; margin-top:8px;} .msg.err{color:var(--danger);} .msg.ok{color:var(--accent2);}
+  .pill-row{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;}
+  .pill-btn{background:var(--card); color:var(--text); border:1px solid var(--border); padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:600;}
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .day-h{font-size:11.5px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.4px; margin:12px 0 4px;}
+  .ev{display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ev:last-child{border-bottom:none;}
+  .ev-main{min-width:0;} .ev-text{overflow-wrap:anywhere;}
+  .ev-meta{font-size:11.5px; color:var(--muted);}
+  .ev-amt{font-weight:700; white-space:nowrap;} .ev-amt.out{color:var(--danger);}
+  .hint2{font-size:11.5px; color:var(--muted); line-height:1.5; margin-top:6px;}
+
+  /* ===== Patient Care ===== */
+  .sub{font-size:13px; margin:16px 0 2px; color:var(--accent); font-weight:700;}
+  .chk{display:flex; align-items:center; gap:10px; font-size:13.5px; color:var(--text); margin:8px 0;}
+  .chk input{width:22px; height:22px; flex:0 0 22px; padding:0; margin:0;}
+  .pt{padding:11px 0; border-bottom:1px solid var(--border); cursor:pointer;}
+  .pt:last-child{border-bottom:none;}
+  .pt-name{font-size:14.5px; font-weight:700; color:var(--text);}
+  .pt-meta{font-size:12.5px; color:var(--muted); margin-top:2px; line-height:1.5;}
+  .chip{display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:4px; vertical-align:middle; background:var(--border); color:var(--muted);}
+  .chip.ok{color:var(--accent2);} .chip.warn{color:var(--warn);} .chip.bad{color:var(--danger);}
+  .cand{border:1px solid var(--border); border-radius:10px; padding:10px; margin:8px 0;}
+  .cand.strong{border-color:var(--danger);}
+  .cand-head{font-size:14px; font-weight:700; color:var(--danger); margin-top:14px;}
+  .op-actions{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .breakdown-line .v{text-align:right; max-width:62%;}
+  textarea{width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px; font-family:inherit;}
+  textarea:focus{outline:none; border-color:var(--accent);}
+  .back{display:inline-block; font-size:13px; color:var(--accent); margin:0 0 10px; text-decoration:none; font-weight:600;}
+  .alert-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--danger); color:var(--danger); font-size:13px; line-height:1.5; font-weight:600;}
+  .entry{padding:10px 0; border-bottom:1px solid var(--border);} .entry:last-child{border-bottom:none;}
+  .entry.struck .pt-name{text-decoration:line-through; color:var(--muted); font-weight:500;}
+  .pill-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}
+  /* ===== typed or picked dates ===== */
+  .dateField{position:relative; display:flex; gap:8px; align-items:center;}
+  .dateField input[type="text"]{flex:1; min-width:0;}
+  .cal-btn{flex:0 0 46px; height:40px; background:var(--card); border:1px solid var(--border); border-radius:8px; font-size:18px; padding:0;}
+  .cal-native{position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0; padding:0;}
+  .info-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--accent); color:var(--text); font-size:13px; line-height:1.5;}
+  .perm-warn{font-size:12px; color:var(--warn); margin-bottom:8px; line-height:1.5;}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Patient Care · Visits and queue</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="mcGo('dashboard.html')">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+<div class="card hidden" id="gateCard"><div id="gateMsg" class="empty"></div></div>
+
+<div id="mainArea" class="hidden">
+  <button class="btn-primary hidden" id="showNewBtn" style="margin-bottom:14px;">Start a new visit (encounter)</button>
+
+  <div class="card hidden" id="newCard">
+    <h2>Start a new visit</h2>
+    <label>Patient *</label>
+    <input type="search" id="nQ" placeholder="Search name, phone or registration number" autocomplete="off">
+    <div id="nResults"></div>
+    <div id="nPicked" class="info-box hidden"></div>
+    <label>Type of visit</label>
+    <select id="nType">
+      <option value="outpatient">Outpatient consultation</option>
+      <option value="emergency">Emergency</option>
+      <option value="followup">Follow-up visit</option>
+      <option value="procedure">Procedure</option>
+      <option value="pharmacy">Pharmacy consultation</option>
+    </select>
+    <label>Reason for visit (type or choose)</label>
+    <input type="text" id="nReason" list="reasonList" placeholder="e.g. Fever" autocomplete="off">
+    <button class="btn-primary" id="nStartBtn">Start visit</button>
+    <button class="btn-small btn-secondary" id="nCancelBtn" style="width:100%; margin-top:8px;">Cancel</button>
+    <div class="hint2">Emergency visits are never held up by payment, registration details or internet.</div>
+    <div class="msg" id="nMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>Patient queue</h2>
+    <div class="pill-row" id="qTabs">
+      <button type="button" class="pill-btn selected" data-f="active">Waiting / active</button>
+      <button type="button" class="pill-btn" data-f="closed">Closed today</button>
+      <button type="button" class="pill-btn" data-f="all">All today</button>
+    </div>
+    <div class="hint2" id="qInfo"></div>
+    <div id="qList"></div>
+  </div>
+
+  <div class="card hidden" id="ruleCard">
+    <h2>Warning ranges for vital signs</h2>
+    <div class="hint2" style="margin-top:0;">Nothing is built in. Your clinician sets the ranges and says where they come from (for example a national guideline and its date). Values outside a range are only highlighted as a warning; they are never a diagnosis.</div>
+    <div id="ruleFields"></div>
+    <label>Source of these ranges *</label>
+    <input type="text" id="ruleSource" placeholder="e.g. Uganda Clinical Guidelines 2023" autocomplete="off">
+    <label>Effective from</label>
+    <div class="dateField"><input type="text" id="ruleDate"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div>
+    <button class="btn-primary" id="ruleSaveBtn">Save warning ranges</button>
+    <div class="msg" id="ruleMsg"></div>
+  </div>
+  <button class="btn-small btn-secondary hidden" id="ruleToggleBtn" style="width:100%; margin-bottom:14px;">Set warning ranges for vital signs</button>
+
+  <div class="msg ok" id="doneMsg"></div>
+  <datalist id="reasonList"><option value="Fever"><option value="Cough"><option value="Headache"><option value="Abdominal pain"><option value="Diarrhoea and vomiting"><option value="Injury"><option value="Skin problem"><option value="Follow-up visit"><option value="Antenatal visit"><option value="Child immunisation"><option value="Medicine review"><option value="Laboratory test"><option value="Dressing"></datalist>
+</div>
+
+<script src="pc-fields.js"></script>
+<script type="module">
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, collection, onSnapshot, serverTimestamp, query, where, limit, getDocFromCache } = window.top.MC.api(window);
+
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDocServerFirst(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDoc(ref) {
+    try { const c = await getDocFromCache(ref); if (c.exists()) return c; } catch (e) {}
+    return getDocServerFirst(ref);
+  }
+
+  const app = initializeApp({});
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  /*PURE-START*/
+  function isoDate(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+  function nameTokens(s) { return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean); }
+  function ageText(p, now) {
+    let base = null;
+    if (p.dobPrecision === "exact" && p.dob) base = new Date(p.dob + "T00:00:00");
+    else if (p.dobPrecision === "estimated" && p.dobApprox) base = new Date(p.dobApprox + "T00:00:00");
+    if (!base || isNaN(base.getTime())) return "Age unknown";
+    const days = Math.max(0, Math.floor((now.getTime() - base.getTime()) / 864e5));
+    let months = (now.getFullYear() - base.getFullYear()) * 12 + (now.getMonth() - base.getMonth());
+    if (now.getDate() < base.getDate()) months--;
+    if (months < 0) months = 0;
+    const pre = p.dobPrecision === "estimated" ? "~" : "";
+    if (days < 31) return pre + days + (days === 1 ? " day" : " days");
+    if (months < 24) return pre + months + (months === 1 ? " month" : " months");
+    return pre + Math.floor(months / 12) + " yrs";
+  }
+  function matchesQuery(p, regs, q) {
+    const raw = String(q || "").trim(); if (!raw) return true;
+    const ql = raw.toLowerCase();
+    if (regs.some(r => r.toLowerCase().indexOf(ql) >= 0)) return true;
+    if (/^[\d\s+()\-]+$/.test(raw)) {
+      let d = raw.replace(/\D/g, "");
+      if (d.indexOf("256") === 0) d = d.slice(3); else if (d.charAt(0) === "0") d = d.slice(1);
+      return d.length >= 3 && !!p.phoneKey && p.phoneKey.indexOf(d.length > 9 ? d.slice(-9) : d) >= 0;
+    }
+    const qt = nameTokens(raw), pt = nameTokens(p.fullName);
+    return qt.length > 0 && qt.every(t => pt.some(x => x.indexOf(t) === 0));
+  }
+  const CAT_ORDER = { emergency: 0, urgent: 1, standard: 2, low: 3 };
+  function queueRank(e) {
+    if (e.type === "emergency" || e.triageCategory === "emergency") return 0;
+    return e.triageCategory && CAT_ORDER[e.triageCategory] != null ? CAT_ORDER[e.triageCategory] : 4;
+  }
+  function sortQueue(list) {
+    return list.slice().sort((a, b) => (queueRank(a) - queueRank(b)) || ((a.arrivalAt || 0) - (b.arrivalAt || 0)));
+  }
+  const OBS = [["temperatureC", "Temperature (°C)"], ["bpSys", "Blood pressure top number (systolic)"], ["bpDia", "Blood pressure bottom number (diastolic)"], ["pulse", "Pulse (per minute)"], ["respRate", "Breathing rate (per minute)"], ["spo2", "Oxygen saturation (%)"]];
+  /*PURE-END*/
+
+  const params = new URLSearchParams(location.search);
+  let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "", myOperatorId = "";
+  let encs = {}, openList = [], todayList = [], patients = [], links = [], patientsLoaded = false, picked = null, filter = "active", obsRules = null;
+  const can = k => role === "owner" || perms[k] === true;
+  const STAGE = { registered: "Waiting", triaged: "Triaged", in_consultation: "In consultation" };
+  const TYPE = { outpatient: "Outpatient", emergency: "Emergency", followup: "Follow-up", procedure: "Procedure", pharmacy: "Pharmacy" };
+  const CAT = { emergency: "Emergency", urgent: "Urgent", standard: "Standard", low: "Low priority" };
+
+  function showGate(msg) { $("gateMsg").innerHTML = msg; $("gateCard").classList.remove("hidden"); $("mainArea").classList.add("hidden"); }
+  function stamp() { return { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now() }; }
+  function saveFailed(err) {
+    const denied = err && err.code === "permission-denied";
+    const text = denied ? "Firestore refused this save. Your account may not have permission, Patient Care may be off for this shop, or the security rules (v12) are not published yet." : "Could not save: " + ((err && err.message) || "unknown problem");
+    const el = $("doneMsg"); el.textContent = "NOT SAVED. " + text; el.className = "msg err"; alert(text);
+  }
+  function hhmm(ms) { const d = new Date(ms); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
+
+  // ---------- queue ----------
+  function rebuild() {
+    encs = {}; openList.concat(todayList).forEach(e => { encs[e.id] = e; });
+    renderQueue();
+  }
+  function renderQueue() {
+    const all = Object.keys(encs).map(k => encs[k]);
+    let list;
+    if (filter === "active") list = sortQueue(all.filter(e => e.status === "open"));
+    else if (filter === "closed") list = all.filter(e => e.status !== "open").sort((a, b) => (b.arrivalAt || 0) - (a.arrivalAt || 0));
+    else list = sortQueue(all.filter(e => e.status === "open")).concat(all.filter(e => e.status !== "open").sort((a, b) => (b.arrivalAt || 0) - (a.arrivalAt || 0)));
+    const nOpen = all.filter(e => e.status === "open").length;
+    $("qInfo").textContent = nOpen + " open visit" + (nOpen === 1 ? "" : "s") + " · emergencies first, then by triage category, then by arrival time";
+    const now = new Date();
+    $("qList").innerHTML = list.length ? list.map(e => {
+      const snap = { dobPrecision: e.patientDobPrecision, dob: e.patientDob, dobApprox: e.patientDobApprox };
+      const emerg = e.type === "emergency" || e.triageCategory === "emergency";
+      return '<div class="pt" data-enc="' + esc(e.id) + '"><div class="pt-name">' + esc(e.patientName) + ' <span class="chip ' + (emerg ? "bad" : "") + '">' + esc(TYPE[e.type] || e.type) + "</span>" +
+        (e.status === "open" ? ' <span class="chip ok">' + esc(STAGE[e.stage] || e.stage) + "</span>" : ' <span class="chip">' + (e.status === "closed" ? "Closed" : "Cancelled") + "</span>") +
+        (e.triageCategory ? ' <span class="chip ' + (e.triageCategory === "emergency" ? "bad" : e.triageCategory === "urgent" ? "warn" : "") + '">' + esc(CAT[e.triageCategory]) + "</span>" : "") + "</div>" +
+        '<div class="pt-meta">' + esc(e.encounterNo) + " · " + esc(e.patientSex || "") + " · " + esc(ageText(snap, now)) + " · arrived " + esc(hhmm(e.arrivalAt || 0)) + (e.reason ? " · " + esc(e.reason) : "") + "</div></div>";
+    }).join("") : '<div class="empty">' + (filter === "active" ? "No open visits." : "Nothing here.") + "</div>";
+  }
+
+  // ---------- new visit ----------
+  function regsOf(pid) { return links.filter(l => l.patientId === pid).map(l => l.localRegNo).filter(Boolean); }
+  function openFor(pid) { return Object.keys(encs).map(k => encs[k]).find(e => e.patientId === pid && e.status === "open"); }
+  function renderPatientResults() {
+    const q = $("nQ").value.trim();
+    if (!patientsLoaded) { $("nResults").innerHTML = '<div class="empty">Loading patients…</div>'; return; }
+    if (!q) { $("nResults").innerHTML = ""; return; }
+    const now = new Date();
+    const res = patients.filter(p => p.status !== "merged" && matchesQuery(p, regsOf(p.id), q)).slice(0, 8);
+    $("nResults").innerHTML = res.length ? res.map(p => '<div class="pt" data-pick="' + esc(p.id) + '"><div class="pt-name">' + esc(p.fullName) + ' <span class="chip">' + esc(regsOf(p.id)[0] || "") + '</span></div><div class="pt-meta">' + esc(p.sex || "") + " · " + esc(ageText(p, now)) + (p.phone ? " · " + esc(p.phone) : "") + "</div></div>").join("")
+      : '<div class="empty">No patient found. <a href="patients.html" onclick="mcGo(\'patients.html\'); return false;">Register the patient first</a>.</div>';
+  }
+  function pick(pid) {
+    const p = patients.find(x => x.id === pid); if (!p) return;
+    picked = p; $("nResults").innerHTML = ""; $("nQ").value = "";
+    const o = openFor(pid);
+    $("nPicked").innerHTML = "<b>" + esc(p.fullName) + "</b> · " + esc(p.sex || "") + " · " + esc(ageText(p, new Date())) +
+      (o ? '<br><span style="color:var(--danger);">Already has an open visit (' + esc(o.encounterNo) + '). <a href="#" id="openExisting">Open it</a></span>' : "");
+    $("nPicked").classList.remove("hidden");
+    const ex = $("openExisting"); if (ex) ex.onclick = e => { e.preventDefault(); window.mcGo("encounter.html?id=" + encodeURIComponent(o.id)); };
+  }
+  function nextEncNo() {
+    const who = role === "owner" ? "O" : (myOperatorId || "X");
+    const key = "mcNum:" + me.id + ":" + facilityId + ":E";
+    let n = parseInt(localStorage.getItem(key) || "0", 10) || 0;
+    const re = new RegExp("^E-" + who + "-(\\d+)$");
+    Object.keys(encs).forEach(k => { const m = re.exec(encs[k].encounterNo || ""); if (m) n = Math.max(n, parseInt(m[1], 10)); });
+    n += 1; try { localStorage.setItem(key, String(n)); } catch (e) {}
+    return "E-" + who + "-" + n;
+  }
+  function startVisit() {
+    const msg = $("nMsg"); msg.textContent = ""; msg.className = "msg err";
+    if (!picked) { msg.textContent = "Choose the patient first."; return; }
+    const type = $("nType").value, reason = $("nReason").value.trim().replace(/\s+/g, " ");
+    const o = openFor(picked.id);
+    if (o && type !== "emergency") { msg.textContent = "This patient already has an open visit (" + o.encounterNo + "). Open it instead."; return; }
+    const ref = doc(collection(db, "pc_encounters")), no = nextEncNo();
+    const d = Object.assign(stamp(), { encId: ref.id, patientId: picked.id, patientName: picked.fullName, patientSex: picked.sex || "", patientDobPrecision: picked.dobPrecision || "unknown",
+      patientDob: picked.dob || null, patientDobApprox: picked.dobApprox || null, encounterNo: no, type: type, reason: reason, status: "open", stage: "registered", triageCategory: null,
+      arrivalAt: Date.now(), arrivalDay: isoDate(new Date()), openedBy: me.id, openedByName: myName });
+    setDoc(ref, d).catch(saveFailed);
+    setDoc(doc(collection(db, "pc_audit_logs")), Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, action: "encounter.start", recordPath: "pc_encounters/" + ref.id, patientId: picked.id, encounterId: ref.id, encounterType: type, at: serverTimestamp() })).catch(saveFailed);
+    $("doneMsg").className = "msg ok"; $("doneMsg").textContent = "Visit " + no + " started for " + picked.fullName + ". Tap it in the queue to record triage and consultation.";
+    picked = null; $("nPicked").classList.add("hidden"); $("nReason").value = ""; $("newCard").classList.add("hidden"); $("showNewBtn").classList.remove("hidden");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function openNew(preId) {
+    $("newCard").classList.remove("hidden"); $("showNewBtn").classList.add("hidden"); $("nMsg").textContent = "";
+    if (!patientsLoaded) {
+      onSnapshot(query(collection(db, "pc_patients"), where("businessId", "==", businessId), where("registeredFacilityId", "==", facilityId), limit(3000)), s => {
+        patients = s.docs.map(d => ({ id: d.id, ...d.data() })); patientsLoaded = true; renderPatientResults(); if (preId && !picked) pick(preId);
+      }, () => { patientsLoaded = true; renderPatientResults(); });
+      onSnapshot(query(collection(db, "pc_patient_facility_links"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), limit(3000)), s => { links = s.docs.map(d => ({ id: d.id, ...d.data() })); renderPatientResults(); }, () => {});
+    } else if (preId) pick(preId);
+    $("nQ").focus();
+  }
+
+  // ---------- warning ranges (set by the facility's clinician) ----------
+  function buildRuleForm() {
+    const r = (obsRules && obsRules.ranges) || {};
+    $("ruleFields").innerHTML = OBS.map(o => '<label>' + esc(o[1]) + '</label><div class="row"><div><input type="number" inputmode="decimal" step="any" id="rmin-' + o[0] + '" placeholder="Lowest" value="' + esc(r[o[0]] && r[o[0]].min != null ? r[o[0]].min : "") + '"></div><div><input type="number" inputmode="decimal" step="any" id="rmax-' + o[0] + '" placeholder="Highest" value="' + esc(r[o[0]] && r[o[0]].max != null ? r[o[0]].max : "") + '"></div></div>').join("");
+    $("ruleSource").value = (obsRules && obsRules.source) || "";
+    PCF.setDate("ruleDate", obsRules && obsRules.effectiveDate || "");
+  }
+  function saveRules() {
+    const m = $("ruleMsg"); m.className = "msg err"; m.textContent = "";
+    const ranges = {};
+    OBS.forEach(o => {
+      const mn = $("rmin-" + o[0]).value, mx = $("rmax-" + o[0]).value;
+      if (mn === "" && mx === "") return;
+      const a = mn === "" ? null : Number(mn), b = mx === "" ? null : Number(mx);
+      if ((a != null && isNaN(a)) || (b != null && isNaN(b))) return;
+      ranges[o[0]] = { min: a, max: b };
+    });
+    for (const k in ranges) if (ranges[k].min != null && ranges[k].max != null && ranges[k].min > ranges[k].max) { m.textContent = "A lowest value is higher than its highest value."; return; }
+    const src = $("ruleSource").value.trim();
+    if (src.length < 3) { m.textContent = "Say where these ranges come from."; return; }
+    const di = PCF.dateInfo("ruleDate");
+    if (di.state === "bad") { m.textContent = "Type the date as DD/MM/YYYY or tap the calendar."; return; }
+    const payload = { businessId: businessId, facilityId: facilityId, ranges: ranges, source: src, effectiveDate: di.iso || null, version: ((obsRules && obsRules.version) || 0) + 1,
+      approvedBy: me.id, approvedByName: myName, schemaVersion: 1, updatedBy: me.id, updatedAt: serverTimestamp(), clientUpdatedAt: Date.now() };
+    setDoc(doc(db, "pc_obs_rules", facilityId), payload).then(() => { m.className = "msg ok"; m.textContent = "Saved and synced."; }).catch(saveFailed);
+    obsRules = payload; m.className = "msg ok"; m.textContent = "Saved on this phone.";
+    setDoc(doc(collection(db, "pc_audit_logs")), Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, action: "obsrules.save", recordPath: "pc_obs_rules/" + facilityId, source: src, version: payload.version, at: serverTimestamp() })).catch(() => {});
+  }
+
+  // ---------- wiring ----------
+  $("showNewBtn").onclick = () => openNew(null);
+  $("nCancelBtn").onclick = () => { picked = null; $("nPicked").classList.add("hidden"); $("newCard").classList.add("hidden"); $("showNewBtn").classList.remove("hidden"); };
+  $("nQ").addEventListener("input", renderPatientResults);
+  $("nResults").addEventListener("click", e => { const r = e.target.closest("[data-pick]"); if (r) pick(r.dataset.pick); });
+  $("nStartBtn").onclick = startVisit;
+  $("qList").addEventListener("click", e => { const r = e.target.closest("[data-enc]"); if (r) window.mcGo("encounter.html?id=" + encodeURIComponent(r.dataset.enc)); });
+  document.querySelectorAll("#qTabs .pill-btn").forEach(b => b.addEventListener("click", () => { filter = b.dataset.f; document.querySelectorAll("#qTabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b)); renderQueue(); }));
+  $("ruleToggleBtn").onclick = () => { buildRuleForm(); $("ruleCard").classList.toggle("hidden"); };
+  $("ruleSaveBtn").onclick = saveRules;
+  PCF.initDates();
+
+  function mark(s) {
+    const badge = $("netBadge");
+    badge.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)";
+    badge.className = "badge " + (s.metadata.fromCache ? "offline" : "online");
+  }
+  function startData() {
+    onSnapshot(query(collection(db, "pc_encounters"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "open"), limit(500)), { includeMetadataChanges: true }, s => {
+      openList = s.docs.map(d => ({ id: d.id, ...d.data() })); mark(s); rebuild();
+    }, err => { $("qList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view visits, or the security rules (v12) are not published yet." : "Could not load visits.") + "</div>"; });
+    onSnapshot(query(collection(db, "pc_encounters"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("arrivalDay", "==", isoDate(new Date())), limit(500)), s => {
+      todayList = s.docs.map(d => ({ id: d.id, ...d.data() })); rebuild();
+    }, () => {});
+    getDoc(doc(db, "pc_obs_rules", facilityId)).then(s => { if (s.exists()) obsRules = s.data(); }).catch(() => {});
+  }
+  function begin() {
+    if (!facility || !(Array.isArray(facility.enabledServices) && facility.enabledServices.indexOf("patient_care") >= 0)) { showGate("Patient Care is not switched on for " + esc(facility ? facility.name : "this shop") + (role === "owner" ? '. Open <a href="shops.html">Shops</a> &rarr; Edit and tick Patient Care.' : ". Ask the owner.")); return; }
+    if (!can("patient.view")) { showGate("You do not have Patient Care access yet. Ask the owner to give you access in Users."); return; }
+    $("shopIndicator").textContent = "Patient Care · " + facility.name;
+    $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
+    $("showNewBtn").classList.toggle("hidden", !can("encounter.open"));
+    $("ruleToggleBtn").classList.toggle("hidden", !can("settings.manage"));
+    startData();
+    const nf = params.get("newFor"); if (nf && can("encounter.open")) openNew(nf);
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.mcGo("login.html"); return; }
+    let snap;
+    try { snap = await getDoc(doc(db, "users", user.uid)); } catch (e) { showGate("Could not load your account. Check your connection and reopen this page."); return; }
+    if (!snap.exists()) { window.mcGo("login.html"); return; }
+    me = { id: user.uid, ...snap.data() };
+    if (me.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
+    role = me.role; businessId = me.businessId; perms = me.perms || {}; myName = me.name || ""; myOperatorId = me.operatorId || "";
+    if (role === "owner") {
+      let started = false;
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
+        const shops = {}; s.docs.forEach(d => { shops[d.id] = { id: d.id, ...d.data() }; });
+        const ids = Object.keys(shops).sort((a, b) => String(shops[a].name).localeCompare(String(shops[b].name)));
+        const want = localStorage.getItem("mc_activeShopId");
+        facilityId = shops[want] ? want : ids[0]; facility = facilityId ? shops[facilityId] : null;
+        if (!started) { started = true; begin(); }
+      });
+    } else {
+      facilityId = me.shopId;
+      try { const sh = await getDoc(doc(db, "shops", facilityId)); facility = sh.exists() ? { id: sh.id, ...sh.data() } : null; } catch (e) { facility = null; }
+      begin();
+    }
+  });
+</script>
+</body>
+</html>

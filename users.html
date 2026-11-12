@@ -430,13 +430,19 @@
     ["allergy.record", "Record allergies"],
     ["patient.consent", "Share a patient's records with another facility"],
     ["patient.merge", "Merge duplicate patients"],
-    ["audit.view", "View Patient Care audit and access logs"]
+    ["audit.view", "View Patient Care audit and access logs"],
+    ["encounter.open", "Start patient visits (encounters)"],
+    ["triage.record", "Record triage and vital signs"],
+    ["consult.record", "Record consultations (complaints, medicines taken, notes)"],
+    ["consult.sign", "Sign and amend clinical notes"],
+    ["encounter.close", "Close or cancel visits"],
+    ["settings.manage", "Set warning ranges for vital signs"]
   ];
   // quick-fill only: you can still tick or untick anything before saving
   const PERM_PRESETS = {
-    reception: ["patient.view", "patient.register"],
-    nurse: ["patient.view", "patient.register", "history.record", "allergy.record"],
-    clinician: ["patient.view", "patient.register", "patient.edit", "history.record", "allergy.record", "patient.consent"]
+    reception: ["patient.view", "patient.register", "encounter.open"],
+    nurse: ["patient.view", "patient.register", "history.record", "allergy.record", "encounter.open", "triage.record"],
+    clinician: ["patient.view", "patient.register", "patient.edit", "history.record", "allergy.record", "patient.consent", "encounter.open", "triage.record", "consult.record", "consult.sign", "encounter.close"]
   };
   const permsOpen = new Set();
   const permDraft = {};

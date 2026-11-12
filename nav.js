@@ -18,6 +18,7 @@
     ["cash-position.html", "Cash Position"],
     ["suppliers.html", "Suppliers"],
     ["patients.html", "Patient Care"],
+    ["encounters.html", "Visits & Queue"],
     ["directory.html", "Facility Directory"],
     ["users.html", "Users"],
     ["shops.html", "Shops"],

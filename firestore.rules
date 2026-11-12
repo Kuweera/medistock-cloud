@@ -1,6 +1,7 @@
 rules_version = '2';
 
-// MediStock Cloud — multi-shop roles & security (v11)
+// MediStock Cloud — multi-shop roles & security (v12)
+// v12: adds Phase 2 (encounters, triage, consultation) rules at the end of the Patient Care section.
 // v10: Patient Care (pc_*) rules. v11: patients are visible only to the facility that registered them;
 // sharing a patient with another facility (same business or another business) uses pc_shares;
 // pc_directory lists facilities (with services) that owners choose to publish.
@@ -474,6 +475,179 @@ service cloud.firestore {
         && request.resource.data.actorUid == request.auth.uid
         && request.resource.data.purpose is string && request.resource.data.purpose.size() >= 3;
       allow update, delete: if false;
+    }
+
+    // =====================================================================================
+    // PHASE 2: encounters, triage and consultation (new in v12). Records are facility-only.
+    // Clinical entries are add-only: they can be marked "entered in error" but never edited or deleted.
+    // A note can be edited only while it is a draft; once signed it can only be amended by a new note.
+    // =====================================================================================
+    function encPath(id) { return /databases/$(database)/documents/pc_encounters/$(id); }
+    function notePath(id) { return /databases/$(database)/documents/pc_clinical_notes/$(id); }
+    function encounterOpenOk(d) {
+      return d.encounterId is string && exists(encPath(d.encounterId))
+        && get(encPath(d.encounterId)).data.status == 'open'
+        && get(encPath(d.encounterId)).data.patientId == d.patientId
+        && get(encPath(d.encounterId)).data.facilityId == d.facilityId
+        && get(encPath(d.encounterId)).data.businessId == d.businessId;
+    }
+    function numOk(d, key, lo, hi) {
+      return !(key in d) || d[key] == null || (d[key] is number && d[key] >= lo && d[key] <= hi);
+    }
+    function anyEncounterPerm(biz) {
+      return hasPerm(biz, 'encounter.open') || hasPerm(biz, 'triage.record') || hasPerm(biz, 'consult.record');
+    }
+    function childReadOk(d) {
+      return canAccessShop(d.businessId, d.facilityId) && hasPerm(d.businessId, 'patient.view');
+    }
+    function childCreateOk(d, perm) {
+      return pcCreateOk(d) && hasPerm(d.businessId, perm) && encounterOpenOk(d)
+        && d.recordedBy == request.auth.uid && d.status == 'active';
+    }
+    function childErrorOk(perm) {
+      return hasPerm(resource.data.businessId, perm)
+        && canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && resource.data.status == 'active'
+        && request.resource.data.status == 'entered_in_error'
+        && request.resource.data.errorReason is string && request.resource.data.errorReason.size() >= 3
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'errorReason', 'updatedAt', 'updatedBy'])
+        && pcUpdateStamped();
+    }
+    function triageOk(d) {
+      return numOk(d, 'temperatureC', 25, 45) && numOk(d, 'bpSys', 20, 300) && numOk(d, 'bpDia', 10, 200)
+        && numOk(d, 'pulse', 10, 300) && numOk(d, 'respRate', 2, 100) && numOk(d, 'spo2', 30, 100)
+        && numOk(d, 'weightKg', 0.3, 500) && numOk(d, 'heightCm', 20, 260) && numOk(d, 'painScore', 0, 10)
+        && numOk(d, 'muacCm', 3, 60) && numOk(d, 'glucose', 0, 1000)
+        && (!('consciousness' in d) || d.consciousness == null || d.consciousness in ['alert', 'voice', 'pain', 'unresponsive'])
+        && (!('category' in d) || d.category == null || d.category in ['emergency', 'urgent', 'standard', 'low'])
+        && (!('glucoseUnit' in d) || d.glucoseUnit == null || d.glucoseUnit in ['mmol/L', 'mg/dL']);
+    }
+
+    match /pc_encounters/{encId} {
+      allow read: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && hasPerm(resource.data.businessId, 'patient.view');
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'encounter.open')
+        && patientInBusiness(request.resource.data.patientId, request.resource.data.businessId)
+        && get(patientPath(request.resource.data.patientId)).data.registeredFacilityId == request.resource.data.facilityId
+        && get(patientPath(request.resource.data.patientId)).data.status == 'active'
+        && request.resource.data.status == 'open'
+        && request.resource.data.type in ['outpatient', 'emergency', 'followup', 'procedure', 'pharmacy']
+        && request.resource.data.encounterNo is string && request.resource.data.encounterNo.size() > 0
+        && request.resource.data.reason is string
+        && request.resource.data.openedBy == request.auth.uid;
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && pcUpdateStamped()
+        && resource.data.status == 'open'
+        && (
+          (anyEncounterPerm(resource.data.businessId)
+            && request.resource.data.status == 'open'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stage', 'triageCategory', 'updatedAt', 'updatedBy'])
+            && request.resource.data.stage in ['registered', 'triaged', 'in_consultation']
+            && (request.resource.data.get('triageCategory', null) == null
+                || request.resource.data.triageCategory in ['emergency', 'urgent', 'standard', 'low']))
+          ||
+          (hasPerm(resource.data.businessId, 'encounter.close')
+            && request.resource.data.status in ['closed', 'cancelled']
+            && request.resource.data.closedBy == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'closedAt', 'closedBy', 'closeNote', 'cancelReason', 'updatedAt', 'updatedBy'])
+            && (request.resource.data.status == 'closed'
+                || (request.resource.data.get('cancelReason', null) is string && request.resource.data.cancelReason.size() >= 3)))
+        );
+      allow delete: if false;
+    }
+
+    match /pc_triage/{id} {
+      allow read: if childReadOk(resource.data);
+      allow create: if childCreateOk(request.resource.data, 'triage.record') && triageOk(request.resource.data);
+      allow update: if childErrorOk('triage.record');
+      allow delete: if false;
+    }
+
+    match /pc_complaints/{id} {
+      allow read: if childReadOk(resource.data);
+      allow create: if childCreateOk(request.resource.data, 'consult.record')
+        && request.resource.data.name is string && request.resource.data.name.size() > 0;
+      allow update: if childErrorOk('consult.record');
+      allow delete: if false;
+    }
+
+    match /pc_prior_medications/{id} {
+      allow read: if childReadOk(resource.data);
+      allow create: if childCreateOk(request.resource.data, 'consult.record')
+        && request.resource.data.medicineName is string && request.resource.data.medicineName.size() > 0;
+      allow update: if childErrorOk('consult.record');
+      allow delete: if false;
+    }
+
+    match /pc_clinical_notes/{noteId} {
+      allow read: if childReadOk(resource.data);
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'consult.record')
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.noteType in ['hpi', 'examination', 'assessment', 'progress', 'other', 'amendment']
+        && request.resource.data.content is string && request.resource.data.content.size() > 0
+        && (
+          (request.resource.data.noteType != 'amendment'
+            && encounterOpenOk(request.resource.data)
+            && (request.resource.data.status == 'draft'
+                || (request.resource.data.status == 'signed'
+                    && hasPerm(request.resource.data.businessId, 'consult.sign')
+                    && request.resource.data.signedBy == request.auth.uid
+                    && request.resource.data.signedAt == request.time)))
+          ||
+          (request.resource.data.noteType == 'amendment'
+            && request.resource.data.status == 'signed'
+            && hasPerm(request.resource.data.businessId, 'consult.sign')
+            && request.resource.data.signedBy == request.auth.uid
+            && request.resource.data.signedAt == request.time
+            && request.resource.data.amends is string
+            && exists(notePath(request.resource.data.amends))
+            && get(notePath(request.resource.data.amends)).data.status == 'signed'
+            && get(notePath(request.resource.data.amends)).data.patientId == request.resource.data.patientId
+            && get(notePath(request.resource.data.amends)).data.facilityId == request.resource.data.facilityId)
+        );
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && pcUpdateStamped()
+        && (
+          (resource.data.status == 'draft' && request.resource.data.status == 'draft'
+            && resource.data.authorId == request.auth.uid
+            && hasPerm(resource.data.businessId, 'consult.record')
+            && request.resource.data.content is string && request.resource.data.content.size() > 0
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'structured', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.status == 'draft' && request.resource.data.status == 'signed'
+            && hasPerm(resource.data.businessId, 'consult.sign')
+            && request.resource.data.signedBy == request.auth.uid
+            && request.resource.data.signedAt == request.time
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'signedAt', 'signedBy', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.status in ['draft', 'signed'] && request.resource.data.status == 'entered_in_error'
+            && hasPerm(resource.data.businessId, 'consult.sign')
+            && request.resource.data.errorReason is string && request.resource.data.errorReason.size() >= 3
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'errorReason', 'updatedAt', 'updatedBy']))
+        );
+      allow delete: if false;
+    }
+
+    // Warning ranges a facility's clinician chooses (nothing is built in). id = facility id.
+    match /pc_obs_rules/{facilityId} {
+      allow read: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && hasPerm(resource.data.businessId, 'patient.view');
+      allow create: if hasPerm(request.resource.data.businessId, 'settings.manage')
+        && canAccessShop(request.resource.data.businessId, facilityId)
+        && request.resource.data.facilityId == facilityId
+        && pcFacilityOk(request.resource.data.businessId, facilityId)
+        && request.resource.data.ranges is map
+        && request.resource.data.source is string && request.resource.data.source.size() >= 3;
+      allow update: if hasPerm(resource.data.businessId, 'settings.manage')
+        && canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && request.resource.data.businessId == resource.data.businessId
+        && request.resource.data.facilityId == facilityId
+        && request.resource.data.ranges is map
+        && request.resource.data.source is string && request.resource.data.source.size() >= 3;
+      allow delete: if false;
     }
   }
 }

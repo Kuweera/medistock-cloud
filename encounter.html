@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>if(window.top===window){location.replace("app.html#"+location.pathname.split("/").pop()+location.search);}</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2abfa0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MediStock">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<title>Visit — MediStock Cloud</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  /* ===== Users page ===== */
+  .hidden{display:none !important;}
+  .btn-small{padding:8px 12px; font-size:13px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent);}
+  .btn-danger-outline{background:transparent; color:var(--danger); border:1px solid var(--danger);}
+  .op{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;}
+  .op:last-child{margin-bottom:0;}
+  .op-name{font-weight:700; font-size:14.5px; display:flex; justify-content:space-between; gap:8px; align-items:center;}
+  .op-meta{font-size:12px; color:var(--muted); margin-top:3px; line-height:1.5;}
+  .tag{font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid var(--border);}
+  .tag.on{color:var(--accent2); border-color:var(--accent2);} .tag.off{color:var(--danger); border-color:var(--danger);}
+  .op-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .cred{background:var(--bg); border:1px dashed var(--accent); border-radius:10px; padding:12px; margin:10px 0; font-size:14px; line-height:1.7;}
+  .cred b{font-size:16px; letter-spacing:.5px;}
+  .msg{font-size:13px; margin-top:8px;} .msg.err{color:var(--danger);} .msg.ok{color:var(--accent2);}
+  .pill-row{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;}
+  .pill-btn{background:var(--card); color:var(--text); border:1px solid var(--border); padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:600;}
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .day-h{font-size:11.5px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.4px; margin:12px 0 4px;}
+  .ev{display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ev:last-child{border-bottom:none;}
+  .ev-main{min-width:0;} .ev-text{overflow-wrap:anywhere;}
+  .ev-meta{font-size:11.5px; color:var(--muted);}
+  .ev-amt{font-weight:700; white-space:nowrap;} .ev-amt.out{color:var(--danger);}
+  .hint2{font-size:11.5px; color:var(--muted); line-height:1.5; margin-top:6px;}
+
+  /* ===== Patient Care ===== */
+  .sub{font-size:13px; margin:16px 0 2px; color:var(--accent); font-weight:700;}
+  .chk{display:flex; align-items:center; gap:10px; font-size:13.5px; color:var(--text); margin:8px 0;}
+  .chk input{width:22px; height:22px; flex:0 0 22px; padding:0; margin:0;}
+  .pt{padding:11px 0; border-bottom:1px solid var(--border); cursor:pointer;}
+  .pt:last-child{border-bottom:none;}
+  .pt-name{font-size:14.5px; font-weight:700; color:var(--text);}
+  .pt-meta{font-size:12.5px; color:var(--muted); margin-top:2px; line-height:1.5;}
+  .chip{display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:4px; vertical-align:middle; background:var(--border); color:var(--muted);}
+  .chip.ok{color:var(--accent2);} .chip.warn{color:var(--warn);} .chip.bad{color:var(--danger);}
+  .cand{border:1px solid var(--border); border-radius:10px; padding:10px; margin:8px 0;}
+  .cand.strong{border-color:var(--danger);}
+  .cand-head{font-size:14px; font-weight:700; color:var(--danger); margin-top:14px;}
+  .op-actions{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .breakdown-line .v{text-align:right; max-width:62%;}
+  textarea{width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px; font-family:inherit;}
+  textarea:focus{outline:none; border-color:var(--accent);}
+  .back{display:inline-block; font-size:13px; color:var(--accent); margin:0 0 10px; text-decoration:none; font-weight:600;}
+  .alert-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--danger); color:var(--danger); font-size:13px; line-height:1.5; font-weight:600;}
+  .entry{padding:10px 0; border-bottom:1px solid var(--border);} .entry:last-child{border-bottom:none;}
+  .entry.struck .pt-name{text-decoration:line-through; color:var(--muted); font-weight:500;}
+  .pill-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}
+  /* ===== typed or picked dates ===== */
+  .dateField{position:relative; display:flex; gap:8px; align-items:center;}
+  .dateField input[type="text"]{flex:1; min-width:0;}
+  .cal-btn{flex:0 0 46px; height:40px; background:var(--card); border:1px solid var(--border); border-radius:8px; font-size:18px; padding:0;}
+  .cal-native{position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0; padding:0;}
+  .info-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--accent); color:var(--text); font-size:13px; line-height:1.5;}
+  .perm-warn{font-size:12px; color:var(--warn); margin-bottom:8px; line-height:1.5;}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Patient Care · Visit</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="mcGo('dashboard.html')">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+<div class="card hidden" id="gateCard"><div id="gateMsg" class="empty"></div><button class="btn-small btn-secondary" style="width:100%; margin-top:10px;" onclick="mcGo('encounters.html')">&larr; Back to visits</button></div>
+
+<div id="mainArea" class="hidden">
+  <a class="back" href="encounters.html" onclick="mcGo('encounters.html'); return false;">&larr; Visits</a>
+  <div class="card">
+    <h2 id="pName"></h2>
+    <div class="pt-meta" id="pLine"></div>
+    <div class="pt-meta" id="eLine" style="margin-top:4px;"></div>
+    <div id="closedNote" class="info-box hidden"></div>
+    <div id="allergyBanner" class="alert-box hidden"></div>
+    <button type="button" class="btn-small btn-secondary" id="profileBtn" style="margin-top:10px;">Open patient profile</button>
+  </div>
+
+  <div class="pill-row" id="tabs">
+    <button type="button" class="pill-btn selected" data-t="triage">Triage</button>
+    <button type="button" class="pill-btn" data-t="consult">Consultation</button>
+    <button type="button" class="pill-btn" data-t="notes">Notes</button>
+    <button type="button" class="pill-btn" data-t="close">Close visit</button>
+  </div>
+
+  <div id="tab-triage">
+    <div class="card hidden" id="tAddCard">
+      <h2>Record triage / vital signs</h2>
+      <div class="hint2" style="margin-top:0;">Fill in only what you measured. Each save is a new record, so you can repeat observations during the visit.</div>
+      <div class="row"><div><label>Temperature (°C)</label><input type="number" inputmode="decimal" step="0.1" id="tTemp"></div><div><label>Pulse (/min)</label><input type="number" inputmode="numeric" id="tPulse"></div></div>
+      <label>Blood pressure (mmHg)</label>
+      <div class="row"><div><input type="number" inputmode="numeric" id="tSys" placeholder="Top (systolic)"></div><div><input type="number" inputmode="numeric" id="tDia" placeholder="Bottom (diastolic)"></div></div>
+      <div class="row"><div><label>Breathing rate (/min)</label><input type="number" inputmode="numeric" id="tResp"></div><div><label>Oxygen saturation (%)</label><input type="number" inputmode="numeric" id="tSpo2"></div></div>
+      <div class="row"><div><label>Weight (kg)</label><input type="number" inputmode="decimal" step="0.1" id="tWeight"></div><div><label>Height (cm)</label><input type="number" inputmode="decimal" step="0.1" id="tHeight"></div></div>
+      <div class="pt-meta" id="tBmi"></div>
+      <label>Blood glucose</label>
+      <div class="row"><div><input type="number" inputmode="decimal" step="0.1" id="tGlu" placeholder="Value"></div><div><select id="tGluUnit"><option value="mmol/L">mmol/L</option><option value="mg/dL">mg/dL</option></select></div></div>
+      <div class="row"><div><label>Pain score (0-10)</label><select id="tPain"><option value="">Not asked</option></select></div><div><label>Consciousness</label><select id="tCons"><option value="">Not assessed</option><option value="alert">Alert</option><option value="voice">Responds to voice</option><option value="pain">Responds to pain</option><option value="unresponsive">Unresponsive</option></select></div></div>
+      <label>MUAC (cm) - children</label><input type="number" inputmode="decimal" step="0.1" id="tMuac">
+      <label>Triage category (your decision)</label>
+      <select id="tCat"><option value="">Not set</option><option value="emergency">Emergency</option><option value="urgent">Urgent</option><option value="standard">Standard</option><option value="low">Low priority</option></select>
+      <label>Triage notes</label><textarea id="tNotes" rows="2"></textarea>
+      <button class="btn-primary" id="tSaveBtn">Save triage</button>
+      <div class="msg" id="tMsg"></div>
+    </div>
+    <div class="card"><h2>Triage records</h2><div id="tList"></div></div>
+  </div>
+
+  <div id="tab-consult" class="hidden">
+    <div class="card hidden" id="cAddCard">
+      <h2>Add a presenting complaint</h2>
+      <label>Complaint *</label><input type="text" id="cName" list="complaintList" placeholder="Type or choose" autocomplete="off">
+      <div class="row"><div><label>Started (type or choose)</label><input type="text" id="cOnset" list="onsetList" placeholder="e.g. 3 days ago" autocomplete="off"></div><div><label>Lasted (number)</label><input type="number" inputmode="numeric" id="cDurVal" min="0"></div></div>
+      <label>Duration unit</label>
+      <select id="cDurUnit"><option value="">-</option><option value="hours">hours</option><option value="days">days</option><option value="weeks">weeks</option><option value="months">months</option><option value="years">years</option></select>
+      <div class="row"><div><label>Severity</label><select id="cSev"><option value="">Not stated</option><option value="mild">Mild</option><option value="moderate">Moderate</option><option value="severe">Severe</option></select></div>
+        <div><label>Progression</label><select id="cProg"><option value="">Not stated</option><option value="improving">Improving</option><option value="same">Staying the same</option><option value="worsening">Getting worse</option><option value="comes_and_goes">Comes and goes</option></select></div></div>
+      <label>Other symptoms with it</label><input type="text" id="cAssoc" autocomplete="off">
+      <label>Makes it worse</label><input type="text" id="cAgg" autocomplete="off">
+      <label>Makes it better</label><input type="text" id="cRel" autocomplete="off">
+      <label>Had it before?</label><input type="text" id="cPrev" autocomplete="off">
+      <label>Notes</label><textarea id="cNotes" rows="2"></textarea>
+      <button class="btn-primary" id="cSaveBtn">Add complaint</button>
+      <div class="msg" id="cMsg"></div>
+    </div>
+    <div class="card"><h2>Presenting complaints</h2><div id="cList"></div></div>
+
+    <div class="card hidden" id="mAddCard">
+      <h2>Medicines taken before this visit</h2>
+      <div class="hint2" style="margin-top:0;">The patient or guardian may not know every detail. Write what they can tell you.</div>
+      <label>Medicine *</label><input type="text" id="mName" list="drugList" placeholder="Type or choose" autocomplete="off">
+      <div class="row"><div><label>Strength</label><input type="text" id="mStrength" placeholder="e.g. 500 mg" autocomplete="off"></div><div><label>Dose</label><input type="text" id="mDose" placeholder="e.g. 1 tablet" autocomplete="off"></div></div>
+      <div class="row"><div><label>How often</label><input type="text" id="mFreq" list="freqList" autocomplete="off"></div><div><label>Route</label><input type="text" id="mRoute" list="routeList" autocomplete="off"></div></div>
+      <div class="row"><div><label>For how long</label><input type="text" id="mDur" placeholder="e.g. 3 days" autocomplete="off"></div>
+        <div><label>Last dose taken</label><div class="dateField"><input type="text" id="mLast"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div></div></div>
+      <div class="row"><div><label>Course</label><select id="mDone"><option value="unknown">Not known</option><option value="ongoing">Still taking</option><option value="completed">Completed</option><option value="stopped_early">Stopped early</option></select></div>
+        <div><label>Response</label><select id="mResp"><option value="unknown">Not known</option><option value="improved">Improved</option><option value="no_change">No change</option><option value="worse">Worse</option></select></div></div>
+      <label>Told to us by</label>
+      <select id="mBy"><option value="patient">Patient</option><option value="guardian">Guardian</option><option value="records">Records / card</option><option value="unknown">Not known</option></select>
+      <button class="btn-primary" id="mSaveBtn">Add medicine</button>
+      <div class="msg" id="mMsg"></div>
+    </div>
+    <div class="card"><h2>Medicines taken before</h2><div id="mList"></div></div>
+  </div>
+
+  <div id="tab-notes" class="hidden">
+    <div class="card hidden" id="nAddCard">
+      <h2 id="nTitle">Write a clinical note</h2>
+      <div id="nAmendInfo" class="info-box hidden"></div>
+      <label>Type of note</label>
+      <select id="nType">
+        <option value="hpi">History of presenting illness</option>
+        <option value="examination">Physical examination</option>
+        <option value="assessment">Assessment / impression</option>
+        <option value="progress">Progress note</option>
+        <option value="other">Other note</option>
+      </select>
+      <div id="nPlain"><label>Note *</label><textarea id="nText" rows="5"></textarea></div>
+      <div id="nExam" class="hidden"></div>
+      <button class="btn-primary" id="nDraftBtn">Save as draft</button>
+      <button class="btn-primary hidden" id="nSignBtn" style="margin-top:8px;">Sign now</button>
+      <button class="btn-small btn-secondary hidden" id="nCancelBtn" style="width:100%; margin-top:8px;">Cancel</button>
+      <div class="hint2">A draft can still be edited by its author. A signed note can never be changed: it can only be amended by a new signed note, and the original stays on record.</div>
+      <div class="msg" id="nMsg"></div>
+    </div>
+    <div class="card"><h2>Clinical notes</h2><div id="nList"></div></div>
+  </div>
+
+  <div id="tab-close" class="hidden">
+    <div class="card"><h2>Visit summary</h2><div id="sumBox"></div></div>
+    <div class="card hidden" id="xCard">
+      <h2>Close this visit</h2>
+      <label>Closing note (optional)</label><textarea id="xNote" rows="2" placeholder="e.g. Treated and sent home"></textarea>
+      <button class="btn-primary" id="xCloseBtn">Close visit</button>
+      <button class="btn-small btn-secondary" id="xCancelBtn" style="width:100%; margin-top:8px;">Cancel this visit (opened by mistake)</button>
+      <div class="hint2">A closed visit cannot be changed. Notes can still be amended by someone who may sign.</div>
+      <div class="msg" id="xMsg"></div>
+    </div>
+  </div>
+  <div class="msg ok" id="doneMsg"></div>
+  <datalist id="complaintList"><option value="Fever"><option value="Cough"><option value="Headache"><option value="Abdominal pain"><option value="Vomiting"><option value="Diarrhoea"><option value="Chest pain"><option value="Difficulty breathing"><option value="Body weakness"><option value="Joint pain"><option value="Back pain"><option value="Sore throat"><option value="Skin rash"><option value="Painful urination"><option value="Injury / wound"><option value="Dizziness"><option value="Loss of appetite"></datalist>
+  <datalist id="onsetList"><option value="Today"><option value="Yesterday"><option value="2 days ago"><option value="3 days ago"><option value="1 week ago"><option value="2 weeks ago"><option value="1 month ago"><option value="Since childhood"></datalist>
+  <datalist id="freqList"><option value="Once daily (OD)"><option value="Twice daily (BD)"><option value="Three times daily (TDS)"><option value="Four times daily (QDS)"><option value="Every 8 hours"><option value="Every 12 hours"><option value="At night"><option value="When needed (PRN)"><option value="Single dose"><option value="Weekly"></datalist>
+  <datalist id="routeList"><option value="Oral"><option value="Injection into muscle (IM)"><option value="Injection into vein (IV)"><option value="Injection under skin (SC)"><option value="Applied to skin"><option value="Inhaled"><option value="Eye drops"><option value="Ear drops"><option value="Rectal"><option value="Other"></datalist>
+  <datalist id="drugList"></datalist>
+</div>
+
+<script src="pc-fields.js"></script>
+<script type="module">
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, writeBatch, getDocFromCache } = window.top.MC.api(window);
+
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDocServerFirst(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDoc(ref) {
+    try { const c = await getDocFromCache(ref); if (c.exists()) return c; } catch (e) {}
+    return getDocServerFirst(ref);
+  }
+
+  const app = initializeApp({});
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  /*PURE-START*/
+  function isoDate(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+  function ageBase(p) {
+    let base = null;
+    if (p.dobPrecision === "exact" && p.dob) base = new Date(p.dob + "T00:00:00");
+    else if (p.dobPrecision === "estimated" && p.dobApprox) base = new Date(p.dobApprox + "T00:00:00");
+    return base && !isNaN(base.getTime()) ? base : null;
+  }
+  function ageText(p, now) {
+    const base = ageBase(p); if (!base) return "Age unknown";
+    const days = Math.max(0, Math.floor((now.getTime() - base.getTime()) / 864e5));
+    let months = (now.getFullYear() - base.getFullYear()) * 12 + (now.getMonth() - base.getMonth());
+    if (now.getDate() < base.getDate()) months--;
+    if (months < 0) months = 0;
+    const pre = p.dobPrecision === "estimated" ? "~" : "";
+    if (days < 31) return pre + days + (days === 1 ? " day" : " days");
+    if (months < 24) return pre + months + (months === 1 ? " month" : " months");
+    return pre + Math.floor(months / 12) + " yrs";
+  }
+  function ageYears(p, now) { const b = ageBase(p); return b ? (now.getTime() - b.getTime()) / (365.25 * 864e5) : null; }
+  // BMI only when both are given and the patient is not a very young child (or the age is unknown)
+  function bmiOf(w, h, years) {
+    if (!(w > 0) || !(h > 0)) return null;
+    if (years != null && years < 2) return null;
+    return Math.round((w / Math.pow(h / 100, 2)) * 10) / 10;
+  }
+  const BOUNDS = { temperatureC: [25, 45], bpSys: [20, 300], bpDia: [10, 200], pulse: [10, 300], respRate: [2, 100], spo2: [30, 100], weightKg: [0.3, 500], heightCm: [20, 260], muacCm: [3, 60], glucose: [0, 1000], painScore: [0, 10] };
+  const OBS_LABEL = { temperatureC: "Temperature", bpSys: "Systolic BP", bpDia: "Diastolic BP", pulse: "Pulse", respRate: "Breathing rate", spo2: "Oxygen saturation" };
+  // warning ranges are the facility's own (set by their clinician); this only compares, it never interprets
+  function flagsFor(rec, ranges) {
+    const out = []; ranges = ranges || {};
+    Object.keys(OBS_LABEL).forEach(k => {
+      const v = rec[k], r = ranges[k];
+      if (v == null || !r) return;
+      if (r.min != null && v < r.min) out.push(OBS_LABEL[k] + " below warning range");
+      else if (r.max != null && v > r.max) out.push(OBS_LABEL[k] + " above warning range");
+    });
+    return out;
+  }
+  function triageLine(t) {
+    const p = [];
+    if (t.temperatureC != null) p.push("Temp " + t.temperatureC + "°C");
+    if (t.bpSys != null || t.bpDia != null) p.push("BP " + (t.bpSys != null ? t.bpSys : "?") + "/" + (t.bpDia != null ? t.bpDia : "?"));
+    if (t.pulse != null) p.push("Pulse " + t.pulse);
+    if (t.respRate != null) p.push("Resp " + t.respRate);
+    if (t.spo2 != null) p.push("SpO2 " + t.spo2 + "%");
+    if (t.weightKg != null) p.push("Wt " + t.weightKg + " kg");
+    if (t.heightCm != null) p.push("Ht " + t.heightCm + " cm");
+    if (t.bmi != null) p.push("BMI " + t.bmi);
+    if (t.glucose != null) p.push("Glucose " + t.glucose + " " + (t.glucoseUnit || ""));
+    if (t.painScore != null) p.push("Pain " + t.painScore + "/10");
+    if (t.consciousness) p.push("Consciousness: " + ({ alert: "Alert", voice: "Responds to voice", pain: "Responds to pain", unresponsive: "Unresponsive" }[t.consciousness] || t.consciousness));
+    if (t.muacCm != null) p.push("MUAC " + t.muacCm + " cm");
+    return p.join(" · ");
+  }
+  const EXAM_SECTIONS = [["general", "General examination"], ["respiratory", "Respiratory"], ["cardiovascular", "Cardiovascular"], ["abdominal", "Abdominal"], ["neurological", "Neurological"], ["skin", "Skin"], ["musculoskeletal", "Musculoskeletal"], ["other", "Other systems"]];
+  function examContent(structured) {
+    return EXAM_SECTIONS.filter(s => structured[s[0]] && String(structured[s[0]]).trim()).map(s => s[1] + ": " + String(structured[s[0]]).trim()).join("\n");
+  }
+  /*PURE-END*/
+
+  const params = new URLSearchParams(location.search);
+  const encId = params.get("id");
+  let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
+  let enc = null, triage = [], complaints = [], meds = [], notes = [], allergies = [], obsRules = null, loggedView = false;
+  let editNote = null, amendOf = null, showAllTri = false;
+  const can = k => role === "owner" || perms[k] === true;
+  const isOpen = () => enc && enc.status === "open";
+  const STAGE = { registered: "Waiting", triaged: "Triaged", in_consultation: "In consultation" };
+  const TYPE = { outpatient: "Outpatient", emergency: "Emergency", followup: "Follow-up", procedure: "Procedure", pharmacy: "Pharmacy" };
+  const CAT = { emergency: "Emergency", urgent: "Urgent", standard: "Standard", low: "Low priority" };
+  const NOTE_TYPE = { hpi: "History of presenting illness", examination: "Physical examination", assessment: "Assessment / impression", progress: "Progress note", other: "Note", amendment: "Amendment" };
+
+  function showGate(msg) { $("gateMsg").innerHTML = msg; $("gateCard").classList.remove("hidden"); $("mainArea").classList.add("hidden"); }
+  function stamp() { return { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now() }; }
+  function child(extra) { return Object.assign(stamp(), { encounterId: encId, patientId: enc.patientId, status: "active", recordedBy: me.id, recordedByName: myName, recordedAt: Date.now() }, extra); }
+  function auditDoc(action, path, extra) { return Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, action: action, recordPath: path, patientId: enc.patientId, encounterId: encId, at: serverTimestamp() }, extra || {}); }
+  const logAudit = (action, path, extra) => setDoc(doc(collection(db, "pc_audit_logs")), auditDoc(action, path, extra)).catch(saveFailed);
+  function saveFailed(err) {
+    const denied = err && err.code === "permission-denied";
+    const text = denied ? "Firestore refused this save. Your account may not have permission, the visit may already be closed, or the security rules (v12) are not published yet." : "Could not save: " + ((err && err.message) || "unknown problem");
+    const el = $("doneMsg"); el.textContent = "NOT SAVED. " + text; el.className = "msg err"; alert(text);
+  }
+  function ok(msg) { const el = $("doneMsg"); el.className = "msg ok"; el.textContent = msg; }
+  function stampText(ts, ms) {
+    const d = ts && ts.toDate ? ts.toDate() : (ts && ts.seconds ? new Date(ts.seconds * 1000) : (ms ? new Date(ms) : null));
+    return d && !isNaN(d.getTime()) ? PCF.toTyped(isoDate(d)) + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") : "";
+  }
+  function bumpStage(stage) {
+    if (!enc || enc.stage === stage || !isOpen()) return;
+    updateDoc(doc(db, "pc_encounters", encId), { stage: stage, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+  }
+  function markError(coll, id, signPerm, auditAction) {
+    const reason = (window.prompt("Why is this entry wrong? (it stays on record, marked as entered in error)") || "").trim();
+    if (reason.length < 3) { if (reason) alert("Please give a short reason."); return; }
+    updateDoc(doc(db, coll, id), { status: "entered_in_error", errorReason: reason, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    logAudit(auditAction, coll + "/" + id, { reason: reason });
+  }
+
+  // ---------- header ----------
+  function renderHeader() {
+    const e = enc, now = new Date();
+    $("pName").textContent = e.patientName;
+    $("pLine").textContent = (e.patientSex || "") + " · " + ageText({ dobPrecision: e.patientDobPrecision, dob: e.patientDob, dobApprox: e.patientDobApprox }, now);
+    $("eLine").innerHTML = esc(e.encounterNo) + ' <span class="chip ' + (e.type === "emergency" ? "bad" : "") + '">' + esc(TYPE[e.type] || e.type) + "</span> " +
+      (e.status === "open" ? '<span class="chip ok">' + esc(STAGE[e.stage] || e.stage) + "</span>" : '<span class="chip">' + (e.status === "closed" ? "Closed" : "Cancelled") + "</span>") +
+      (e.triageCategory ? ' <span class="chip ' + (e.triageCategory === "emergency" ? "bad" : e.triageCategory === "urgent" ? "warn" : "") + '">' + esc(CAT[e.triageCategory]) + "</span>" : "") +
+      " · arrived " + esc(stampText(null, e.arrivalAt)) + (e.reason ? "<br>Reason: " + esc(e.reason) : "");
+    const cn = $("closedNote");
+    if (e.status !== "open") { cn.innerHTML = (e.status === "closed" ? "This visit is closed." : "This visit was cancelled" + (e.cancelReason ? ": " + esc(e.cancelReason) : ".")) + (e.closeNote ? "<br>" + esc(e.closeNote) : ""); cn.classList.remove("hidden"); } else cn.classList.add("hidden");
+    const open = isOpen();
+    $("tAddCard").classList.toggle("hidden", !(open && can("triage.record")));
+    $("cAddCard").classList.toggle("hidden", !(open && can("consult.record")));
+    $("mAddCard").classList.toggle("hidden", !(open && can("consult.record")));
+    $("nAddCard").classList.toggle("hidden", !((open && can("consult.record")) || amendOf));
+    $("xCard").classList.toggle("hidden", !(open && can("encounter.close")));
+  }
+  function renderBanner() {
+    const act = allergies.filter(a => a.status === "active").sort((a, b) => ({ severe: 0, moderate: 1, mild: 2, unknown: 3 }[a.severity] - { severe: 0, moderate: 1, mild: 2, unknown: 3 }[b.severity]));
+    const b = $("allergyBanner");
+    if (!act.length) { b.classList.add("hidden"); return; }
+    b.innerHTML = "<b>Allergies:</b> " + act.map(a => esc(a.substance) + (a.severity === "severe" ? " (severe)" : "")).join(", ");
+    b.classList.remove("hidden");
+  }
+
+  // ---------- triage ----------
+  function num(id) { const v = $(id).value.trim(); return v === "" ? null : Number(v); }
+  function updateBmi() {
+    const w = num("tWeight"), h = num("tHeight"), yrs = enc ? ageYears({ dobPrecision: enc.patientDobPrecision, dob: enc.patientDob, dobApprox: enc.patientDobApprox }, new Date()) : null;
+    const b = bmiOf(w, h, yrs);
+    $("tBmi").textContent = b != null ? "BMI " + b + " (worked out from weight and height)" : (w > 0 && h > 0 && yrs != null && yrs < 2 ? "BMI is not worked out for children under 2 years." : "");
+  }
+  function saveTriage() {
+    const msg = $("tMsg"); msg.className = "msg err"; msg.textContent = "";
+    const v = { temperatureC: num("tTemp"), bpSys: num("tSys"), bpDia: num("tDia"), pulse: num("tPulse"), respRate: num("tResp"), spo2: num("tSpo2"), weightKg: num("tWeight"), heightCm: num("tHeight"), muacCm: num("tMuac"), glucose: num("tGlu"), painScore: $("tPain").value === "" ? null : Number($("tPain").value) };
+    for (const k in v) {
+      if (v[k] == null) continue;
+      if (isNaN(v[k]) || v[k] < BOUNDS[k][0] || v[k] > BOUNDS[k][1]) { msg.textContent = "Check the value for " + (OBS_LABEL[k] || k) + ": it must be between " + BOUNDS[k][0] + " and " + BOUNDS[k][1] + "."; return; }
+    }
+    if (v.bpSys != null && v.bpDia != null && v.bpDia > v.bpSys) { msg.textContent = "The bottom blood pressure number is higher than the top number. Check them."; return; }
+    const cons = $("tCons").value || null, cat = $("tCat").value || null, notesT = $("tNotes").value.trim();
+    const any = Object.keys(v).some(k => v[k] != null) || cons || cat || notesT;
+    if (!any) { msg.textContent = "Enter at least one measurement, a category or a note."; return; }
+    const yrs = ageYears({ dobPrecision: enc.patientDobPrecision, dob: enc.patientDob, dobApprox: enc.patientDobApprox }, new Date());
+    const ref = doc(collection(db, "pc_triage"));
+    const data = child(Object.assign({}, v, { bmi: bmiOf(v.weightKg, v.heightCm, yrs), glucoseUnit: v.glucose != null ? $("tGluUnit").value : null, consciousness: cons, category: cat, notes: notesT }));
+    const batch = writeBatch(db);
+    batch.set(ref, data);
+    const upd = {}; if (enc.stage === "registered") upd.stage = "triaged"; if (cat) upd.triageCategory = cat;
+    if (Object.keys(upd).length) batch.update(doc(db, "pc_encounters", encId), Object.assign(upd, { updatedAt: serverTimestamp(), updatedBy: me.id }));
+    batch.set(doc(collection(db, "pc_audit_logs")), auditDoc("triage.save", "pc_triage/" + ref.id, { category: cat }));
+    batch.commit().catch(saveFailed);
+    ["tTemp", "tSys", "tDia", "tPulse", "tResp", "tSpo2", "tWeight", "tHeight", "tMuac", "tGlu", "tNotes"].forEach(id => { $(id).value = ""; });
+    $("tPain").value = ""; $("tCons").value = ""; $("tCat").value = ""; updateBmi();
+    ok("Triage saved on this phone. It will sync when you are online.");
+  }
+  function renderTriage() {
+    const list = triage.slice().sort((a, b) => (b.recordedAt || 0) - (a.recordedAt || 0));
+    const live = list.filter(t => t.status === "active"), bad = list.filter(t => t.status !== "active");
+    $("tList").innerHTML = (live.length ? live.map(t => {
+      const fl = flagsFor(t, obsRules && obsRules.ranges);
+      return '<div class="entry"><div class="pt-name">' + esc(stampText(null, t.recordedAt)) + (t.category ? ' <span class="chip ' + (t.category === "emergency" ? "bad" : t.category === "urgent" ? "warn" : "") + '">' + esc(CAT[t.category]) + "</span>" : "") + "</div>" +
+        '<div class="pt-meta">' + esc(triageLine(t) || "No measurements") + (t.notes ? "<br>" + esc(t.notes) : "") + "<br>By " + esc(t.recordedByName || "") + "</div>" +
+        (fl.length ? '<div class="pt-meta" style="color:var(--warn); margin-top:4px;">' + fl.map(esc).join(" · ") + " (facility warning range, not a diagnosis)</div>" : "") +
+        (can("triage.record") ? '<div class="op-actions"><button class="btn-small btn-secondary" data-terr="' + esc(t.id) + '">Entered in error</button></div>' : "") + "</div>";
+    }).join("") : '<div class="empty">No triage recorded yet.</div>') +
+      (bad.length ? '<button type="button" class="btn-small btn-secondary" id="toggleTErr" style="width:100%; margin-top:10px;">' + (showAllTri ? "Hide" : "Show") + " entries marked as error (" + bad.length + ")</button>" + (showAllTri ? bad.map(t => '<div class="entry struck"><div class="pt-name">' + esc(stampText(null, t.recordedAt)) + '</div><div class="pt-meta">Entered in error' + (t.errorReason ? ": " + esc(t.errorReason) : "") + "</div></div>").join("") : "") : "");
+    const tg = $("toggleTErr"); if (tg) tg.onclick = () => { showAllTri = !showAllTri; renderTriage(); };
+  }
+
+  // ---------- complaints ----------
+  function addComplaint() {
+    const msg = $("cMsg"); msg.className = "msg err"; msg.textContent = "";
+    const name = $("cName").value.trim().replace(/\s+/g, " ");
+    if (name.length < 2) { msg.textContent = "Enter the complaint."; return; }
+    const dv = $("cDurVal").value.trim();
+    if (dv !== "" && (isNaN(Number(dv)) || Number(dv) < 0)) { msg.textContent = "The duration must be a number."; return; }
+    const ref = doc(collection(db, "pc_complaints"));
+    setDoc(ref, child({ name: name, onset: $("cOnset").value.trim(), durationValue: dv === "" ? null : Number(dv), durationUnit: $("cDurUnit").value || null, severity: $("cSev").value || null, progression: $("cProg").value || null,
+      associated: $("cAssoc").value.trim(), aggravating: $("cAgg").value.trim(), relieving: $("cRel").value.trim(), previousEpisodes: $("cPrev").value.trim(), notes: $("cNotes").value.trim() })).catch(saveFailed);
+    logAudit("complaint.add", "pc_complaints/" + ref.id, { name: name });
+    bumpStage("in_consultation");
+    ["cName", "cOnset", "cDurVal", "cAssoc", "cAgg", "cRel", "cPrev", "cNotes"].forEach(id => { $(id).value = ""; }); $("cDurUnit").value = ""; $("cSev").value = ""; $("cProg").value = "";
+    ok("Complaint saved on this phone.");
+  }
+  function renderComplaints() {
+    const live = complaints.filter(c => c.status === "active").sort((a, b) => (a.recordedAt || 0) - (b.recordedAt || 0));
+    const bad = complaints.filter(c => c.status !== "active");
+    const SEV = { mild: "Mild", moderate: "Moderate", severe: "Severe" }, PROG = { improving: "Improving", same: "Same", worsening: "Getting worse", comes_and_goes: "Comes and goes" };
+    $("cList").innerHTML = (live.length ? live.map(c => '<div class="entry"><div class="pt-name">' + esc(c.name) + (c.severity ? ' <span class="chip ' + (c.severity === "severe" ? "bad" : c.severity === "moderate" ? "warn" : "") + '">' + SEV[c.severity] + "</span>" : "") + "</div>" +
+      '<div class="pt-meta">' + [c.onset ? "Started: " + esc(c.onset) : "", c.durationValue != null ? "Lasted " + esc(c.durationValue) + " " + esc(c.durationUnit || "") : "", c.progression ? esc(PROG[c.progression]) : "", c.associated ? "With: " + esc(c.associated) : "", c.aggravating ? "Worse with: " + esc(c.aggravating) : "", c.relieving ? "Better with: " + esc(c.relieving) : "", c.previousEpisodes ? "Before: " + esc(c.previousEpisodes) : "", c.notes ? esc(c.notes) : ""].filter(Boolean).join("<br>") + "</div>" +
+      (isOpen() && can("consult.record") ? '<div class="op-actions"><button class="btn-small btn-secondary" data-cerr="' + esc(c.id) + '">Entered in error</button></div>' : "") + "</div>").join("") : '<div class="empty">No complaint recorded yet.</div>') +
+      (bad.length ? '<div class="pt-meta" style="margin-top:8px;">' + bad.length + " entr" + (bad.length === 1 ? "y" : "ies") + " marked as error (kept on record).</div>" : "");
+  }
+
+  // ---------- medicines taken before ----------
+  function addMed() {
+    const msg = $("mMsg"); msg.className = "msg err"; msg.textContent = "";
+    const name = $("mName").value.trim().replace(/\s+/g, " ");
+    if (name.length < 2) { msg.textContent = "Enter the medicine name."; return; }
+    const di = PCF.dateInfo("mLast");
+    if (di.state === "bad" || di.state === "future" || di.state === "old") { msg.textContent = "Type the last dose date as DD/MM/YYYY or tap the calendar. It cannot be in the future."; return; }
+    const ref = doc(collection(db, "pc_prior_medications"));
+    setDoc(ref, child({ medicineName: name, strength: $("mStrength").value.trim(), dose: $("mDose").value.trim(), frequency: $("mFreq").value.trim(), route: $("mRoute").value.trim(), duration: $("mDur").value.trim(),
+      lastDose: di.iso || null, course: $("mDone").value, response: $("mResp").value, reportedBy: $("mBy").value })).catch(saveFailed);
+    logAudit("priormed.add", "pc_prior_medications/" + ref.id, { medicine: name });
+    bumpStage("in_consultation");
+    ["mName", "mStrength", "mDose", "mFreq", "mRoute", "mDur", "mLast"].forEach(id => { $(id).value = ""; }); $("mDone").value = "unknown"; $("mResp").value = "unknown"; $("mBy").value = "patient";
+    ok("Medicine saved on this phone.");
+  }
+  function renderMeds() {
+    const live = meds.filter(m => m.status === "active").sort((a, b) => (a.recordedAt || 0) - (b.recordedAt || 0));
+    const bad = meds.filter(m => m.status !== "active");
+    const COURSE = { ongoing: "Still taking", completed: "Completed", stopped_early: "Stopped early" }, RESP = { improved: "Improved", no_change: "No change", worse: "Worse" }, BY = { patient: "patient", guardian: "guardian", records: "records" };
+    $("mList").innerHTML = (live.length ? live.map(m => '<div class="entry"><div class="pt-name">' + esc(m.medicineName) + (m.strength ? " " + esc(m.strength) : "") + "</div>" +
+      '<div class="pt-meta">' + [[m.dose, m.frequency, m.route].filter(Boolean).map(esc).join(" · "), m.duration ? "For: " + esc(m.duration) : "", m.lastDose ? "Last dose: " + esc(PCF.toTyped(m.lastDose)) : "", COURSE[m.course] || "", RESP[m.response] ? "Response: " + RESP[m.response] : "", BY[m.reportedBy] ? "Told by " + BY[m.reportedBy] : ""].filter(Boolean).join("<br>") + "</div>" +
+      (isOpen() && can("consult.record") ? '<div class="op-actions"><button class="btn-small btn-secondary" data-merr="' + esc(m.id) + '">Entered in error</button></div>' : "") + "</div>").join("") : '<div class="empty">No earlier medicine recorded.</div>') +
+      (bad.length ? '<div class="pt-meta" style="margin-top:8px;">' + bad.length + " entr" + (bad.length === 1 ? "y" : "ies") + " marked as error (kept on record).</div>" : "");
+  }
+
+  // ---------- clinical notes ----------
+  function buildExamForm() {
+    $("nExam").innerHTML = EXAM_SECTIONS.map(s => "<label>" + esc(s[1]) + '</label><textarea id="ex-' + s[0] + '" rows="2"></textarea>').join("");
+  }
+  function syncNoteForm() {
+    const ex = $("nType").value === "examination" && !amendOf;
+    $("nExam").classList.toggle("hidden", !ex); $("nPlain").classList.toggle("hidden", ex);
+  }
+  function readNote() {
+    const type = amendOf ? "amendment" : $("nType").value;
+    if (type === "examination") {
+      const structured = {}; EXAM_SECTIONS.forEach(s => { const v = $("ex-" + s[0]).value.trim(); if (v) structured[s[0]] = v; });
+      return { type: type, content: examContent(structured), structured: structured };
+    }
+    return { type: type, content: $("nText").value.trim(), structured: null };
+  }
+  function resetNoteForm() {
+    editNote = null; amendOf = null; $("nText").value = ""; EXAM_SECTIONS.forEach(s => { $("ex-" + s[0]).value = ""; });
+    $("nTitle").textContent = "Write a clinical note"; $("nAmendInfo").classList.add("hidden"); $("nType").disabled = false;
+    $("nDraftBtn").classList.remove("hidden"); $("nDraftBtn").textContent = "Save as draft"; $("nSignBtn").classList.toggle("hidden", !can("consult.sign")); $("nSignBtn").textContent = "Sign now"; $("nCancelBtn").classList.add("hidden");
+    syncNoteForm(); if (enc) renderHeader();
+  }
+  function saveNote(signNow) {
+    const msg = $("nMsg"); msg.className = "msg err"; msg.textContent = "";
+    const n = readNote();
+    if (!n.content) { msg.textContent = "Write the note first."; return; }
+    if (editNote) {
+      updateDoc(doc(db, "pc_clinical_notes", editNote.id), { content: n.content, structured: n.structured, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+      logAudit("note.edit_draft", "pc_clinical_notes/" + editNote.id);
+      if (signNow) signNote(editNote.id);
+      resetNoteForm(); ok("Draft updated on this phone."); return;
+    }
+    const ref = doc(collection(db, "pc_clinical_notes"));
+    const base = { noteType: n.type, content: n.content, structured: n.structured, authorId: me.id, authorName: myName, amends: amendOf ? amendOf.id : null };
+    const d = child(base); delete d.recordedBy; delete d.recordedByName; delete d.recordedAt; delete d.status;
+    if (amendOf || signNow) Object.assign(d, { status: "signed", signedBy: me.id, signedByName: myName, signedAt: serverTimestamp() }); else d.status = "draft";
+    setDoc(ref, d).catch(saveFailed);
+    logAudit(amendOf ? "note.amend" : (signNow ? "note.sign" : "note.draft"), "pc_clinical_notes/" + ref.id, { noteType: n.type, amends: amendOf ? amendOf.id : null });
+    if (!amendOf) bumpStage("in_consultation");
+    resetNoteForm(); ok(amendOf || signNow ? "Signed note saved on this phone." : "Draft saved on this phone.");
+  }
+  function signNote(id) {
+    updateDoc(doc(db, "pc_clinical_notes", id), { status: "signed", signedAt: serverTimestamp(), signedBy: me.id, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    logAudit("note.sign", "pc_clinical_notes/" + id);
+  }
+  function startEdit(id) {
+    const n = notes.find(x => x.id === id); if (!n) return;
+    editNote = n; amendOf = null;
+    $("nType").value = n.noteType; $("nType").disabled = true; syncNoteForm();
+    if (n.noteType === "examination") EXAM_SECTIONS.forEach(s => { $("ex-" + s[0]).value = (n.structured && n.structured[s[0]]) || ""; }); else $("nText").value = n.content || "";
+    $("nTitle").textContent = "Edit draft note"; $("nDraftBtn").textContent = "Save changes"; $("nSignBtn").classList.toggle("hidden", !can("consult.sign")); $("nSignBtn").textContent = "Save and sign"; $("nCancelBtn").classList.remove("hidden");
+    renderHeader(); $("nAddCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function startAmend(id) {
+    const n = notes.find(x => x.id === id); if (!n) return;
+    amendOf = n; editNote = null; syncNoteForm(); $("nText").value = ""; $("nType").disabled = true;
+    $("nPlain").classList.remove("hidden"); $("nExam").classList.add("hidden");
+    $("nTitle").textContent = "Amend a signed note"; $("nAmendInfo").innerHTML = "Amending the " + esc(NOTE_TYPE[n.noteType] || "note") + " signed by " + esc(n.signedByName || "") + ". The original stays on record unchanged. Write what is being corrected or added."; $("nAmendInfo").classList.remove("hidden");
+    $("nDraftBtn").classList.add("hidden"); $("nSignBtn").classList.remove("hidden"); $("nSignBtn").textContent = "Sign amendment"; $("nCancelBtn").classList.remove("hidden");
+    renderHeader(); $("nAddCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function renderNotes() {
+    const tops = notes.filter(n => n.noteType !== "amendment").sort((a, b) => (b.clientCreatedAt || 0) - (a.clientCreatedAt || 0));
+    const amends = notes.filter(n => n.noteType === "amendment");
+    $("nList").innerHTML = tops.length ? tops.map(n => {
+      const kids = amends.filter(a => a.amends === n.id).sort((a, b) => (a.clientCreatedAt || 0) - (b.clientCreatedAt || 0));
+      const st = n.status === "signed" ? '<span class="chip ok">Signed</span>' : n.status === "draft" ? '<span class="chip warn">Draft</span>' : '<span class="chip">Entered in error</span>';
+      const open = isOpen();
+      return '<div class="entry' + (n.status === "entered_in_error" ? " struck" : "") + '"><div class="pt-name">' + esc(NOTE_TYPE[n.noteType] || n.noteType) + " " + st + "</div>" +
+        '<div class="pt-meta">' + esc(n.authorName || "") + " · " + esc(stampText(null, n.clientCreatedAt)) + (n.status === "signed" ? " · signed by " + esc(n.signedByName || "") + " " + esc(stampText(n.signedAt, 0)) : "") + "</div>" +
+        '<div style="white-space:pre-wrap; margin-top:6px; font-size:13.5px;">' + esc(n.content) + "</div>" +
+        (n.status === "entered_in_error" && n.errorReason ? '<div class="pt-meta">Entered in error: ' + esc(n.errorReason) + "</div>" : "") +
+        kids.map(k => '<div class="cand" style="margin-top:8px;"><div class="pt-name">Amendment <span class="chip ok">Signed</span></div><div class="pt-meta">' + esc(k.authorName || "") + " · " + esc(stampText(k.signedAt, k.clientCreatedAt)) + '</div><div style="white-space:pre-wrap; margin-top:4px; font-size:13.5px;">' + esc(k.content) + "</div></div>").join("") +
+        '<div class="op-actions">' +
+        (n.status === "draft" && open && n.authorId === me.id && can("consult.record") ? '<button class="btn-small btn-secondary" data-nedit="' + esc(n.id) + '">Edit</button>' : "") +
+        (n.status === "draft" && can("consult.sign") ? '<button class="btn-small btn-primary" data-nsign="' + esc(n.id) + '">Sign</button>' : "") +
+        (n.status === "signed" && can("consult.sign") ? '<button class="btn-small btn-secondary" data-namend="' + esc(n.id) + '">Amend</button>' : "") +
+        (n.status !== "entered_in_error" && can("consult.sign") ? '<button class="btn-small btn-secondary" data-nerr="' + esc(n.id) + '">Entered in error</button>' : "") + "</div></div>";
+    }).join("") : '<div class="empty">No notes yet.</div>';
+  }
+
+  // ---------- summary / closing ----------
+  function renderSummary() {
+    const drafts = notes.filter(n => n.status === "draft").length, signed = notes.filter(n => n.status === "signed").length;
+    $("sumBox").innerHTML = [["Triage records", triage.filter(t => t.status === "active").length], ["Complaints", complaints.filter(c => c.status === "active").length], ["Earlier medicines", meds.filter(m => m.status === "active").length],
+      ["Notes signed", signed], ["Notes still in draft", drafts]].map(r => '<div class="breakdown-line"><span>' + r[0] + '</span><span class="v">' + r[1] + "</span></div>").join("") +
+      (drafts ? '<div class="pt-meta" style="color:var(--warn);">Some notes are still drafts. Sign them before closing if they are final.</div>' : "");
+  }
+  function closeVisit() {
+    const drafts = notes.filter(n => n.status === "draft").length;
+    if (drafts && !window.confirm(drafts + " note(s) are still drafts. Close the visit anyway?")) return;
+    const note = $("xNote").value.trim();
+    updateDoc(doc(db, "pc_encounters", encId), { status: "closed", closedAt: serverTimestamp(), closedBy: me.id, closeNote: note, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    logAudit("encounter.close", "pc_encounters/" + encId);
+    ok("Visit closed on this phone.");
+  }
+  function cancelVisit() {
+    const reason = (window.prompt("Why is this visit being cancelled? (for example opened by mistake)") || "").trim();
+    if (reason.length < 3) { if (reason) alert("Please give a short reason."); return; }
+    updateDoc(doc(db, "pc_encounters", encId), { status: "cancelled", cancelReason: reason, closedAt: serverTimestamp(), closedBy: me.id, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    logAudit("encounter.cancel", "pc_encounters/" + encId, { reason: reason });
+    ok("Visit cancelled on this phone.");
+  }
+
+  // ---------- wiring ----------
+  const rAll = () => { if (!enc) return; renderHeader(); renderTriage(); renderComplaints(); renderMeds(); renderNotes(); renderSummary(); };
+  document.querySelectorAll("#tabs .pill-btn").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("#tabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b));
+    ["triage", "consult", "notes", "close"].forEach(t => { $("tab-" + t).classList.toggle("hidden", t !== b.dataset.t); });
+  }));
+  $("tSaveBtn").onclick = saveTriage; $("cSaveBtn").onclick = addComplaint; $("mSaveBtn").onclick = addMed;
+  $("nDraftBtn").onclick = () => saveNote(false); $("nSignBtn").onclick = () => saveNote(true); $("nCancelBtn").onclick = resetNoteForm;
+  $("nType").addEventListener("change", syncNoteForm);
+  $("tWeight").addEventListener("input", updateBmi); $("tHeight").addEventListener("input", updateBmi);
+  $("xCloseBtn").onclick = closeVisit; $("xCancelBtn").onclick = cancelVisit;
+  $("profileBtn").onclick = () => { if (enc) window.mcGo("patient.html?id=" + encodeURIComponent(enc.patientId)); };
+  $("tList").addEventListener("click", e => { const b = e.target.closest("[data-terr]"); if (b) markError("pc_triage", b.dataset.terr, "triage.record", "triage.error"); });
+  $("cList").addEventListener("click", e => { const b = e.target.closest("[data-cerr]"); if (b) markError("pc_complaints", b.dataset.cerr, "consult.record", "complaint.error"); });
+  $("mList").addEventListener("click", e => { const b = e.target.closest("[data-merr]"); if (b) markError("pc_prior_medications", b.dataset.merr, "consult.record", "priormed.error"); });
+  $("nList").addEventListener("click", e => {
+    const ed = e.target.closest("[data-nedit]"); if (ed) { startEdit(ed.dataset.nedit); return; }
+    const sg = e.target.closest("[data-nsign]"); if (sg) { if (window.confirm("Sign this note? After signing it cannot be changed, only amended.")) signNote(sg.dataset.nsign); return; }
+    const am = e.target.closest("[data-namend]"); if (am) { startAmend(am.dataset.namend); return; }
+    const er = e.target.closest("[data-nerr]"); if (er) markError("pc_clinical_notes", er.dataset.nerr, "consult.sign", "note.error");
+  });
+  for (let i = 0; i <= 10; i++) { const o = document.createElement("option"); o.value = String(i); o.textContent = String(i); $("tPain").appendChild(o); }
+  buildExamForm(); syncNoteForm(); PCF.initDates();
+
+  function mark(s) {
+    const badge = $("netBadge");
+    badge.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)";
+    badge.className = "badge " + (s.metadata.fromCache ? "offline" : "online");
+  }
+  function startData() {
+    const base = [where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("encounterId", "==", encId), limit(300)];
+    const sub = (coll, setter, render) => onSnapshot(query(collection(db, coll), ...base), { includeMetadataChanges: true }, s => { setter(s.docs.map(d => ({ id: d.id, ...d.data() }))); mark(s); render(); renderSummary(); }, () => {});
+    sub("pc_triage", v => { triage = v; }, renderTriage);
+    sub("pc_complaints", v => { complaints = v; }, renderComplaints);
+    sub("pc_prior_medications", v => { meds = v; }, renderMeds);
+    sub("pc_clinical_notes", v => { notes = v; }, renderNotes);
+    onSnapshot(query(collection(db, "pc_allergies"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", enc.patientId), limit(100)), s => { allergies = s.docs.map(d => ({ id: d.id, ...d.data() })); renderBanner(); }, () => {});
+    getDoc(doc(db, "pc_obs_rules", facilityId)).then(s => { if (s.exists()) { obsRules = s.data(); renderTriage(); } }).catch(() => {});
+    try { onSnapshot(query(collection(db, "drugs"), where("businessId", "==", businessId), where("shopId", "==", facilityId)), s => {
+      const names = {}; s.docs.forEach(d => { const n = d.data().name; if (n) names[n] = true; });
+      $("drugList").innerHTML = Object.keys(names).sort((a, b) => a.localeCompare(b)).slice(0, 800).map(n => '<option value="' + esc(n) + '">').join("");
+    }, () => {}); } catch (e) {}
+  }
+
+  async function begin() {
+    if (!facility || !(Array.isArray(facility.enabledServices) && facility.enabledServices.indexOf("patient_care") >= 0)) { showGate("Patient Care is not switched on for " + esc(facility ? facility.name : "this shop") + "."); return; }
+    if (!can("patient.view")) { showGate("You do not have Patient Care access yet. Ask the owner to give you access in Users."); return; }
+    if (!encId) { showGate("No visit was chosen."); return; }
+    let got = false;
+    onSnapshot(query(collection(db, "pc_encounters"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("encId", "==", encId), limit(1)), { includeMetadataChanges: true }, s => {
+      if (!s.docs.length) { if (!got) showGate("This visit was not found on this phone yet. Open the visits list while online, then try again."); return; }
+      const first = !enc; enc = { id: s.docs[0].id, ...s.docs[0].data() };
+      if (first) {
+        got = true; $("shopIndicator").textContent = "Patient Care · " + facility.name; $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
+        $("nSignBtn").classList.toggle("hidden", !can("consult.sign")); startData();
+        if (!loggedView) { loggedView = true; setDoc(doc(collection(db, "pc_access_logs")), Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, patientId: enc.patientId, encounterId: encId, purpose: "Viewed visit " + enc.encounterNo, at: serverTimestamp() })).catch(() => {}); }
+      }
+      mark(s); rAll();
+    }, err => { showGate(err && err.code === "permission-denied" ? "You do not have permission to view this visit, or the security rules (v12) are not published yet." : "Could not load this visit."); });
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.mcGo("login.html"); return; }
+    let snap;
+    try { snap = await getDoc(doc(db, "users", user.uid)); } catch (e) { showGate("Could not load your account. Check your connection and reopen this page."); return; }
+    if (!snap.exists()) { window.mcGo("login.html"); return; }
+    me = { id: user.uid, ...snap.data() };
+    if (me.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
+    role = me.role; businessId = me.businessId; perms = me.perms || {}; myName = me.name || "";
+    if (role === "owner") {
+      let started = false;
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
+        const shops = {}; s.docs.forEach(d => { shops[d.id] = { id: d.id, ...d.data() }; });
+        const ids = Object.keys(shops).sort((a, b) => String(shops[a].name).localeCompare(String(shops[b].name)));
+        const want = localStorage.getItem("mc_activeShopId");
+        facilityId = shops[want] ? want : ids[0]; facility = facilityId ? shops[facilityId] : null;
+        if (!started) { started = true; begin(); }
+      });
+    } else {
+      facilityId = me.shopId;
+      try { const sh = await getDoc(doc(db, "shops", facilityId)); facility = sh.exists() ? { id: sh.id, ...sh.data() } : null; } catch (e) { facility = null; }
+      begin();
+    }
+  });
+</script>
+</body>
+</html>
