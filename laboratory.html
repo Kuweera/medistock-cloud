@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>if(window.top===window){location.replace("app.html#"+location.pathname.split("/").pop()+location.search);}</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2abfa0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MediStock">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<title>Laboratory — MediStock Cloud</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  /* ===== Users page ===== */
+  .hidden{display:none !important;}
+  .btn-small{padding:8px 12px; font-size:13px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent);}
+  .btn-danger-outline{background:transparent; color:var(--danger); border:1px solid var(--danger);}
+  .op{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;}
+  .op:last-child{margin-bottom:0;}
+  .op-name{font-weight:700; font-size:14.5px; display:flex; justify-content:space-between; gap:8px; align-items:center;}
+  .op-meta{font-size:12px; color:var(--muted); margin-top:3px; line-height:1.5;}
+  .tag{font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid var(--border);}
+  .tag.on{color:var(--accent2); border-color:var(--accent2);} .tag.off{color:var(--danger); border-color:var(--danger);}
+  .op-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .cred{background:var(--bg); border:1px dashed var(--accent); border-radius:10px; padding:12px; margin:10px 0; font-size:14px; line-height:1.7;}
+  .cred b{font-size:16px; letter-spacing:.5px;}
+  .msg{font-size:13px; margin-top:8px;} .msg.err{color:var(--danger);} .msg.ok{color:var(--accent2);}
+  .pill-row{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;}
+  .pill-btn{background:var(--card); color:var(--text); border:1px solid var(--border); padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:600;}
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .day-h{font-size:11.5px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.4px; margin:12px 0 4px;}
+  .ev{display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ev:last-child{border-bottom:none;}
+  .ev-main{min-width:0;} .ev-text{overflow-wrap:anywhere;}
+  .ev-meta{font-size:11.5px; color:var(--muted);}
+  .ev-amt{font-weight:700; white-space:nowrap;} .ev-amt.out{color:var(--danger);}
+  .hint2{font-size:11.5px; color:var(--muted); line-height:1.5; margin-top:6px;}
+
+  /* ===== Patient Care ===== */
+  .sub{font-size:13px; margin:16px 0 2px; color:var(--accent); font-weight:700;}
+  .chk{display:flex; align-items:center; gap:10px; font-size:13.5px; color:var(--text); margin:8px 0;}
+  .chk input{width:22px; height:22px; flex:0 0 22px; padding:0; margin:0;}
+  .pt{padding:11px 0; border-bottom:1px solid var(--border); cursor:pointer;}
+  .pt:last-child{border-bottom:none;}
+  .pt-name{font-size:14.5px; font-weight:700; color:var(--text);}
+  .pt-meta{font-size:12.5px; color:var(--muted); margin-top:2px; line-height:1.5;}
+  .chip{display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:4px; vertical-align:middle; background:var(--border); color:var(--muted);}
+  .chip.ok{color:var(--accent2);} .chip.warn{color:var(--warn);} .chip.bad{color:var(--danger);}
+  .cand{border:1px solid var(--border); border-radius:10px; padding:10px; margin:8px 0;}
+  .cand.strong{border-color:var(--danger);}
+  .cand-head{font-size:14px; font-weight:700; color:var(--danger); margin-top:14px;}
+  .op-actions{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .breakdown-line .v{text-align:right; max-width:62%;}
+  textarea{width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px; font-family:inherit;}
+  textarea:focus{outline:none; border-color:var(--accent);}
+  .back{display:inline-block; font-size:13px; color:var(--accent); margin:0 0 10px; text-decoration:none; font-weight:600;}
+  .alert-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--danger); color:var(--danger); font-size:13px; line-height:1.5; font-weight:600;}
+  .entry{padding:10px 0; border-bottom:1px solid var(--border);} .entry:last-child{border-bottom:none;}
+  .entry.struck .pt-name{text-decoration:line-through; color:var(--muted); font-weight:500;}
+  .pill-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}
+  /* ===== typed or picked dates ===== */
+  .dateField{position:relative; display:flex; gap:8px; align-items:center;}
+  .dateField input[type="text"]{flex:1; min-width:0;}
+  .cal-btn{flex:0 0 46px; height:40px; background:var(--card); border:1px solid var(--border); border-radius:8px; font-size:18px; padding:0;}
+  .cal-native{position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0; padding:0;}
+  .info-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--accent); color:var(--text); font-size:13px; line-height:1.5;}
+  .perm-warn{font-size:12px; color:var(--warn); margin-bottom:8px; line-height:1.5;}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Patient Care · Laboratory</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="mcGo('dashboard.html')">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+<div class="card hidden" id="gateCard"><div id="gateMsg" class="empty"></div></div>
+
+<div id="mainArea" class="hidden">
+  <div class="card">
+    <h2>Laboratory and imaging queue</h2>
+    <div class="pill-row" id="tabs">
+      <button type="button" class="pill-btn selected" data-f="requested">To collect</button>
+      <button type="button" class="pill-btn" data-f="inlab">In the lab</button>
+      <button type="button" class="pill-btn" data-f="resulted">To verify</button>
+      <button type="button" class="pill-btn" data-f="done">Done today</button>
+    </div>
+    <input type="search" id="q" placeholder="Search patient or test" autocomplete="off">
+    <div class="hint2" id="info"></div>
+    <div id="list"></div>
+  </div>
+
+  <div class="card hidden" id="actCard"></div>
+  <div class="msg ok" id="doneMsg"></div>
+</div>
+
+<script src="pc-fields.js"></script>
+<script type="module">
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, writeBatch, getDocFromCache } = window.top.MC.api(window);
+
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDocServerFirst(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDoc(ref) {
+    try { const c = await getDocFromCache(ref); if (c.exists()) return c; } catch (e) {}
+    return getDocServerFirst(ref);
+  }
+
+  const app = initializeApp({});
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  /*PURE-START*/
+  function isoDate(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+  // low / high / normal is only a comparison with the reference range the laboratory itself entered
+  function autoFlag(value, o) {
+    const v = Number(value);
+    if (o.resultType !== "number" || value === "" || value == null || isNaN(v)) return "none";
+    if (o.refMin != null && v < o.refMin) return "low";
+    if (o.refMax != null && v > o.refMax) return "high";
+    return (o.refMin != null || o.refMax != null) ? "normal" : "none";
+  }
+  const FLAG_LABEL = { normal: "Within reference range", low: "Below reference range", high: "Above reference range", abnormal: "Abnormal", none: "" };
+  const STATUS_LABEL = { requested: "Requested", collected: "Sample collected", processing: "Processing", resulted: "Result entered (not verified)", verified: "Verified", reviewed: "Reviewed by doctor", cancelled: "Cancelled" };
+  const STEPS = ["requested", "collected", "processing", "resulted", "verified", "reviewed"];
+  const PRI_RANK = { stat: 0, urgent: 1, routine: 2 };
+  function sortOrders(list) { return list.slice().sort((a, b) => ((PRI_RANK[a.priority] != null ? PRI_RANK[a.priority] : 2) - (PRI_RANK[b.priority] != null ? PRI_RANK[b.priority] : 2)) || ((a.requestedAt || 0) - (b.requestedAt || 0))); }
+  function rangeText(o) {
+    if (o.resultType === "number" && (o.refMin != null || o.refMax != null)) return (o.refMin != null ? o.refMin : "") + " to " + (o.refMax != null ? o.refMax : "") + (o.units ? " " + o.units : "");
+    return o.refText || "";
+  }
+  /*PURE-END*/
+
+  const params = new URLSearchParams(location.search);
+  let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
+  let byStatus = { requested: [], collected: [], processing: [], resulted: [] }, todayList = [], orders = {}, filter = "requested", selId = null, results = [], unsubRes = null;
+  const can = k => role === "owner" || perms[k] === true;
+  const canCancel = () => can("investigation.request") || can("lab.collect");
+
+  function showGate(msg) { $("gateMsg").innerHTML = msg; $("gateCard").classList.remove("hidden"); $("mainArea").classList.add("hidden"); }
+  function stamp() { return { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now() }; }
+  function saveFailed(err) {
+    const denied = err && err.code === "permission-denied";
+    const text = denied ? "Firestore refused this save. You may not have permission for this step, the test may have moved on, or the security rules (v13) are not published yet." : "Could not save: " + ((err && err.message) || "unknown problem");
+    const el = $("doneMsg"); el.textContent = "NOT SAVED. " + text; el.className = "msg err"; alert(text);
+  }
+  function ok(m) { const el = $("doneMsg"); el.className = "msg ok"; el.textContent = m; }
+  function tsMs(ts) { return ts && ts.toDate ? ts.toDate().getTime() : (ts && ts.seconds ? ts.seconds * 1000 : (typeof ts === "number" ? ts : 0)); }
+  function hhmm(ms) { const d = new Date(ms || 0); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
+  const audit = (o, action, extra) => Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, action: action, recordPath: "pc_inv_orders/" + o.id, patientId: o.patientId, encounterId: o.encounterId, orderId: o.id, at: serverTimestamp() }, extra || {});
+
+  // ---------- queue ----------
+  function rebuild() {
+    orders = {};
+    ["requested", "collected", "processing", "resulted"].forEach(k => byStatus[k].forEach(o => { orders[o.id] = o; }));
+    todayList.forEach(o => { orders[o.id] = o; });
+    renderList(); if (selId) renderAct();
+  }
+  function renderList() {
+    const all = Object.keys(orders).map(k => orders[k]);
+    let rows;
+    if (filter === "requested") rows = all.filter(o => o.status === "requested");
+    else if (filter === "inlab") rows = all.filter(o => o.status === "collected" || o.status === "processing");
+    else if (filter === "resulted") rows = all.filter(o => o.status === "resulted");
+    else rows = all.filter(o => ["verified", "reviewed", "cancelled"].indexOf(o.status) >= 0 && o.requestedDay === isoDate(new Date()));
+    const q = $("q").value.trim().toLowerCase();
+    if (q) rows = rows.filter(o => (String(o.patientName) + " " + o.name).toLowerCase().indexOf(q) >= 0);
+    rows = filter === "done" ? rows.sort((a, b) => (b.requestedAt || 0) - (a.requestedAt || 0)) : sortOrders(rows);
+    const n = k => k === "requested" ? all.filter(o => o.status === "requested").length : k === "inlab" ? all.filter(o => o.status === "collected" || o.status === "processing").length : all.filter(o => o.status === "resulted").length;
+    document.querySelectorAll("#tabs .pill-btn").forEach(b => { const base = { requested: "To collect", inlab: "In the lab", resulted: "To verify", done: "Done today" }[b.dataset.f]; b.textContent = base + (b.dataset.f === "done" ? "" : " (" + n(b.dataset.f) + ")"); });
+    $("info").textContent = "Stat first, then urgent, then routine, then by request time";
+    $("list").innerHTML = rows.length ? rows.map(o => '<div class="pt' + (selId === o.id ? " sel" : "") + '" data-ord="' + esc(o.id) + '"><div class="pt-name">' + esc(o.name) +
+      (o.priority && o.priority !== "routine" ? ' <span class="chip ' + (o.priority === "stat" ? "bad" : "warn") + '">' + (o.priority === "stat" ? "STAT" : "Urgent") + "</span>" : "") + ' <span class="chip">' + esc(STATUS_LABEL[o.status] || o.status) + "</span></div>" +
+      '<div class="pt-meta">' + esc(o.patientName) + " · " + esc(o.encounterNo || "") + " · requested " + esc(hhmm(o.requestedAt)) + (o.specimen ? " · " + esc(o.specimen) : "") + (o.clinicalNote ? "<br>" + esc(o.clinicalNote) : "") + "</div></div>").join("") : '<div class="empty">Nothing here.</div>';
+  }
+
+  // ---------- action panel ----------
+  function selectOrder(id) {
+    selId = id; if (unsubRes) { try { unsubRes(); } catch (e) {} unsubRes = null; } results = [];
+    unsubRes = onSnapshot(query(collection(db, "pc_inv_results"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("orderId", "==", id), limit(30)), s => {
+      results = s.docs.map(d => ({ id: d.id, ...d.data() })); renderAct();
+    }, () => { renderAct(); });
+    renderAct(); renderList(); $("actCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function resultBlock(r, current) {
+    return '<div class="cand ' + (current ? "" : "") + '" style="' + (current ? "" : "opacity:.65;") + '"><div class="pt-name">' + esc(String(r.value)) + (r.unit ? " " + esc(r.unit) : "") + (r.flag && FLAG_LABEL[r.flag] ? ' <span class="chip ' + (r.flag === "normal" ? "ok" : "warn") + '">' + esc(FLAG_LABEL[r.flag]) + "</span>" : "") +
+      ' <span class="chip ' + (r.status === "verified" ? "ok" : r.status === "entered_in_error" ? "bad" : "warn") + '">' + (r.status === "verified" ? "Verified" : r.status === "entered_in_error" ? "Entered in error" : "Not verified") + "</span>" + (current ? "" : ' <span class="chip">Earlier result</span>') + "</div>" +
+      '<div class="pt-meta">' + (rangeText(r) ? "Reference: " + esc(rangeText(r)) + (r.refSource ? " (" + esc(r.refSource) + ")" : "") + "<br>" : "") + (r.comments ? esc(r.comments) + "<br>" : "") +
+      "Entered by " + esc(r.enteredByName || "") + " at " + esc(hhmm(r.resultAt)) + (r.status === "verified" ? " · verified by " + esc(r.verifiedByName || "") : "") + (r.errorReason ? "<br>Error: " + esc(r.errorReason) : "") + "</div></div>";
+  }
+  function resultForm(o, amend) {
+    const unit = o.resultType === "number" && o.units ? " (" + esc(o.units) + ")" : "";
+    let field;
+    if (o.resultType === "number") field = '<input type="number" inputmode="decimal" step="any" id="rVal" placeholder="Result' + unit + '">';
+    else if (o.resultType === "choice") field = '<select id="rVal"><option value="">Choose…</option>' + (o.choices || []).map(c => '<option value="' + esc(c) + '">' + esc(c) + "</option>").join("") + "</select>";
+    else field = '<textarea id="rVal" rows="4" placeholder="Write the result or report"></textarea>';
+    return '<h3 class="sub">' + (amend ? "Enter a corrected result" : "Enter the result") + "</h3>" +
+      (rangeText(o) ? '<div class="pt-meta">Reference: ' + esc(rangeText(o)) + (o.refSource ? " (" + esc(o.refSource) + ")" : "") + "</div>" : "") +
+      "<label>Result" + unit + " *</label>" + field +
+      '<label>Flag</label><select id="rFlag"><option value="none">Not stated</option><option value="normal">Within reference range</option><option value="low">Below reference range</option><option value="high">Above reference range</option><option value="abnormal">Abnormal</option></select>' +
+      '<div class="hint2" id="rFlagHint"></div>' +
+      '<label>Comments</label><textarea id="rCom" rows="2"></textarea>' +
+      '<button class="btn-primary" id="rSaveBtn" data-amend="' + (amend ? "1" : "0") + '">' + (amend ? "Save corrected result" : "Save result") + "</button>" + '<div class="msg" id="rMsg"></div>';
+  }
+  function renderAct() {
+    const o = orders[selId]; const card = $("actCard");
+    if (!o) { card.classList.add("hidden"); return; }
+    card.classList.remove("hidden");
+    const step = STEPS.indexOf(o.status);
+    const cur = results.find(r => r.id === o.currentResultId);
+    let h = '<h2>' + esc(o.name) + "</h2><div class=\"pt-meta\">" + esc(o.patientName) + " · " + esc(o.encounterNo || "") + (o.specimen ? " · " + esc(o.specimen) : "") + " · requested by " + esc(o.requestedByName || "") + " at " + esc(hhmm(o.requestedAt)) + (o.clinicalNote ? "<br>Reason: " + esc(o.clinicalNote) : "") + "</div>" +
+      '<div class="pt-meta" style="margin-top:6px;">' + (o.status === "cancelled" ? '<span class="chip bad">Cancelled' + (o.cancelReason ? ": " + esc(o.cancelReason) : "") + "</span>" : STEPS.map((s, i) => '<span class="chip ' + (i === step ? "ok" : "") + '" style="' + (i > step ? "opacity:.5;" : "") + '">' + esc({ requested: "Requested", collected: "Sample", processing: "Processing", resulted: "Result", verified: "Verified", reviewed: "Reviewed" }[s]) + "</span>").join(" ")) + "</div>";
+    if (cur) h += '<h3 class="sub">Current result</h3>' + resultBlock(cur, true);
+    const older = results.filter(r => r.id !== o.currentResultId).sort((a, b) => (b.resultAt || 0) - (a.resultAt || 0));
+    if (older.length) h += '<h3 class="sub">Earlier results (kept on record)</h3>' + older.map(r => resultBlock(r, false)).join("");
+    if (o.status === "requested") {
+      if (can("lab.collect")) h += '<label>Sample number (optional)</label><input type="text" id="sampleId" autocomplete="off"><button class="btn-primary" id="collectBtn">Sample collected</button>';
+    } else if (o.status === "collected") {
+      if (can("lab.process")) h += '<button class="btn-primary" id="processBtn">Start processing</button>';
+      h += '<div class="pt-meta">Sample collected at ' + esc(hhmm(tsMs(o.collectedAt))) + ".</div>";
+    } else if (o.status === "processing") {
+      if (can("lab.result")) h += resultForm(o, false);
+    } else if (o.status === "resulted") {
+      if (can("lab.verify") && cur && cur.status === "unverified") h += '<button class="btn-primary" id="verifyBtn">Verify this result</button>';
+      if (can("lab.result")) h += '<button class="btn-small btn-secondary" id="showAmendBtn" style="width:100%; margin-top:8px;">Enter a corrected result instead</button><div id="amendHost"></div>';
+      if (can("lab.verify") && cur) h += '<button class="btn-small btn-secondary" id="errBtn" style="width:100%; margin-top:8px;">Mark this result as entered in error</button>';
+    } else if (o.status === "verified" || o.status === "reviewed") {
+      if (can("lab.result")) h += '<button class="btn-small btn-secondary" id="showAmendBtn" style="width:100%; margin-top:8px;">Enter a corrected result</button><div id="amendHost"></div>';
+    }
+    if (["requested", "collected", "processing"].indexOf(o.status) >= 0 && canCancel()) h += '<button class="btn-small btn-secondary" id="cancelBtn" style="width:100%; margin-top:8px;">Cancel this test</button>';
+    h += '<button class="btn-small btn-secondary" id="closeActBtn" style="width:100%; margin-top:8px;">Close</button>';
+    card.innerHTML = h;
+    const g = id => $(id);
+    if (g("collectBtn")) g("collectBtn").onclick = () => collect(o);
+    if (g("processBtn")) g("processBtn").onclick = () => startProcessing(o);
+    if (g("verifyBtn")) g("verifyBtn").onclick = () => verify(o, cur);
+    if (g("errBtn")) g("errBtn").onclick = () => resultError(o, cur);
+    if (g("cancelBtn")) g("cancelBtn").onclick = () => cancelOrder(o);
+    if (g("closeActBtn")) g("closeActBtn").onclick = () => { selId = null; if (unsubRes) { try { unsubRes(); } catch (e) {} unsubRes = null; } renderAct(); renderList(); };
+    if (g("showAmendBtn")) g("showAmendBtn").onclick = () => { $("amendHost").innerHTML = resultForm(o, true); g("showAmendBtn").classList.add("hidden"); wireResultForm(o); };
+    if (o.status === "processing" && can("lab.result")) wireResultForm(o);
+  }
+  function wireResultForm(o) {
+    const v = $("rVal"), fl = $("rFlag"); if (!v) return;
+    const upd = () => { const f = autoFlag(v.value, o); if (o.resultType === "number") { fl.value = f; $("rFlagHint").textContent = f === "none" ? "" : "Worked out from the reference range this laboratory entered. You can change it."; } };
+    v.addEventListener("input", upd);
+    $("rSaveBtn").onclick = () => saveResult(o, $("rSaveBtn").dataset.amend === "1");
+  }
+
+  // ---------- steps ----------
+  function collect(o) {
+    const sid = ($("sampleId") && $("sampleId").value.trim()) || "";
+    const b = writeBatch(db);
+    b.update(doc(db, "pc_inv_orders", o.id), { status: "collected", collectedAt: serverTimestamp(), collectedBy: me.id, collectedByName: myName, sampleId: sid, updatedAt: serverTimestamp(), updatedBy: me.id });
+    b.set(doc(collection(db, "pc_audit_logs")), audit(o, "lab.collect", { sampleId: sid }));
+    b.commit().catch(saveFailed); ok("Sample collected. Saved on this phone.");
+  }
+  function startProcessing(o) {
+    const b = writeBatch(db);
+    b.update(doc(db, "pc_inv_orders", o.id), { status: "processing", processingAt: serverTimestamp(), processingBy: me.id, processingByName: myName, updatedAt: serverTimestamp(), updatedBy: me.id });
+    b.set(doc(collection(db, "pc_audit_logs")), audit(o, "lab.process"));
+    b.commit().catch(saveFailed); ok("Processing started. Saved on this phone.");
+  }
+  function saveResult(o, amend) {
+    const m = $("rMsg"); m.className = "msg err"; m.textContent = "";
+    const raw = $("rVal").value.trim();
+    if (raw === "") { m.textContent = "Enter the result."; return; }
+    let value = raw;
+    if (o.resultType === "number") { value = Number(raw); if (isNaN(value)) { m.textContent = "The result must be a number."; return; } }
+    const rid = amend ? doc(collection(db, "pc_inv_results")).id : o.id;
+    const prev = amend ? o.currentResultId : null;
+    const rdoc = Object.assign(stamp(), { orderId: o.id, encounterId: o.encounterId, patientId: o.patientId, testName: o.name, value: value, valueType: o.resultType, unit: o.units || "", refMin: o.refMin != null ? o.refMin : null, refMax: o.refMax != null ? o.refMax : null,
+      refText: o.refText || "", refSource: o.refSource || "", flag: $("rFlag").value, comments: $("rCom").value.trim(), resultAt: Date.now(), enteredBy: me.id, enteredByName: myName, status: "unverified", amends: prev });
+    const b = writeBatch(db);
+    b.set(doc(db, "pc_inv_results", rid), rdoc);
+    b.update(doc(db, "pc_inv_orders", o.id), { status: "resulted", resultedAt: serverTimestamp(), resultedBy: me.id, resultedByName: myName, currentResultId: rid, updatedAt: serverTimestamp(), updatedBy: me.id });
+    b.set(doc(collection(db, "pc_audit_logs")), audit(o, amend ? "lab.result_amend" : "lab.result", { resultId: rid, amends: prev }));
+    b.commit().catch(saveFailed); ok((amend ? "Corrected result" : "Result") + " saved on this phone. It still needs to be verified.");
+  }
+  function verify(o, cur) {
+    if (!cur || cur.status !== "unverified") return;
+    if (!window.confirm("Verify this result? Check it against the sample and the reference range.")) return;
+    const b = writeBatch(db);
+    b.update(doc(db, "pc_inv_results", cur.id), { status: "verified", verifiedAt: serverTimestamp(), verifiedBy: me.id, verifiedByName: myName, updatedAt: serverTimestamp(), updatedBy: me.id });
+    b.update(doc(db, "pc_inv_orders", o.id), { status: "verified", verifiedAt: serverTimestamp(), verifiedBy: me.id, verifiedByName: myName, updatedAt: serverTimestamp(), updatedBy: me.id });
+    b.set(doc(collection(db, "pc_audit_logs")), audit(o, "lab.verify", { resultId: cur.id }));
+    b.commit().catch(saveFailed); ok("Result verified. Saved on this phone.");
+  }
+  function resultError(o, cur) {
+    const reason = (window.prompt("Why is this result wrong? (it stays on record, marked as entered in error; then enter a corrected result)") || "").trim();
+    if (reason.length < 3) { if (reason) alert("Please give a short reason."); return; }
+    updateDoc(doc(db, "pc_inv_results", cur.id), { status: "entered_in_error", errorReason: reason, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    setDoc(doc(collection(db, "pc_audit_logs")), audit(o, "lab.result_error", { resultId: cur.id, reason: reason })).catch(() => {});
+  }
+  function cancelOrder(o) {
+    const reason = (window.prompt("Why is this test being cancelled?") || "").trim();
+    if (reason.length < 3) { if (reason) alert("Please give a short reason."); return; }
+    const b = writeBatch(db);
+    b.update(doc(db, "pc_inv_orders", o.id), { status: "cancelled", cancelReason: reason, cancelledBy: me.id, cancelledByName: myName, cancelledAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: me.id });
+    b.set(doc(collection(db, "pc_audit_logs")), audit(o, "lab.cancel", { reason: reason }));
+    b.commit().catch(saveFailed); ok("Test cancelled. Saved on this phone.");
+  }
+
+  // ---------- wiring ----------
+  $("list").addEventListener("click", e => { const r = e.target.closest("[data-ord]"); if (r) selectOrder(r.dataset.ord); });
+  $("q").addEventListener("input", renderList);
+  document.querySelectorAll("#tabs .pill-btn").forEach(b => b.addEventListener("click", () => { filter = b.dataset.f; document.querySelectorAll("#tabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b)); renderList(); }));
+
+  function mark(s) {
+    const badge = $("netBadge");
+    badge.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)";
+    badge.className = "badge " + (s.metadata.fromCache ? "offline" : "online");
+  }
+  function begin() {
+    if (!facility || !(Array.isArray(facility.enabledServices) && facility.enabledServices.indexOf("patient_care") >= 0)) { showGate("Patient Care is not switched on for " + esc(facility ? facility.name : "this shop") + "."); return; }
+    if (!can("patient.view")) { showGate("You do not have Patient Care access yet. Ask the owner to give you access in Users."); return; }
+    $("shopIndicator").textContent = "Patient Care · " + facility.name;
+    $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
+    ["requested", "collected", "processing", "resulted"].forEach(st => {
+      onSnapshot(query(collection(db, "pc_inv_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", st), limit(500)), { includeMetadataChanges: true }, s => {
+        byStatus[st] = s.docs.map(d => ({ id: d.id, ...d.data() })); mark(s); rebuild();
+      }, err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view tests, or the security rules (v13) are not published yet." : "Could not load the queue.") + "</div>"; });
+    });
+    onSnapshot(query(collection(db, "pc_inv_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("requestedDay", "==", isoDate(new Date())), limit(500)), s => {
+      todayList = s.docs.map(d => ({ id: d.id, ...d.data() })); rebuild();
+    }, () => {});
+    const open = params.get("order"); if (open) setTimeout(() => selectOrder(open), 600);
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.mcGo("login.html"); return; }
+    let snap;
+    try { snap = await getDoc(doc(db, "users", user.uid)); } catch (e) { showGate("Could not load your account. Check your connection and reopen this page."); return; }
+    if (!snap.exists()) { window.mcGo("login.html"); return; }
+    me = { id: user.uid, ...snap.data() };
+    if (me.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
+    role = me.role; businessId = me.businessId; perms = me.perms || {}; myName = me.name || "";
+    if (role === "owner") {
+      let started = false;
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
+        const shops = {}; s.docs.forEach(d => { shops[d.id] = { id: d.id, ...d.data() }; });
+        const ids = Object.keys(shops).sort((a, b) => String(shops[a].name).localeCompare(String(shops[b].name)));
+        const want = localStorage.getItem("mc_activeShopId");
+        facilityId = shops[want] ? want : ids[0]; facility = facilityId ? shops[facilityId] : null;
+        if (!started) { started = true; begin(); }
+      });
+    } else {
+      facilityId = me.shopId;
+      try { const sh = await getDoc(doc(db, "shops", facilityId)); facility = sh.exists() ? { id: sh.id, ...sh.data() } : null; } catch (e) { facility = null; }
+      begin();
+    }
+  });
+</script>
+</body>
+</html>

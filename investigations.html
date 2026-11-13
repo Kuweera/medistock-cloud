@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>if(window.top===window){location.replace("app.html#"+location.pathname.split("/").pop()+location.search);}</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2abfa0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MediStock">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<title>Test catalogue — MediStock Cloud</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  /* ===== Users page ===== */
+  .hidden{display:none !important;}
+  .btn-small{padding:8px 12px; font-size:13px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent);}
+  .btn-danger-outline{background:transparent; color:var(--danger); border:1px solid var(--danger);}
+  .op{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;}
+  .op:last-child{margin-bottom:0;}
+  .op-name{font-weight:700; font-size:14.5px; display:flex; justify-content:space-between; gap:8px; align-items:center;}
+  .op-meta{font-size:12px; color:var(--muted); margin-top:3px; line-height:1.5;}
+  .tag{font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid var(--border);}
+  .tag.on{color:var(--accent2); border-color:var(--accent2);} .tag.off{color:var(--danger); border-color:var(--danger);}
+  .op-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .cred{background:var(--bg); border:1px dashed var(--accent); border-radius:10px; padding:12px; margin:10px 0; font-size:14px; line-height:1.7;}
+  .cred b{font-size:16px; letter-spacing:.5px;}
+  .msg{font-size:13px; margin-top:8px;} .msg.err{color:var(--danger);} .msg.ok{color:var(--accent2);}
+  .pill-row{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;}
+  .pill-btn{background:var(--card); color:var(--text); border:1px solid var(--border); padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:600;}
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .day-h{font-size:11.5px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.4px; margin:12px 0 4px;}
+  .ev{display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ev:last-child{border-bottom:none;}
+  .ev-main{min-width:0;} .ev-text{overflow-wrap:anywhere;}
+  .ev-meta{font-size:11.5px; color:var(--muted);}
+  .ev-amt{font-weight:700; white-space:nowrap;} .ev-amt.out{color:var(--danger);}
+  .hint2{font-size:11.5px; color:var(--muted); line-height:1.5; margin-top:6px;}
+
+  /* ===== Patient Care ===== */
+  .sub{font-size:13px; margin:16px 0 2px; color:var(--accent); font-weight:700;}
+  .chk{display:flex; align-items:center; gap:10px; font-size:13.5px; color:var(--text); margin:8px 0;}
+  .chk input{width:22px; height:22px; flex:0 0 22px; padding:0; margin:0;}
+  .pt{padding:11px 0; border-bottom:1px solid var(--border); cursor:pointer;}
+  .pt:last-child{border-bottom:none;}
+  .pt-name{font-size:14.5px; font-weight:700; color:var(--text);}
+  .pt-meta{font-size:12.5px; color:var(--muted); margin-top:2px; line-height:1.5;}
+  .chip{display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:4px; vertical-align:middle; background:var(--border); color:var(--muted);}
+  .chip.ok{color:var(--accent2);} .chip.warn{color:var(--warn);} .chip.bad{color:var(--danger);}
+  .cand{border:1px solid var(--border); border-radius:10px; padding:10px; margin:8px 0;}
+  .cand.strong{border-color:var(--danger);}
+  .cand-head{font-size:14px; font-weight:700; color:var(--danger); margin-top:14px;}
+  .op-actions{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .breakdown-line .v{text-align:right; max-width:62%;}
+  textarea{width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px; font-family:inherit;}
+  textarea:focus{outline:none; border-color:var(--accent);}
+  .back{display:inline-block; font-size:13px; color:var(--accent); margin:0 0 10px; text-decoration:none; font-weight:600;}
+  .alert-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--danger); color:var(--danger); font-size:13px; line-height:1.5; font-weight:600;}
+  .entry{padding:10px 0; border-bottom:1px solid var(--border);} .entry:last-child{border-bottom:none;}
+  .entry.struck .pt-name{text-decoration:line-through; color:var(--muted); font-weight:500;}
+  .pill-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}
+  /* ===== typed or picked dates ===== */
+  .dateField{position:relative; display:flex; gap:8px; align-items:center;}
+  .dateField input[type="text"]{flex:1; min-width:0;}
+  .cal-btn{flex:0 0 46px; height:40px; background:var(--card); border:1px solid var(--border); border-radius:8px; font-size:18px; padding:0;}
+  .cal-native{position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0; padding:0;}
+  .info-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--accent); color:var(--text); font-size:13px; line-height:1.5;}
+  .perm-warn{font-size:12px; color:var(--warn); margin-bottom:8px; line-height:1.5;}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Patient Care · Test catalogue</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="mcGo('dashboard.html')">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+<div class="card hidden" id="gateCard"><div id="gateMsg" class="empty"></div></div>
+
+<div id="mainArea" class="hidden">
+  <div class="card">
+    <h2>Tests this facility offers</h2>
+    <div class="hint2" style="margin-top:0;">Doctors choose from this list when requesting tests, and the laboratory enters results against it. Prices, units and reference ranges are only what you enter here. Nothing is filled in for you.</div>
+    <input type="search" id="q" placeholder="Search tests" autocomplete="off">
+    <label>Category</label>
+    <select id="catFilter"><option value="">All categories</option></select>
+    <div class="hint2" id="info"></div>
+    <div id="list"></div>
+  </div>
+
+  <button class="btn-primary hidden" id="showFormBtn" style="margin-bottom:14px;">Add a test</button>
+  <div class="card hidden" id="formCard">
+    <h2 id="fTitle">Add a test</h2>
+    <label>Category *</label>
+    <select id="fCat"></select>
+    <label>Test name * (type or choose)</label>
+    <input type="text" id="fName" list="nameList" placeholder="e.g. Full blood count" autocomplete="off">
+    <label>Sample / specimen (type or choose)</label>
+    <input type="text" id="fSpec" list="specList" placeholder="e.g. Blood" autocomplete="off">
+    <label>How is the result written? *</label>
+    <select id="fType"><option value="number">A number (with units)</option><option value="choice">One of a list (e.g. Positive / Negative)</option><option value="text">Free text (e.g. a report)</option></select>
+    <div id="choiceWrap" class="hidden"><label>Choices (separate with commas)</label><input type="text" id="fChoices" placeholder="Positive, Negative" autocomplete="off"></div>
+    <div id="unitWrap"><label>Units (type or choose)</label><input type="text" id="fUnits" list="unitList" autocomplete="off"></div>
+    <div id="rangeWrap">
+      <label>Reference range (optional)</label>
+      <div class="row"><div><input type="number" inputmode="decimal" step="any" id="fMin" placeholder="Lowest normal"></div><div><input type="number" inputmode="decimal" step="any" id="fMax" placeholder="Highest normal"></div></div>
+    </div>
+    <label>Reference range in words (optional)</label><input type="text" id="fRefText" placeholder="e.g. Negative" autocomplete="off">
+    <label>Where the reference range comes from (needed if you give one)</label>
+    <input type="text" id="fRefSource" placeholder="e.g. Our laboratory's analyser manual 2025" autocomplete="off">
+    <label>Price (optional)</label><input type="number" inputmode="decimal" step="any" min="0" id="fPrice" placeholder="Leave empty if not set">
+    <label class="chk"><input type="checkbox" id="fActive" checked><span>Offered now (untick to hide from doctors)</span></label>
+    <button class="btn-primary" id="fSaveBtn">Save test</button>
+    <button class="btn-small btn-secondary" id="fCancelBtn" style="width:100%; margin-top:8px;">Cancel</button>
+    <div class="msg" id="fMsg"></div>
+  </div>
+  <div class="msg ok" id="doneMsg"></div>
+  <datalist id="nameList"></datalist>
+  <datalist id="specList"><option value="Blood"><option value="Serum"><option value="Plasma"><option value="Whole blood (EDTA)"><option value="Urine"><option value="Stool"><option value="Sputum"><option value="Swab"><option value="Fluid"><option value="No sample (imaging)"></datalist>
+  <datalist id="unitList"><option value="g/dL"><option value="g/L"><option value="mmol/L"><option value="mg/dL"><option value="µmol/L"><option value="U/L"><option value="%"><option value="cells/µL"><option value="×10⁹/L"><option value="×10¹²/L"><option value="fL"><option value="mm/hr"><option value="IU/mL"><option value="ng/mL"></datalist>
+</div>
+
+<script src="pc-fields.js"></script>
+<script type="module">
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, getDocFromCache } = window.top.MC.api(window);
+
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDocServerFirst(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDoc(ref) {
+    try { const c = await getDocFromCache(ref); if (c.exists()) return c; } catch (e) {}
+    return getDocServerFirst(ref);
+  }
+
+  const app = initializeApp({});
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  /*PURE-START*/
+  const CATS = [["malaria", "Malaria tests"], ["haematology", "Haematology"], ["biochemistry", "Biochemistry"], ["urinalysis", "Urinalysis"], ["pregnancy", "Pregnancy tests"], ["microbiology", "Microbiology"], ["stool", "Stool examinations"], ["imaging", "Imaging"], ["other", "Other tests"]];
+  // names only, to save typing. No prices, units or ranges are suggested.
+  const SUGGEST = {
+    malaria: ["Malaria rapid test (RDT)", "Malaria blood smear"],
+    haematology: ["Full blood count", "Haemoglobin", "ESR", "Blood group", "Sickle cell test"],
+    biochemistry: ["Blood glucose", "Urea and electrolytes", "Creatinine", "Liver function tests", "Lipid profile"],
+    urinalysis: ["Urinalysis dipstick", "Urine microscopy", "Urine culture"],
+    pregnancy: ["Pregnancy test (urine)", "Pregnancy test (blood)"],
+    microbiology: ["Blood culture", "Sputum for AFB", "Wound swab culture", "Gram stain"],
+    stool: ["Stool microscopy", "Stool culture", "Stool occult blood"],
+    imaging: ["X-ray chest", "X-ray limb", "Ultrasound abdomen", "Ultrasound obstetric", "CT scan", "MRI", "ECG"],
+    other: ["HIV rapid test", "Hepatitis B test", "Syphilis test", "Widal test"]
+  };
+  function parseChoices(s) { const out = []; String(s || "").split(",").forEach(x => { const v = x.trim(); if (v && out.indexOf(v) < 0) out.push(v); }); return out; }
+  function validateTest(f) {
+    if (String(f.name || "").trim().length < 2) return "Enter the test name.";
+    if (!f.category) return "Choose a category.";
+    if (f.resultType === "choice" && !f.choices.length) return "Add the choices, separated by commas.";
+    if (f.price != null && (isNaN(f.price) || f.price < 0)) return "The price must be a number, or leave it empty.";
+    if ((f.refMin != null && isNaN(f.refMin)) || (f.refMax != null && isNaN(f.refMax))) return "The reference range must be numbers.";
+    if (f.refMin != null && f.refMax != null && f.refMin > f.refMax) return "The lowest normal value is higher than the highest.";
+    const hasRange = f.refMin != null || f.refMax != null || String(f.refText || "").trim() !== "";
+    if (hasRange && String(f.refSource || "").trim().length < 3) return "Say where the reference range comes from.";
+    return "";
+  }
+  /*PURE-END*/
+
+  let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
+  let items = [], editing = null;
+  const can = k => role === "owner" || perms[k] === true;
+  const CATNAME = {}; CATS.forEach(c => { CATNAME[c[0]] = c[1]; });
+
+  function showGate(msg) { $("gateMsg").innerHTML = msg; $("gateCard").classList.remove("hidden"); $("mainArea").classList.add("hidden"); }
+  function stamp() { return { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now() }; }
+  function saveFailed(err) {
+    const denied = err && err.code === "permission-denied";
+    const text = denied ? "Firestore refused this save. You may not have permission, or the security rules (v13) are not published yet." : "Could not save: " + ((err && err.message) || "unknown problem");
+    const el = $("doneMsg"); el.textContent = "NOT SAVED. " + text; el.className = "msg err"; alert(text);
+  }
+
+  function renderList() {
+    const q = $("q").value.trim().toLowerCase(), cf = $("catFilter").value;
+    const rows = items.filter(i => (!cf || i.category === cf) && (!q || String(i.name).toLowerCase().indexOf(q) >= 0));
+    $("info").textContent = items.length + " test" + (items.length === 1 ? "" : "s") + " set up";
+    if (!rows.length) { $("list").innerHTML = '<div class="empty">' + (items.length ? "No test matches." : "No tests set up yet." + (can("catalogue.manage") ? " Tap Add a test below." : " Ask the owner or laboratory to add them.")) + "</div>"; return; }
+    $("list").innerHTML = CATS.map(c => {
+      const g = rows.filter(i => i.category === c[0]).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      if (!g.length) return "";
+      return '<h3 class="sub">' + esc(c[1]) + "</h3>" + g.map(i => '<div class="entry"><div class="pt-name">' + esc(i.name) + (i.active ? "" : ' <span class="chip warn">Not offered</span>') + "</div>" +
+        '<div class="pt-meta">' + [i.specimen ? "Sample: " + esc(i.specimen) : "", i.resultType === "choice" ? "Result: " + esc((i.choices || []).join(" / ")) : i.resultType === "text" ? "Result: text" : "Result: number" + (i.units ? " (" + esc(i.units) + ")" : ""),
+          (i.refMin != null || i.refMax != null) ? "Reference: " + esc(i.refMin != null ? i.refMin : "") + " to " + esc(i.refMax != null ? i.refMax : "") + " " + esc(i.units || "") : (i.refText ? "Reference: " + esc(i.refText) : ""),
+          i.refSource ? "Source: " + esc(i.refSource) : "", i.price != null ? "Price: " + esc(Number(i.price).toLocaleString()) : ""].filter(Boolean).join("<br>") + "</div>" +
+        (can("catalogue.manage") ? '<div class="op-actions"><button class="btn-small btn-secondary" data-edit="' + esc(i.id) + '">Edit</button><button class="btn-small btn-secondary" data-toggle="' + esc(i.id) + '">' + (i.active ? "Stop offering" : "Offer again") + "</button></div>" : "") + "</div>").join("");
+    }).join("");
+  }
+
+  function syncForm() {
+    const t = $("fType").value;
+    $("choiceWrap").classList.toggle("hidden", t !== "choice"); $("unitWrap").classList.toggle("hidden", t !== "number"); $("rangeWrap").classList.toggle("hidden", t !== "number");
+    const cat = $("fCat").value; $("nameList").innerHTML = (SUGGEST[cat] || []).map(n => '<option value="' + esc(n) + '">').join("");
+  }
+  function openForm(item) {
+    editing = item || null;
+    $("fTitle").textContent = item ? "Edit test" : "Add a test";
+    $("fCat").value = item ? item.category : "malaria"; $("fName").value = item ? item.name : ""; $("fSpec").value = item ? item.specimen || "" : ""; $("fType").value = item ? item.resultType : "number";
+    $("fChoices").value = item && item.choices ? item.choices.join(", ") : ""; $("fUnits").value = item ? item.units || "" : "";
+    $("fMin").value = item && item.refMin != null ? item.refMin : ""; $("fMax").value = item && item.refMax != null ? item.refMax : ""; $("fRefText").value = item ? item.refText || "" : ""; $("fRefSource").value = item ? item.refSource || "" : "";
+    $("fPrice").value = item && item.price != null ? item.price : ""; $("fActive").checked = item ? item.active : true; $("fMsg").textContent = "";
+    syncForm(); $("formCard").classList.remove("hidden"); $("showFormBtn").classList.add("hidden"); $("formCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function closeForm() { editing = null; $("formCard").classList.add("hidden"); $("showFormBtn").classList.toggle("hidden", !can("catalogue.manage")); }
+  function saveTest() {
+    const num = id => { const v = $(id).value.trim(); return v === "" ? null : Number(v); };
+    const f = { name: $("fName").value.trim().replace(/\s+/g, " "), category: $("fCat").value, specimen: $("fSpec").value.trim(), resultType: $("fType").value, choices: parseChoices($("fChoices").value),
+      units: $("fUnits").value.trim(), refMin: null, refMax: null, refText: $("fRefText").value.trim(), refSource: $("fRefSource").value.trim(), price: num("fPrice"), active: $("fActive").checked };
+    if (f.resultType === "number") { f.refMin = num("fMin"); f.refMax = num("fMax"); } else { f.units = ""; }
+    if (f.resultType !== "choice") f.choices = [];
+    const bad = validateTest(f), m = $("fMsg"); m.className = "msg err";
+    if (bad) { m.textContent = bad; return; }
+    if (editing) {
+      updateDoc(doc(db, "pc_inv_catalogue", editing.id), Object.assign({}, f, { updatedAt: serverTimestamp(), updatedBy: me.id })).catch(saveFailed);
+      setDoc(doc(collection(db, "pc_audit_logs")), Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, action: "catalogue.edit", recordPath: "pc_inv_catalogue/" + editing.id, at: serverTimestamp() })).catch(() => {});
+    } else {
+      const ref = doc(collection(db, "pc_inv_catalogue"));
+      setDoc(ref, Object.assign(stamp(), f)).catch(saveFailed);
+      setDoc(doc(collection(db, "pc_audit_logs")), Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, action: "catalogue.add", recordPath: "pc_inv_catalogue/" + ref.id, at: serverTimestamp() })).catch(() => {});
+    }
+    $("doneMsg").className = "msg ok"; $("doneMsg").textContent = "Saved on this phone: " + f.name + ".";
+    closeForm();
+  }
+  function toggleItem(id) {
+    const i = items.find(x => x.id === id); if (!i) return;
+    updateDoc(doc(db, "pc_inv_catalogue", id), { active: !i.active, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+  }
+
+  $("q").addEventListener("input", renderList); $("catFilter").addEventListener("change", renderList);
+  $("showFormBtn").onclick = () => openForm(null); $("fCancelBtn").onclick = closeForm; $("fSaveBtn").onclick = saveTest;
+  $("fType").addEventListener("change", syncForm); $("fCat").addEventListener("change", syncForm);
+  $("list").addEventListener("click", e => {
+    const ed = e.target.closest("[data-edit]"); if (ed) { openForm(items.find(x => x.id === ed.dataset.edit)); return; }
+    const tg = e.target.closest("[data-toggle]"); if (tg) toggleItem(tg.dataset.toggle);
+  });
+  CATS.forEach(c => { const o = document.createElement("option"); o.value = c[0]; o.textContent = c[1]; $("catFilter").appendChild(o); const o2 = o.cloneNode(true); $("fCat").appendChild(o2); });
+
+  function mark(s) {
+    const badge = $("netBadge");
+    badge.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)";
+    badge.className = "badge " + (s.metadata.fromCache ? "offline" : "online");
+  }
+  function begin() {
+    if (!facility || !(Array.isArray(facility.enabledServices) && facility.enabledServices.indexOf("patient_care") >= 0)) { showGate("Patient Care is not switched on for " + esc(facility ? facility.name : "this shop") + "."); return; }
+    if (!can("patient.view")) { showGate("You do not have Patient Care access yet. Ask the owner to give you access in Users."); return; }
+    $("shopIndicator").textContent = "Patient Care · " + facility.name;
+    $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
+    $("showFormBtn").classList.toggle("hidden", !can("catalogue.manage"));
+    onSnapshot(query(collection(db, "pc_inv_catalogue"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), limit(1000)), { includeMetadataChanges: true }, s => {
+      items = s.docs.map(d => ({ id: d.id, ...d.data() })); mark(s); renderList();
+    }, err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view tests, or the security rules (v13) are not published yet." : "Could not load tests.") + "</div>"; });
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.mcGo("login.html"); return; }
+    let snap;
+    try { snap = await getDoc(doc(db, "users", user.uid)); } catch (e) { showGate("Could not load your account. Check your connection and reopen this page."); return; }
+    if (!snap.exists()) { window.mcGo("login.html"); return; }
+    me = { id: user.uid, ...snap.data() };
+    if (me.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
+    role = me.role; businessId = me.businessId; perms = me.perms || {}; myName = me.name || "";
+    if (role === "owner") {
+      let started = false;
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
+        const shops = {}; s.docs.forEach(d => { shops[d.id] = { id: d.id, ...d.data() }; });
+        const ids = Object.keys(shops).sort((a, b) => String(shops[a].name).localeCompare(String(shops[b].name)));
+        const want = localStorage.getItem("mc_activeShopId");
+        facilityId = shops[want] ? want : ids[0]; facility = facilityId ? shops[facilityId] : null;
+        if (!started) { started = true; begin(); }
+      });
+    } else {
+      facilityId = me.shopId;
+      try { const sh = await getDoc(doc(db, "shops", facilityId)); facility = sh.exists() ? { id: sh.id, ...sh.data() } : null; } catch (e) { facility = null; }
+      begin();
+    }
+  });
+</script>
+</body>
+</html>

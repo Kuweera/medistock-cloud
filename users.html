@@ -436,13 +436,22 @@
     ["consult.record", "Record consultations (complaints, medicines taken, notes)"],
     ["consult.sign", "Sign and amend clinical notes"],
     ["encounter.close", "Close or cancel visits"],
-    ["settings.manage", "Set warning ranges for vital signs"]
+    ["settings.manage", "Set warning ranges for vital signs"],
+    ["investigation.request", "Request tests"],
+    ["investigation.review", "Mark verified test results as reviewed (doctor)"],
+    ["diagnosis.record", "Record and change diagnoses"],
+    ["catalogue.manage", "Set up the list of tests, prices and reference ranges"],
+    ["lab.collect", "Laboratory: collect samples"],
+    ["lab.process", "Laboratory: process samples"],
+    ["lab.result", "Laboratory: enter and correct results"],
+    ["lab.verify", "Laboratory: verify results"]
   ];
   // quick-fill only: you can still tick or untick anything before saving
   const PERM_PRESETS = {
     reception: ["patient.view", "patient.register", "encounter.open"],
     nurse: ["patient.view", "patient.register", "history.record", "allergy.record", "encounter.open", "triage.record"],
-    clinician: ["patient.view", "patient.register", "patient.edit", "history.record", "allergy.record", "patient.consent", "encounter.open", "triage.record", "consult.record", "consult.sign", "encounter.close"]
+    clinician: ["patient.view", "patient.register", "patient.edit", "history.record", "allergy.record", "patient.consent", "encounter.open", "triage.record", "consult.record", "consult.sign", "encounter.close", "investigation.request", "investigation.review", "diagnosis.record"],
+    lab: ["patient.view", "lab.collect", "lab.process", "lab.result", "lab.verify"]
   };
   const permsOpen = new Set();
   const permDraft = {};
@@ -463,6 +472,7 @@
       '<button type="button" class="pill-btn" onclick="permPreset(\'' + o.id + '\',\'reception\')">Reception</button>' +
       '<button type="button" class="pill-btn" onclick="permPreset(\'' + o.id + '\',\'nurse\')">Nurse</button>' +
       '<button type="button" class="pill-btn" onclick="permPreset(\'' + o.id + '\',\'clinician\')">Clinician</button>' +
+      '<button type="button" class="pill-btn" onclick="permPreset(\'' + o.id + '\',\'lab\')">Laboratory</button>' +
       '<button type="button" class="pill-btn" onclick="permPreset(\'' + o.id + '\',\'none\')">Clear all</button></div>' +
       PERM_LIST.map(x => '<label class="perm-row"><input type="checkbox"' + (d[x[0]] === true ? " checked" : "") +
         ' onchange="permChange(\'' + o.id + '\',\'' + x[0] + '\',this.checked)"><span>' + esc(x[1]) + "</span></label>").join("") +

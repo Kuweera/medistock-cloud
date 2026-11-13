@@ -19,6 +19,8 @@
     ["suppliers.html", "Suppliers"],
     ["patients.html", "Patient Care"],
     ["encounters.html", "Visits & Queue"],
+    ["laboratory.html", "Laboratory"],
+    ["investigations.html", "Test catalogue"],
     ["directory.html", "Facility Directory"],
     ["users.html", "Users"],
     ["shops.html", "Shops"],

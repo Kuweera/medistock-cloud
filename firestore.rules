@@ -1,6 +1,7 @@
 rules_version = '2';
 
-// MediStock Cloud — multi-shop roles & security (v12)
+// MediStock Cloud — multi-shop roles & security (v13)
+// v13: adds Phase 3 (investigations and diagnoses) rules at the end.
 // v12: adds Phase 2 (encounters, triage, consultation) rules at the end of the Patient Care section.
 // v10: Patient Care (pc_*) rules. v11: patients are visible only to the facility that registered them;
 // sharing a patient with another facility (same business or another business) uses pc_shares;
@@ -647,6 +648,183 @@ service cloud.firestore {
         && request.resource.data.facilityId == facilityId
         && request.resource.data.ranges is map
         && request.resource.data.source is string && request.resource.data.source.size() >= 3;
+      allow delete: if false;
+    }
+
+    // =====================================================================================
+    // PHASE 3: tests (investigations) and diagnoses (new in v13). Facility-only, add-only.
+    // A result is never overwritten: it can be verified, or replaced by a new result that points to the old one.
+    // A diagnosis is never overwritten: a change is a new version, and the old version stays on record.
+    // =====================================================================================
+    function invOrderPath(id) { return /databases/$(database)/documents/pc_inv_orders/$(id); }
+    function invResultPath(id) { return /databases/$(database)/documents/pc_inv_results/$(id); }
+    function dxPath(id) { return /databases/$(database)/documents/pc_diagnoses/$(id); }
+    function catOk(d) {
+      return d.name is string && d.name.size() > 0
+        && d.category in ['malaria', 'haematology', 'biochemistry', 'urinalysis', 'pregnancy', 'microbiology', 'stool', 'imaging', 'other']
+        && d.resultType in ['number', 'text', 'choice']
+        && d.active is bool
+        && (d.get('price', null) == null || (d.price is number && d.price >= 0))
+        && (!(d.get('refMin', null) != null || d.get('refMax', null) != null || d.get('refText', '') != '')
+            || (d.get('refSource', '') is string && d.get('refSource', '').size() >= 3));
+    }
+    function labCancelPerm(biz) { return hasPerm(biz, 'investigation.request') || hasPerm(biz, 'lab.collect'); }
+
+    match /pc_inv_catalogue/{id} {
+      allow read: if childReadOk(resource.data);
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'catalogue.manage')
+        && catOk(request.resource.data);
+      allow update: if hasPerm(resource.data.businessId, 'catalogue.manage')
+        && canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['businessId', 'facilityId', 'createdBy', 'createdAt'])
+        && catOk(request.resource.data)
+        && pcUpdateStamped();
+      allow delete: if false;
+    }
+
+    match /pc_inv_orders/{orderId} {
+      allow read: if childReadOk(resource.data);
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'investigation.request')
+        && encounterOpenOk(request.resource.data)
+        && request.resource.data.status == 'requested'
+        && request.resource.data.requestedBy == request.auth.uid
+        && request.resource.data.name is string && request.resource.data.name.size() > 0
+        && request.resource.data.priority in ['routine', 'urgent', 'stat']
+        && request.resource.data.resultType in ['number', 'text', 'choice'];
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && pcUpdateStamped()
+        && (
+          (resource.data.status == 'requested' && request.resource.data.status == 'collected'
+            && hasPerm(resource.data.businessId, 'lab.collect')
+            && request.resource.data.collectedBy == request.auth.uid
+            && request.resource.data.collectedAt == request.time
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'collectedAt', 'collectedBy', 'collectedByName', 'sampleId', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.status == 'collected' && request.resource.data.status == 'processing'
+            && hasPerm(resource.data.businessId, 'lab.process')
+            && request.resource.data.processingBy == request.auth.uid
+            && request.resource.data.processingAt == request.time
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'processingAt', 'processingBy', 'processingByName', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.status == 'processing' && request.resource.data.status == 'resulted'
+            && hasPerm(resource.data.businessId, 'lab.result')
+            && request.resource.data.currentResultId == orderId
+            && request.resource.data.resultedBy == request.auth.uid
+            && request.resource.data.resultedAt == request.time
+            && existsAfter(invResultPath(orderId))
+            && getAfter(invResultPath(orderId)).data.orderId == orderId
+            && getAfter(invResultPath(orderId)).data.status == 'unverified'
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'resultedAt', 'resultedBy', 'resultedByName', 'currentResultId', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.status == 'resulted' && request.resource.data.status == 'verified'
+            && hasPerm(resource.data.businessId, 'lab.verify')
+            && request.resource.data.verifiedBy == request.auth.uid
+            && request.resource.data.verifiedAt == request.time
+            && getAfter(invResultPath(resource.data.currentResultId)).data.status == 'verified'
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'verifiedAt', 'verifiedBy', 'verifiedByName', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.status == 'verified' && request.resource.data.status == 'reviewed'
+            && hasPerm(resource.data.businessId, 'investigation.review')
+            && request.resource.data.reviewedBy == request.auth.uid
+            && request.resource.data.reviewedAt == request.time
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'reviewedAt', 'reviewedBy', 'reviewedByName', 'reviewNote', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.status in ['resulted', 'verified', 'reviewed'] && request.resource.data.status == 'resulted'
+            && hasPerm(resource.data.businessId, 'lab.result')
+            && request.resource.data.currentResultId != resource.data.currentResultId
+            && request.resource.data.resultedBy == request.auth.uid
+            && request.resource.data.resultedAt == request.time
+            && existsAfter(invResultPath(request.resource.data.currentResultId))
+            && getAfter(invResultPath(request.resource.data.currentResultId)).data.orderId == orderId
+            && getAfter(invResultPath(request.resource.data.currentResultId)).data.amends == resource.data.currentResultId
+            && getAfter(invResultPath(request.resource.data.currentResultId)).data.status == 'unverified'
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'resultedAt', 'resultedBy', 'resultedByName', 'currentResultId', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.status in ['requested', 'collected', 'processing'] && request.resource.data.status == 'cancelled'
+            && labCancelPerm(resource.data.businessId)
+            && request.resource.data.cancelledBy == request.auth.uid
+            && request.resource.data.cancelReason is string && request.resource.data.cancelReason.size() >= 3
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'cancelReason', 'cancelledBy', 'cancelledByName', 'cancelledAt', 'updatedAt', 'updatedBy']))
+        );
+      allow delete: if false;
+    }
+
+    match /pc_inv_results/{resultId} {
+      allow read: if childReadOk(resource.data);
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'lab.result')
+        && request.resource.data.status == 'unverified'
+        && request.resource.data.enteredBy == request.auth.uid
+        && request.resource.data.orderId is string
+        && request.resource.data.get('value', null) != null
+        && exists(invOrderPath(request.resource.data.orderId))
+        && get(invOrderPath(request.resource.data.orderId)).data.patientId == request.resource.data.patientId
+        && get(invOrderPath(request.resource.data.orderId)).data.facilityId == request.resource.data.facilityId
+        && (
+          (resultId == request.resource.data.orderId
+            && get(invOrderPath(request.resource.data.orderId)).data.status == 'processing')
+          ||
+          (resultId != request.resource.data.orderId
+            && request.resource.data.amends is string
+            && get(invOrderPath(request.resource.data.orderId)).data.status in ['resulted', 'verified', 'reviewed']
+            && get(invOrderPath(request.resource.data.orderId)).data.currentResultId == request.resource.data.amends)
+        );
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && pcUpdateStamped()
+        && (
+          (resource.data.status == 'unverified' && request.resource.data.status == 'verified'
+            && hasPerm(resource.data.businessId, 'lab.verify')
+            && request.resource.data.verifiedBy == request.auth.uid
+            && request.resource.data.verifiedAt == request.time
+            && getAfter(invOrderPath(resource.data.orderId)).data.status == 'verified'
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'verifiedAt', 'verifiedBy', 'verifiedByName', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.status in ['unverified', 'verified'] && request.resource.data.status == 'entered_in_error'
+            && hasPerm(resource.data.businessId, 'lab.verify')
+            && request.resource.data.errorReason is string && request.resource.data.errorReason.size() >= 3
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'errorReason', 'updatedAt', 'updatedBy']))
+        );
+      allow delete: if false;
+    }
+
+    match /pc_diagnoses/{dxId} {
+      allow read: if childReadOk(resource.data);
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'diagnosis.record')
+        && encounterOpenOk(request.resource.data)
+        && request.resource.data.status == 'active'
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.name is string && request.resource.data.name.size() > 0
+        && request.resource.data.role in ['primary', 'secondary']
+        && request.resource.data.certainty in ['confirmed', 'provisional', 'suspected']
+        && request.resource.data.version is int
+        && (request.resource.data.get('icd10', null) == null
+            || (request.resource.data.icd10 is string && request.resource.data.icd10.matches('^[A-Z][0-9]{2}(\\.[0-9A-Z]{1,4})?$')));
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && hasPerm(resource.data.businessId, 'diagnosis.record')
+        && pcUpdateStamped()
+        && resource.data.status == 'active'
+        && (
+          (request.resource.data.status == 'superseded'
+            && request.resource.data.supersededBy is string
+            && existsAfter(dxPath(request.resource.data.supersededBy))
+            && getAfter(dxPath(request.resource.data.supersededBy)).data.supersedes == dxId
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'supersededBy', 'updatedAt', 'updatedBy']))
+          ||
+          (request.resource.data.status == 'entered_in_error'
+            && request.resource.data.errorReason is string && request.resource.data.errorReason.size() >= 3
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'errorReason', 'updatedAt', 'updatedBy']))
+        );
       allow delete: if false;
     }
   }

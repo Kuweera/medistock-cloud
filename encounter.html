@@ -186,6 +186,8 @@
 
 <body>
 
+<body>
+
 <header class="app-header">
   <h1>MediStock Cloud</h1>
   <p>Patient Care · Visit</p>
@@ -264,6 +266,8 @@
     <button type="button" class="pill-btn selected" data-t="triage">Triage</button>
     <button type="button" class="pill-btn" data-t="consult">Consultation</button>
     <button type="button" class="pill-btn" data-t="notes">Notes</button>
+    <button type="button" class="pill-btn" data-t="tests">Tests</button>
+    <button type="button" class="pill-btn" data-t="dx">Diagnosis</button>
     <button type="button" class="pill-btn" data-t="close">Close visit</button>
   </div>
 
@@ -350,6 +354,40 @@
     <div class="card"><h2>Clinical notes</h2><div id="nList"></div></div>
   </div>
 
+  <div id="tab-tests" class="hidden">
+    <div class="card hidden" id="oAddCard">
+      <h2>Request tests</h2>
+      <input type="search" id="oQ" placeholder="Search tests" autocomplete="off">
+      <label>Category</label>
+      <select id="oCat"><option value="">All categories</option></select>
+      <div id="oPick" style="margin-top:6px;"></div>
+      <div class="row"><div><label>Priority</label><select id="oPri"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">Stat (immediately)</option></select></div></div>
+      <label>Reason for the request (type or choose)</label>
+      <input type="text" id="oNote" list="oNoteList" placeholder="e.g. Fever for 3 days" autocomplete="off">
+      <button class="btn-primary" id="oReqBtn">Request selected tests</button>
+      <div class="msg" id="oMsg"></div>
+    </div>
+    <div class="card"><h2>Tests for this visit</h2><div id="oList"></div></div>
+  </div>
+
+  <div id="tab-dx" class="hidden">
+    <div class="card hidden" id="dAddCard">
+      <h2 id="dTitle">Add a diagnosis</h2>
+      <div class="hint2" style="margin-top:0;">You decide the diagnosis. The app never suggests one and never prescribes from it. Changing a diagnosis keeps the earlier version on record.</div>
+      <label>Diagnosis *</label><input type="text" id="dName" list="dxList" placeholder="Type or choose" autocomplete="off">
+      <div class="row"><div><label>ICD-10 code (optional)</label><input type="text" id="dIcd" placeholder="e.g. B50.9" maxlength="8" autocomplete="off"></div>
+        <div><label>Role</label><select id="dRole"><option value="primary">Primary</option><option value="secondary">Secondary</option></select></div></div>
+      <label>How sure are you?</label>
+      <select id="dCert"><option value="provisional">Provisional</option><option value="suspected">Suspected</option><option value="confirmed">Confirmed</option></select>
+      <label>What supports it (findings, test results)</label><textarea id="dFind" rows="2"></textarea>
+      <label>Notes</label><textarea id="dNotes" rows="2"></textarea>
+      <button class="btn-primary" id="dSaveBtn">Save diagnosis</button>
+      <button class="btn-small btn-secondary hidden" id="dCancelBtn" style="width:100%; margin-top:8px;">Cancel</button>
+      <div class="msg" id="dMsg"></div>
+    </div>
+    <div class="card"><h2>Diagnoses</h2><div id="dList"></div></div>
+  </div>
+
   <div id="tab-close" class="hidden">
     <div class="card"><h2>Visit summary</h2><div id="sumBox"></div></div>
     <div class="card hidden" id="xCard">
@@ -367,6 +405,8 @@
   <datalist id="freqList"><option value="Once daily (OD)"><option value="Twice daily (BD)"><option value="Three times daily (TDS)"><option value="Four times daily (QDS)"><option value="Every 8 hours"><option value="Every 12 hours"><option value="At night"><option value="When needed (PRN)"><option value="Single dose"><option value="Weekly"></datalist>
   <datalist id="routeList"><option value="Oral"><option value="Injection into muscle (IM)"><option value="Injection into vein (IV)"><option value="Injection under skin (SC)"><option value="Applied to skin"><option value="Inhaled"><option value="Eye drops"><option value="Ear drops"><option value="Rectal"><option value="Other"></datalist>
   <datalist id="drugList"></datalist>
+  <datalist id="oNoteList"><option value="Fever"><option value="Cough"><option value="Abdominal pain"><option value="Routine check"><option value="Follow-up of earlier result"><option value="Pre-treatment check"><option value="Antenatal screening"></datalist>
+  <datalist id="dxList"></datalist>
 </div>
 
 <script src="pc-fields.js"></script>
@@ -445,6 +485,13 @@
     if (t.muacCm != null) p.push("MUAC " + t.muacCm + " cm");
     return p.join(" · ");
   }
+  const FLAG_LABEL = { normal: "Within reference range", low: "Below reference range", high: "Above reference range", abnormal: "Abnormal", none: "" };
+  const CAT_LABEL = { malaria: "Malaria", haematology: "Haematology", biochemistry: "Biochemistry", urinalysis: "Urinalysis", pregnancy: "Pregnancy", microbiology: "Microbiology", stool: "Stool", imaging: "Imaging", other: "Other" };
+  function rangeText(o) {
+    if (o.resultType === "number" && (o.refMin != null || o.refMax != null)) return (o.refMin != null ? o.refMin : "") + " to " + (o.refMax != null ? o.refMax : "") + (o.units ? " " + o.units : "");
+    return o.refText || "";
+  }
+  function icdOk(s) { return /^[A-Z][0-9]{2}(\.[0-9A-Z]{1,4})?$/.test(s); }
   const EXAM_SECTIONS = [["general", "General examination"], ["respiratory", "Respiratory"], ["cardiovascular", "Cardiovascular"], ["abdominal", "Abdominal"], ["neurological", "Neurological"], ["skin", "Skin"], ["musculoskeletal", "Musculoskeletal"], ["other", "Other systems"]];
   function examContent(structured) {
     return EXAM_SECTIONS.filter(s => structured[s[0]] && String(structured[s[0]]).trim()).map(s => s[1] + ": " + String(structured[s[0]]).trim()).join("\n");
@@ -455,6 +502,7 @@
   const encId = params.get("id");
   let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
   let enc = null, triage = [], complaints = [], meds = [], notes = [], allergies = [], obsRules = null, loggedView = false;
+  let orders = [], oResults = [], catalogue = [], diagnoses = [], pickedTests = {}, editDx = null, showDxHistory = {};
   let editNote = null, amendOf = null, showAllTri = false;
   const can = k => role === "owner" || perms[k] === true;
   const isOpen = () => enc && enc.status === "open";
@@ -506,6 +554,8 @@
     $("mAddCard").classList.toggle("hidden", !(open && can("consult.record")));
     $("nAddCard").classList.toggle("hidden", !((open && can("consult.record")) || amendOf));
     $("xCard").classList.toggle("hidden", !(open && can("encounter.close")));
+    $("oAddCard").classList.toggle("hidden", !(open && can("investigation.request")));
+    $("dAddCard").classList.toggle("hidden", !(open && can("diagnosis.record")));
   }
   function renderBanner() {
     const act = allergies.filter(a => a.status === "active").sort((a, b) => ({ severe: 0, moderate: 1, mild: 2, unknown: 3 }[a.severity] - { severe: 0, moderate: 1, mild: 2, unknown: 3 }[b.severity]));
@@ -691,16 +741,125 @@
     }).join("") : '<div class="empty">No notes yet.</div>';
   }
 
+
+  // ---------- tests (investigations) ----------
+  function renderOrderPick() {
+    const q = $("oQ").value.trim().toLowerCase(), cf = $("oCat").value;
+    const rows = catalogue.filter(i => i.active && (!cf || i.category === cf) && (!q || String(i.name).toLowerCase().indexOf(q) >= 0)).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    $("oPick").innerHTML = rows.length ? rows.map(i => '<label class="chk"><input type="checkbox" data-pick="' + esc(i.id) + '"' + (pickedTests[i.id] ? " checked" : "") + '><span>' + esc(i.name) + ' <span class="pt-meta">' + esc(CAT_LABEL[i.category] || "") + "</span></span></label>").join("")
+      : '<div class="empty">' + (catalogue.length ? "No test matches." : "No tests are set up for this facility yet. The owner or laboratory can add them in Test catalogue.") + "</div>";
+  }
+  function requestTests() {
+    const m = $("oMsg"); m.className = "msg err"; m.textContent = "";
+    const ids = Object.keys(pickedTests).filter(k => pickedTests[k]);
+    if (!ids.length) { m.textContent = "Tick at least one test."; return; }
+    const pri = $("oPri").value, note = $("oNote").value.trim();
+    const b = writeBatch(db);
+    ids.forEach(id => {
+      const c = catalogue.find(x => x.id === id); if (!c) return;
+      const ref = doc(collection(db, "pc_inv_orders"));
+      b.set(ref, Object.assign(stamp(), { encounterId: encId, patientId: enc.patientId, patientName: enc.patientName, encounterNo: enc.encounterNo, investigationId: c.id, name: c.name, category: c.category, specimen: c.specimen || "", resultType: c.resultType,
+        choices: c.choices || [], units: c.units || "", refMin: c.refMin != null ? c.refMin : null, refMax: c.refMax != null ? c.refMax : null, refText: c.refText || "", refSource: c.refSource || "", price: c.price != null ? c.price : null,
+        priority: pri, clinicalNote: note, status: "requested", requestedBy: me.id, requestedByName: myName, requestedAt: Date.now(), requestedDay: isoDate(new Date()) }));
+      b.set(doc(collection(db, "pc_audit_logs")), auditDoc("investigation.request", "pc_inv_orders/" + ref.id, { test: c.name, priority: pri }));
+    });
+    b.commit().catch(saveFailed);
+    pickedTests = {}; $("oNote").value = ""; $("oPri").value = "routine"; renderOrderPick();
+    ok(ids.length + " test" + (ids.length === 1 ? "" : "s") + " requested. Saved on this phone; the laboratory will see them when it syncs.");
+  }
+  function renderOrders() {
+    const sorted = orders.slice().sort((a, b) => (b.requestedAt || 0) - (a.requestedAt || 0));
+    $("oList").innerHTML = sorted.length ? sorted.map(o => {
+      const cur = oResults.find(r => r.id === o.currentResultId);
+      const older = oResults.filter(r => r.orderId === o.id && r.id !== o.currentResultId).sort((a, b) => (b.resultAt || 0) - (a.resultAt || 0));
+      const st = { requested: "Waiting for sample", collected: "Sample collected", processing: "Being processed", resulted: "Result entered, NOT yet verified", verified: "Verified", reviewed: "Reviewed", cancelled: "Cancelled" }[o.status] || o.status;
+      let h = '<div class="entry"><div class="pt-name">' + esc(o.name) + (o.priority !== "routine" ? ' <span class="chip ' + (o.priority === "stat" ? "bad" : "warn") + '">' + (o.priority === "stat" ? "STAT" : "Urgent") + "</span>" : "") +
+        ' <span class="chip ' + (o.status === "verified" || o.status === "reviewed" ? "ok" : o.status === "resulted" ? "warn" : o.status === "cancelled" ? "bad" : "") + '">' + esc(st) + "</span></div>" +
+        '<div class="pt-meta">Requested by ' + esc(o.requestedByName || "") + " at " + esc(stampText(null, o.requestedAt)) + (o.clinicalNote ? " · " + esc(o.clinicalNote) : "") + (o.status === "cancelled" && o.cancelReason ? "<br>Cancelled: " + esc(o.cancelReason) : "") + "</div>";
+      if (cur) h += '<div class="cand"><div class="pt-name">' + esc(String(cur.value)) + (cur.unit ? " " + esc(cur.unit) : "") + (cur.flag && FLAG_LABEL[cur.flag] ? ' <span class="chip ' + (cur.flag === "normal" ? "ok" : "warn") + '">' + esc(FLAG_LABEL[cur.flag]) + "</span>" : "") +
+        ' <span class="chip ' + (cur.status === "verified" ? "ok" : cur.status === "entered_in_error" ? "bad" : "warn") + '">' + (cur.status === "verified" ? "Verified" : cur.status === "entered_in_error" ? "Entered in error" : "Not verified") + "</span></div>" +
+        '<div class="pt-meta">' + (rangeText(cur) ? "Reference: " + esc(rangeText(cur)) + (cur.refSource ? " (" + esc(cur.refSource) + ")" : "") + "<br>" : "") + (cur.comments ? esc(cur.comments) + "<br>" : "") +
+        "Entered by " + esc(cur.enteredByName || "") + (cur.status === "verified" ? " · verified by " + esc(cur.verifiedByName || "") : "") + (o.status === "reviewed" ? " · reviewed by " + esc(o.reviewedByName || "") : "") + "</div></div>";
+      if (older.length) h += '<div class="pt-meta" style="margin-top:6px;">' + older.length + " earlier result" + (older.length === 1 ? "" : "s") + " kept on record (corrected): " + older.map(r => esc(String(r.value)) + (r.unit ? " " + esc(r.unit) : "") + (r.status === "entered_in_error" ? " (error)" : "")).join(", ") + "</div>";
+      const acts = [];
+      if (o.status === "verified" && can("investigation.review")) acts.push('<button class="btn-small btn-primary" data-orev="' + esc(o.id) + '">I have reviewed this result</button>');
+      if (["requested", "collected", "processing"].indexOf(o.status) >= 0 && can("investigation.request")) acts.push('<button class="btn-small btn-secondary" data-ocan="' + esc(o.id) + '">Cancel test</button>');
+      return h + (acts.length ? '<div class="op-actions">' + acts.join("") + "</div>" : "") + "</div>";
+    }).join("") : '<div class="empty">No tests requested for this visit.</div>';
+  }
+  function reviewOrder(id) {
+    const note = (window.prompt("Review note (optional)") || "").trim();
+    updateDoc(doc(db, "pc_inv_orders", id), { status: "reviewed", reviewedAt: serverTimestamp(), reviewedBy: me.id, reviewedByName: myName, reviewNote: note, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    logAudit("investigation.review", "pc_inv_orders/" + id, { note: note });
+  }
+  function cancelOrder(id) {
+    const reason = (window.prompt("Why is this test being cancelled?") || "").trim();
+    if (reason.length < 3) { if (reason) alert("Please give a short reason."); return; }
+    updateDoc(doc(db, "pc_inv_orders", id), { status: "cancelled", cancelReason: reason, cancelledBy: me.id, cancelledByName: myName, cancelledAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    logAudit("investigation.cancel", "pc_inv_orders/" + id, { reason: reason });
+  }
+
+  // ---------- diagnoses (every change is a new version) ----------
+  function renderDx() {
+    const act = diagnoses.filter(d => d.status === "active").sort((a, b) => ((a.role === "primary" ? 0 : 1) - (b.role === "primary" ? 0 : 1)) || (a.clientCreatedAt || 0) - (b.clientCreatedAt || 0));
+    const CERT = { confirmed: "Confirmed", provisional: "Provisional", suspected: "Suspected" };
+    const open = isOpen() && can("diagnosis.record");
+    let h = act.length ? act.map(d => {
+      const hist = diagnoses.filter(x => x.diagKey === d.diagKey && x.id !== d.id).sort((a, b) => (b.version || 0) - (a.version || 0));
+      return '<div class="entry"><div class="pt-name">' + esc(d.name) + (d.icd10 ? ' <span class="chip">' + esc(d.icd10) + "</span>" : "") + ' <span class="chip ' + (d.role === "primary" ? "ok" : "") + '">' + (d.role === "primary" ? "Primary" : "Secondary") + '</span> <span class="chip ' + (d.certainty === "confirmed" ? "ok" : "warn") + '">' + CERT[d.certainty] + "</span></div>" +
+        '<div class="pt-meta">' + (d.findings ? "Supported by: " + esc(d.findings) + "<br>" : "") + (d.notes ? esc(d.notes) + "<br>" : "") + "By " + esc(d.authorName || "") + " · " + esc(stampText(null, d.clientCreatedAt)) + (d.version > 1 ? " · version " + d.version : "") + "</div>" +
+        (hist.length ? '<button type="button" class="btn-small btn-secondary" data-dxh="' + esc(d.diagKey) + '" style="margin-top:6px;">' + (showDxHistory[d.diagKey] ? "Hide" : "Show") + " earlier versions (" + hist.length + ")</button>" : "") +
+        (showDxHistory[d.diagKey] ? hist.map(x => '<div class="cand" style="opacity:.7; margin-top:6px;"><div class="pt-name">' + esc(x.name) + (x.icd10 ? " · " + esc(x.icd10) : "") + " · " + (x.role === "primary" ? "Primary" : "Secondary") + " · " + CERT[x.certainty] + '</div><div class="pt-meta">Version ' + esc(x.version) + " · " + esc(x.authorName || "") + " · " + esc(stampText(null, x.clientCreatedAt)) + (x.status === "superseded" ? " · replaced by a newer version" : x.status === "entered_in_error" ? " · entered in error" : "") + "</div></div>").join("") : "") +
+        (open ? '<div class="op-actions"><button class="btn-small btn-secondary" data-dxe="' + esc(d.id) + '">Change (new version)</button><button class="btn-small btn-secondary" data-dxx="' + esc(d.id) + '">Entered in error</button></div>' : "") + "</div>";
+    }).join("") : '<div class="empty">No diagnosis recorded yet.</div>';
+    const bad = diagnoses.filter(d => d.status === "entered_in_error");
+    if (bad.length) h += '<div class="pt-meta" style="margin-top:8px;">' + bad.length + " entr" + (bad.length === 1 ? "y" : "ies") + " marked as error (kept on record).</div>";
+    $("dList").innerHTML = h;
+    $("dxList").innerHTML = Array.from(new Set(diagnoses.map(d => d.name))).sort().map(n => '<option value="' + esc(n) + '">').join("");
+  }
+  function resetDx() { editDx = null; ["dName", "dIcd", "dFind", "dNotes"].forEach(id => { $(id).value = ""; }); $("dRole").value = "primary"; $("dCert").value = "provisional"; $("dTitle").textContent = "Add a diagnosis"; $("dSaveBtn").textContent = "Save diagnosis"; $("dCancelBtn").classList.add("hidden"); }
+  function saveDx() {
+    const m = $("dMsg"); m.className = "msg err"; m.textContent = "";
+    const name = $("dName").value.trim().replace(/\s+/g, " "), icd = $("dIcd").value.trim().toUpperCase();
+    if (name.length < 2) { m.textContent = "Enter the diagnosis."; return; }
+    if (icd && !icdOk(icd)) { m.textContent = "The ICD-10 code looks wrong. It is a letter, two digits, and optionally a dot and up to four more characters (for example B50.9). Leave it empty if unsure."; return; }
+    const role = $("dRole").value;
+    const otherPrimary = diagnoses.find(d => d.status === "active" && d.role === "primary" && (!editDx || d.id !== editDx.id));
+    if (role === "primary" && otherPrimary && !window.confirm("There is already a primary diagnosis (" + otherPrimary.name + "). Save this one as primary as well?")) return;
+    const ref = doc(collection(db, "pc_diagnoses"));
+    const base = { encounterId: encId, patientId: enc.patientId, name: name, icd10: icd || null, role: role, certainty: $("dCert").value, findings: $("dFind").value.trim(), notes: $("dNotes").value.trim(), authorId: me.id, authorName: myName, status: "active",
+      version: editDx ? (editDx.version || 1) + 1 : 1, diagKey: editDx ? editDx.diagKey : ref.id, supersedes: editDx ? editDx.id : null };
+    const b = writeBatch(db);
+    b.set(ref, Object.assign(stamp(), base));
+    if (editDx) b.update(doc(db, "pc_diagnoses", editDx.id), { status: "superseded", supersededBy: ref.id, updatedAt: serverTimestamp(), updatedBy: me.id });
+    b.set(doc(collection(db, "pc_audit_logs")), auditDoc(editDx ? "diagnosis.change" : "diagnosis.add", "pc_diagnoses/" + ref.id, { name: name, supersedes: editDx ? editDx.id : null }));
+    b.commit().catch(saveFailed);
+    const was = !!editDx; resetDx(); ok(was ? "New version of the diagnosis saved on this phone. The earlier version is kept." : "Diagnosis saved on this phone.");
+  }
+  function startEditDx(id) {
+    const d = diagnoses.find(x => x.id === id); if (!d) return;
+    editDx = d; $("dName").value = d.name; $("dIcd").value = d.icd10 || ""; $("dRole").value = d.role; $("dCert").value = d.certainty; $("dFind").value = d.findings || ""; $("dNotes").value = d.notes || "";
+    $("dTitle").textContent = "Change diagnosis (saved as a new version)"; $("dSaveBtn").textContent = "Save new version"; $("dCancelBtn").classList.remove("hidden"); $("dAddCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function dxError(id) {
+    const reason = (window.prompt("Why is this diagnosis wrong? (it stays on record, marked as entered in error)") || "").trim();
+    if (reason.length < 3) { if (reason) alert("Please give a short reason."); return; }
+    updateDoc(doc(db, "pc_diagnoses", id), { status: "entered_in_error", errorReason: reason, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    logAudit("diagnosis.error", "pc_diagnoses/" + id, { reason: reason });
+  }
+
   // ---------- summary / closing ----------
   function renderSummary() {
     const drafts = notes.filter(n => n.status === "draft").length, signed = notes.filter(n => n.status === "signed").length;
     $("sumBox").innerHTML = [["Triage records", triage.filter(t => t.status === "active").length], ["Complaints", complaints.filter(c => c.status === "active").length], ["Earlier medicines", meds.filter(m => m.status === "active").length],
-      ["Notes signed", signed], ["Notes still in draft", drafts]].map(r => '<div class="breakdown-line"><span>' + r[0] + '</span><span class="v">' + r[1] + "</span></div>").join("") +
+      ["Notes signed", signed], ["Notes still in draft", drafts], ["Tests requested", orders.filter(o => o.status !== "cancelled").length], ["Tests not yet verified", orders.filter(o => ["requested", "collected", "processing", "resulted"].indexOf(o.status) >= 0).length], ["Diagnoses", diagnoses.filter(d => d.status === "active").length]].map(r => '<div class="breakdown-line"><span>' + r[0] + '</span><span class="v">' + r[1] + "</span></div>").join("") +
       (drafts ? '<div class="pt-meta" style="color:var(--warn);">Some notes are still drafts. Sign them before closing if they are final.</div>' : "");
   }
   function closeVisit() {
     const drafts = notes.filter(n => n.status === "draft").length;
     if (drafts && !window.confirm(drafts + " note(s) are still drafts. Close the visit anyway?")) return;
+    const pending = orders.filter(o => ["requested", "collected", "processing", "resulted"].indexOf(o.status) >= 0).length;
+    if (pending && !window.confirm(pending + " test(s) have no verified result yet. Close the visit anyway? The laboratory can still finish them.")) return;
     const note = $("xNote").value.trim();
     updateDoc(doc(db, "pc_encounters", encId), { status: "closed", closedAt: serverTimestamp(), closedBy: me.id, closeNote: note, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
     logAudit("encounter.close", "pc_encounters/" + encId);
@@ -715,15 +874,25 @@
   }
 
   // ---------- wiring ----------
-  const rAll = () => { if (!enc) return; renderHeader(); renderTriage(); renderComplaints(); renderMeds(); renderNotes(); renderSummary(); };
+  const rAll = () => { if (!enc) return; renderHeader(); renderTriage(); renderComplaints(); renderMeds(); renderNotes(); renderOrders(); renderDx(); renderSummary(); };
   document.querySelectorAll("#tabs .pill-btn").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll("#tabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b));
-    ["triage", "consult", "notes", "close"].forEach(t => { $("tab-" + t).classList.toggle("hidden", t !== b.dataset.t); });
+    ["triage", "consult", "notes", "tests", "dx", "close"].forEach(t => { $("tab-" + t).classList.toggle("hidden", t !== b.dataset.t); });
   }));
   $("tSaveBtn").onclick = saveTriage; $("cSaveBtn").onclick = addComplaint; $("mSaveBtn").onclick = addMed;
   $("nDraftBtn").onclick = () => saveNote(false); $("nSignBtn").onclick = () => saveNote(true); $("nCancelBtn").onclick = resetNoteForm;
   $("nType").addEventListener("change", syncNoteForm);
   $("tWeight").addEventListener("input", updateBmi); $("tHeight").addEventListener("input", updateBmi);
+  $("oQ").addEventListener("input", renderOrderPick); $("oCat").addEventListener("change", renderOrderPick); $("oReqBtn").onclick = requestTests;
+  $("oPick").addEventListener("change", e => { const c = e.target.closest("[data-pick]"); if (c) pickedTests[c.dataset.pick] = c.checked; });
+  $("oList").addEventListener("click", e => { const r = e.target.closest("[data-orev]"); if (r) { reviewOrder(r.dataset.orev); return; } const c = e.target.closest("[data-ocan]"); if (c) cancelOrder(c.dataset.ocan); });
+  $("dSaveBtn").onclick = saveDx; $("dCancelBtn").onclick = resetDx;
+  $("dList").addEventListener("click", e => {
+    const h = e.target.closest("[data-dxh]"); if (h) { showDxHistory[h.dataset.dxh] = !showDxHistory[h.dataset.dxh]; renderDx(); return; }
+    const ed = e.target.closest("[data-dxe]"); if (ed) { startEditDx(ed.dataset.dxe); return; }
+    const x = e.target.closest("[data-dxx]"); if (x) dxError(x.dataset.dxx);
+  });
+  Object.keys(CAT_LABEL).forEach(k => { const o = document.createElement("option"); o.value = k; o.textContent = CAT_LABEL[k]; $("oCat").appendChild(o); });
   $("xCloseBtn").onclick = closeVisit; $("xCancelBtn").onclick = cancelVisit;
   $("profileBtn").onclick = () => { if (enc) window.mcGo("patient.html?id=" + encodeURIComponent(enc.patientId)); };
   $("tList").addEventListener("click", e => { const b = e.target.closest("[data-terr]"); if (b) markError("pc_triage", b.dataset.terr, "triage.record", "triage.error"); });
@@ -750,6 +919,10 @@
     sub("pc_complaints", v => { complaints = v; }, renderComplaints);
     sub("pc_prior_medications", v => { meds = v; }, renderMeds);
     sub("pc_clinical_notes", v => { notes = v; }, renderNotes);
+    sub("pc_inv_orders", v => { orders = v; }, renderOrders);
+    sub("pc_inv_results", v => { oResults = v; }, renderOrders);
+    sub("pc_diagnoses", v => { diagnoses = v; }, renderDx);
+    onSnapshot(query(collection(db, "pc_inv_catalogue"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), limit(1000)), s => { catalogue = s.docs.map(d => ({ id: d.id, ...d.data() })); renderOrderPick(); }, () => {});
     onSnapshot(query(collection(db, "pc_allergies"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", enc.patientId), limit(100)), s => { allergies = s.docs.map(d => ({ id: d.id, ...d.data() })); renderBanner(); }, () => {});
     getDoc(doc(db, "pc_obs_rules", facilityId)).then(s => { if (s.exists()) { obsRules = s.data(); renderTriage(); } }).catch(() => {});
     try { onSnapshot(query(collection(db, "drugs"), where("businessId", "==", businessId), where("shopId", "==", facilityId)), s => {
