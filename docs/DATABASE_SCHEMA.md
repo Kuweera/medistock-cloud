@@ -93,3 +93,11 @@ All have `businessId, facilityId, schemaVersion, createdBy, createdAt, clientCre
 - `pc_clinical_notes`: `noteType (hpi/examination/assessment/progress/other/amendment), content, structured, authorId, authorName, status (draft/signed/entered_in_error), signedBy, signedByName, signedAt, amends, errorReason`.
 - `pc_obs_rules/{facilityId}`: `ranges{field:{min,max}}, source, effectiveDate, version, approvedBy, approvedByName`.
 Rules v12 are only added after the existing Patient Care rules. Not yet confirmed against real Firebase.
+
+## Phase 3 - collections (rules v13)
+All have `businessId, facilityId, schemaVersion, createdBy, createdAt, clientCreatedAt`.
+- `pc_inv_catalogue`: `name, category, specimen, resultType (number/text/choice), choices[], units, refMin, refMax, refText, refSource, price, active`.
+- `pc_inv_orders`: `encounterId, patientId, patientName, encounterNo, investigationId, name, category, specimen, resultType, choices, units, refMin, refMax, refText, refSource, price (copies from the catalogue), priority, clinicalNote, status (requested/collected/processing/resulted/verified/reviewed/cancelled), requestedBy/ByName/At/Day, collectedAt/By/ByName, sampleId, processingAt/By/ByName, resultedAt/By/ByName, currentResultId, verifiedAt/By/ByName, reviewedAt/By/ByName, reviewNote, cancelReason, cancelledAt/By/ByName`.
+- `pc_inv_results` (first result has the same id as the order): `orderId, encounterId, patientId, testName, value, valueType, unit, refMin, refMax, refText, refSource, flag, comments, resultAt, enteredBy, enteredByName, status (unverified/verified/entered_in_error), amends, verifiedAt/By/ByName, errorReason`.
+- `pc_diagnoses`: `encounterId, patientId, name, icd10, role, certainty, findings, notes, authorId, authorName, status (active/superseded/entered_in_error), version, diagKey, supersedes, supersededBy, errorReason`.
+Rules v13 are added after the Phase 2 rules and need them. Not yet confirmed against real Firebase.

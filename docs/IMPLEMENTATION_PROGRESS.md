@@ -11,8 +11,21 @@
 | 1a | (f) Facility links + consent | Facility links in (c). **Consent sharing built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (g) Merge | **Built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (h) Regression | **Automated and file-level checks done (see REGRESSION_REPORT.md). Owner phone checklist and Rules Playground checks pending** |
+| 3 | Investigations and diagnoses | **Built and tested on a mock database; awaiting rules v13, upload and phone test** |
 | 2 | Encounters, triage, consultation | **Built and tested on a mock database; awaiting rules v12, upload and phone test** |
 | 1b | Cross-business sharing | **Built as part of (f2): directory + shares between facilities and businesses (see spec section 17). Cross-business duplicate matching not built** |
+
+## Phase 3 files
+New: `investigations.html` (test catalogue), `laboratory.html` (lab queue and results). Changed: `encounter.html` (Tests and Diagnosis tabs), `users.html` (eight new permissions, Laboratory quick-fill), `nav.js`, `sw.js` (mc-v22). Rules: v13 (added after v12). Spec: INVESTIGATION_DIAGNOSIS_SPEC.md.
+
+## Phone test for Phase 3
+1. Users: give a test operator the Laboratory quick-fill; give another the Clinician quick-fill.
+2. Test catalogue: add one test with a number result, units and a reference range (and its source), and one Positive/Negative test.
+3. Open a visit > Tests: request both tests as urgent. They appear in Laboratory > To collect.
+4. Laboratory: collect, start processing, enter a result (check the flag), verify.
+5. Back in the visit: the result shows as Verified; tap "I have reviewed this result".
+6. Enter a corrected result: the old one stays listed as an earlier result.
+7. Visit > Diagnosis: add a diagnosis, then change it and check the earlier version is kept.
 
 ## Phase 2 files
 New: `encounters.html` (queue, start visit, warning ranges), `encounter.html` (triage, consultation, notes, closing). Changed: `patient.html` (Visits tab), `users.html` (six new permissions), `nav.js` (menu item Visits & Queue), `sw.js` (mc-v21). Rules: v12 (new Phase 2 rules added at the end). Specs: ENCOUNTER_TRIAGE_SPEC.md, CLINICAL_CONSULTATION_SPEC.md.
