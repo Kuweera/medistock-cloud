@@ -11,9 +11,23 @@
 | 1a | (f) Facility links + consent | Facility links in (c). **Consent sharing built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (g) Merge | **Built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (h) Regression | **Automated and file-level checks done (see REGRESSION_REPORT.md). Owner phone checklist and Rules Playground checks pending** |
+| 4 | Treatment plan engine, schedules, medication record | **Built and tested on a mock database; awaiting rules v14, upload and phone test. Highest-risk phase: test carefully with made-up patients** |
 | 3 | Investigations and diagnoses | **Built and tested on a mock database; awaiting rules v13, upload and phone test** |
 | 2 | Encounters, triage, consultation | **Built and tested on a mock database; awaiting rules v12, upload and phone test** |
 | 1b | Cross-business sharing | **Built as part of (f2): directory + shares between facilities and businesses (see spec section 17). Cross-business duplicate matching not built** |
+
+## Phase 4 files
+New: `treatment.html` (dashboard and medication record), `dosing-rules.html`, `pc-sched.js` (scheduling and safety helpers). Changed: `encounter.html` (Treatment tab), `users.html` (four new permissions), `nav.js`, `sw.js` (mc-v23). Rules: v14 (added after v13). Specs: TREATMENT_PLAN_ENGINE_SPEC.md, MEDICATION_SCHEDULING_SPEC.md, MEDICATION_ADMINISTRATION_SPEC.md.
+
+## Phone test for Phase 4 (use a made-up patient and a made-up rule; the numbers are NOT medical advice)
+1. Users: give one test operator the Clinician quick-fill and another the Nurse quick-fill.
+2. Dosing rules: add a test rule for one medicine with a source, a dose per kg and a highest dose, and approve it.
+3. In a visit, record a weight in triage, then Treatment > Start a plan > Add medicine. Try each: regular intervals, twice a day for 5 days, weight-based (check the calculated dose and the confirm box), as needed.
+4. Try the warnings: add the same medicine twice, and a medicine matching a recorded allergy.
+5. Treatment & MAR: record one as Given, one as Not given (a reason is required), try to give the allergic one.
+6. Correct a wrong record as the owner; check the original stays on file and the administration is pending again.
+7. Change a dose (new version) and stop an order; check the old one is marked replaced/stopped and the future times are cancelled.
+8. Airplane mode: record a dose, go online, check no NOT SAVED message.
 
 ## Phase 3 files
 New: `investigations.html` (test catalogue), `laboratory.html` (lab queue and results). Changed: `encounter.html` (Tests and Diagnosis tabs), `users.html` (eight new permissions, Laboratory quick-fill), `nav.js`, `sw.js` (mc-v22). Rules: v13 (added after v12). Spec: INVESTIGATION_DIAGNOSIS_SPEC.md.
