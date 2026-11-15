@@ -62,7 +62,9 @@ test("dispensing: a pharmacist can dispense (prescription + record + stock entry
 test("dispensing: partial then second dispensing continues from the outstanding quantity", async () => {
   await assertSucceeds(dispense(db("pharm"), "pharm").commit());
   await assertSucceeds(dispense(db("pharm"), "pharm", { req: "bb22", qty: 8, already: 12, first: false }).commit());
-  const rx = await env.withSecurityRulesDisabled(async c => (await getDoc(doc(c.firestore(), "prescriptions", "o1"))).data());
+  let rx;
+  await env.withSecurityRulesDisabled(async c => { rx = (await getDoc(doc(c.firestore(), "prescriptions", "o1"))).data(); });
+  assert.ok(rx, "prescription o1 should exist after two dispensings");
   assert.equal(rx.status, "completed"); assert.equal(rx.qtyOutstanding, 0);
 });
 test("dispensing: a dispensing with more than the prescribed quantity is denied", async () => {
@@ -150,6 +152,16 @@ test("guidelines: approval is refused when source details are incomplete", async
   await setDoc(doc(db("author"), "guidelines", "gl_k1_v1"), gl("author", { sourceRef: "" }));
   await assertFails(updateDoc(doc(db("approver"), "guidelines", "gl_k1_v1"), approveFields("approver")));
 });
+test("guidelines: an approver can retire an approved entry (with a reason) and discard a draft; no reason is refused", async () => {
+  await setDoc(doc(db("author"), "guidelines", "gl_k1_v1"), gl("author"));
+  await updateDoc(doc(db("approver"), "guidelines", "gl_k1_v1"), approveFields("approver"));
+  const ret = (u, reason) => ({ approvalStatus: "retired", retiredReason: reason, retiredBy: u, retiredByName: "x", retiredAt: serverTimestamp(), updatedBy: u, updatedAt: serverTimestamp() });
+  await assertFails(updateDoc(doc(db("approver"), "guidelines", "gl_k1_v1"), ret("approver", "")));
+  await assertFails(updateDoc(doc(db("author"), "guidelines", "gl_k1_v1"), ret("author", "no longer valid")));   // manage-only cannot retire approved
+  await assertSucceeds(updateDoc(doc(db("approver"), "guidelines", "gl_k1_v1"), ret("approver", "no longer valid")));
+  await setDoc(doc(db("author"), "guidelines", "gl_k2_v1"), gl("author", { id: "gl_k2_v1", guidelineKey: "k2" }));
+  await assertSucceeds(updateDoc(doc(db("author"), "guidelines", "gl_k2_v1"), ret("author", "wrong entry")));   // author may discard own draft
+});
 test("guidelines: a new version replaces the old one only in the same commit", async () => {
   await setDoc(doc(db("author"), "guidelines", "gl_k1_v1"), gl("author"));
   await updateDoc(doc(db("approver"), "guidelines", "gl_k1_v1"), approveFields("approver"));
@@ -162,8 +174,9 @@ test("guidelines: a new version replaces the old one only in the same commit", a
 });
 test("guidelines: national entries are readable business-wide, facility protocols only by their facility, other businesses never", async () => {
   await env.withSecurityRulesDisabled(async c => {
-    await setDoc(doc(c.firestore(), "guidelines", "n1"), gl("author", { id: "n1" }));
-    await setDoc(doc(c.firestore(), "guidelines", "f1"), gl("author", { id: "f1", scope: "facility" }));
+    const f = c.firestore();
+    await setDoc(doc(f, "guidelines", "n1"), gl("author", { id: "n1" }));
+    await setDoc(doc(f, "guidelines", "f1"), gl("author", { id: "f1", scope: "facility" }));
   });
   await assertSucceeds(getDoc(doc(db("pharmB"), "guidelines", "n1")));
   await assertFails(getDoc(doc(db("pharmB"), "guidelines", "f1")));
