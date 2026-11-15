@@ -302,6 +302,7 @@
   <datalist id="reasonList"><option value="Fever"><option value="Cough"><option value="Headache"><option value="Abdominal pain"><option value="Diarrhoea and vomiting"><option value="Injury"><option value="Skin problem"><option value="Follow-up visit"><option value="Antenatal visit"><option value="Child immunisation"><option value="Medicine review"><option value="Laboratory test"><option value="Dressing"></datalist>
 </div>
 
+<script src="pc-ux.js"></script>
 <script src="pc-fields.js"></script>
 <script type="module">
   const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, collection, onSnapshot, serverTimestamp, query, where, limit, getDocFromCache } = window.top.MC.api(window);
@@ -375,7 +376,8 @@
   function stamp() { return { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now() }; }
   function saveFailed(err) {
     const denied = err && err.code === "permission-denied";
-    const text = denied ? "Firestore refused this save. Your account may not have permission, Patient Care may be off for this shop, or the security rules (v12) are not published yet." : "Could not save: " + ((err && err.message) || "unknown problem");
+    console.warn("save failed", err);
+    const text = window.PCUX ? PCUX.friendlyError(err, "visit") : "This could not be saved. Check your internet connection and try again.";
     const el = $("doneMsg"); el.textContent = "NOT SAVED. " + text; el.className = "msg err"; alert(text);
   }
   function hhmm(ms) { const d = new Date(ms); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
@@ -510,7 +512,7 @@
   function startData() {
     onSnapshot(query(collection(db, "pc_encounters"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "open"), limit(500)), { includeMetadataChanges: true }, s => {
       openList = s.docs.map(d => ({ id: d.id, ...d.data() })); mark(s); rebuild();
-    }, err => { $("qList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view visits, or the security rules (v12) are not published yet." : "Could not load visits.") + "</div>"; });
+    }, err => { $("qList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view visits." : "The visits could not be loaded. Check your internet connection and try again.") + "</div>"; });
     onSnapshot(query(collection(db, "pc_encounters"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("arrivalDay", "==", isoDate(new Date())), limit(500)), s => {
       todayList = s.docs.map(d => ({ id: d.id, ...d.data() })); rebuild();
     }, () => {});

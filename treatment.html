@@ -275,6 +275,7 @@
   <datalist id="prnReasonList"><option value="Pain"><option value="Fever"><option value="Nausea"><option value="Vomiting"><option value="Anxiety"><option value="Itching"></datalist>
 </div>
 
+<script src="pc-ux.js"></script>
 <script src="pc-fields.js"></script>
 <script src="pc-sched.js"></script>
 <script type="module">
@@ -310,7 +311,8 @@
   function stamp() { return { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now() }; }
   function saveFailed(err) {
     const denied = err && err.code === "permission-denied";
-    const text = denied ? "Firestore refused this save. It may already have been recorded on another phone, you may not have permission for this, or the security rules (v14) are not published yet. Check the list and try again." : "Could not save: " + ((err && err.message) || "unknown problem");
+    console.warn("save failed", err);
+    const text = window.PCUX ? PCUX.friendlyError(err, "record", "You do not have permission to do this, or it was already recorded on another phone. Check the list and try again.") : "This could not be saved. Check your internet connection and try again.";
     const el = $("doneMsg"); el.textContent = "NOT SAVED. " + text; el.className = "msg err"; alert(text);
   }
   function ok(m) { const el = $("doneMsg"); el.className = "msg ok"; el.textContent = m; }
@@ -540,7 +542,7 @@
       const d = PCS.addDays(t, i);
       evUnsubs.push(onSnapshot(query(collection(db, "pc_treatment_events"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("plannedDay", "==", d), limit(500)), { includeMetadataChanges: true }, s => {
         dayEvents[d] = s.docs.map(x => ({ id: x.id, ...x.data() })); mark(s); render(); if (selId && evMap[selId]) renderAct();
-      }, err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view treatments, or the security rules (v14) are not published yet." : "Could not load treatments.") + "</div>"; }));
+      }, err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view treatments." : "The treatments could not be loaded. Check your internet connection and try again.") + "</div>"; }));
     }
   }
   function begin() {

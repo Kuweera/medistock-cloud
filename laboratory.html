@@ -269,6 +269,7 @@
   <div class="msg ok" id="doneMsg"></div>
 </div>
 
+<script src="pc-ux.js"></script>
 <script src="pc-fields.js"></script>
 <script type="module">
   const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, writeBatch, getDocFromCache } = window.top.MC.api(window);
@@ -321,7 +322,8 @@
   function stamp() { return { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now() }; }
   function saveFailed(err) {
     const denied = err && err.code === "permission-denied";
-    const text = denied ? "Firestore refused this save. You may not have permission for this step, the test may have moved on, or the security rules (v13) are not published yet." : "Could not save: " + ((err && err.message) || "unknown problem");
+    console.warn("save failed", err);
+    const text = window.PCUX ? PCUX.friendlyError(err, "result", "You do not have permission for this step, or the test has already moved on. Refresh the list and try again.") : "This could not be saved. Check your internet connection and try again.";
     const el = $("doneMsg"); el.textContent = "NOT SAVED. " + text; el.className = "msg err"; alert(text);
   }
   function ok(m) { const el = $("doneMsg"); el.className = "msg ok"; el.textContent = m; }
@@ -499,7 +501,7 @@
     ["requested", "collected", "processing", "resulted"].forEach(st => {
       onSnapshot(query(collection(db, "pc_inv_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", st), limit(500)), { includeMetadataChanges: true }, s => {
         byStatus[st] = s.docs.map(d => ({ id: d.id, ...d.data() })); mark(s); rebuild();
-      }, err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view tests, or the security rules (v13) are not published yet." : "Could not load the queue.") + "</div>"; });
+      }, err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view tests." : "The the queue could not be loaded. Check your internet connection and try again.") + "</div>"; });
     });
     onSnapshot(query(collection(db, "pc_inv_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("requestedDay", "==", isoDate(new Date())), limit(500)), s => {
       todayList = s.docs.map(d => ({ id: d.id, ...d.data() })); rebuild();

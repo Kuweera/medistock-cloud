@@ -285,7 +285,8 @@
     <select id="fAgeMode"><option value="dob">I know the date of birth</option><option value="est">Estimated age</option><option value="unknown">Age is unknown</option></select>
     <div id="dobWrap"><label>Date of birth</label>
       <div class="dateField"><input type="text" id="fDob"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div>
-      <div class="hint2">Type it (for example 05/05/1990) or tap the calendar.</div></div>
+      <div class="hint2">Type it (for example 05/05/1990) or tap the calendar. Required if you know it.</div>
+      <div id="fAgeShow" class="hint2" style="font-weight:600;color:#1b5e20"></div></div>
     <div id="estWrap" class="hidden">
       <div class="row">
         <div><label>Years</label><input type="number" inputmode="numeric" id="fAgeY" min="0" max="120" placeholder="0"></div>
@@ -327,6 +328,7 @@
   <datalist id="districtList"></datalist>
 </div>
 
+<script src="pc-ux.js"></script>
 <script src="pc-fields.js"></script>
 <script type="module">
   const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, collection, onSnapshot, serverTimestamp, query, where, limit, getDocFromCache } = window.top.MC.api(window);
@@ -560,8 +562,8 @@
   }
   function saveFailed(err) {
     const denied = err && err.code === "permission-denied";
-    const text = denied ? "Firestore refused this save. Your account may not have permission to register patients, or Patient Care is not switched on for this shop."
-                        : "Could not save: " + ((err && err.message) || "unknown problem");
+    console.warn("save failed", err);
+    const text = window.PCUX ? PCUX.friendlyError(err, "patient") : "This could not be saved. Check your internet connection and try again.";
     const el = $("doneMsg"); el.textContent = "NOT SAVED. " + text; el.className = "msg err";
     alert(text);
   }
@@ -584,6 +586,11 @@
     f.emergencyContact = $("fSameEm").checked ? Object.assign({}, f.nextOfKin) : { name: v("fEmName"), relationship: v("fEmRel"), phone: v("fEmPhone") };
     return f;
   }
+  function showAgeFromDob() {
+    const el = $("fAgeShow"); if (!el) return; el.textContent = "";
+    try { const di = PCF.dateInfo("fDob"); if (di.state === "ok" && window.PCUX) { const a = PCUX.ageFromDob(di.iso); if (a) el.textContent = "Age: " + a.text; } } catch (x) {}
+  }
+  ["input", "change", "blur"].forEach(ev => $("fDob").addEventListener(ev, showAgeFromDob));
   function formProblem(f) {
     if (nameTokens(f.fullName).join("").length < 2) return "Enter the patient's full name.";
     if (!f.sex) return "Choose the patient's sex.";
@@ -714,7 +721,7 @@
     // each facility only loads (and can only read) the patients it registered itself
     onSnapshot(query(collection(db, "pc_patients"), where("businessId", "==", businessId), where("registeredFacilityId", "==", facilityId), limit(3000)), { includeMetadataChanges: true }, s => {
       patients = s.docs.map(d => ({ id: d.id, ...d.data() })); patientsReady = true; patientsErr = null; mark(s); refreshPlaceLists(); renderList(); if (openId) openDetail(openId);
-    }, err => { patientsErr = err && err.code === "permission-denied" ? "You do not have permission to view patients. Ask the owner to switch on your Patient Care access, or publish the latest security rules." : ((err && err.message) || "Could not load patients."); patientsReady = true; linksReady = true; renderList(); });
+    }, err => { patientsErr = err && err.code === "permission-denied" ? "You do not have permission to view patients. Ask the owner to switch on your Patient Care access." : "The patients could not be loaded. Check your internet connection and try again."; patientsReady = true; linksReady = true; renderList(); });
     onSnapshot(query(collection(db, "pc_patient_facility_links"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), limit(3000)), s => {
       links = s.docs.map(d => ({ id: d.id, ...d.data() })); linksReady = true; renderList();
     }, () => { linksReady = true; renderList(); });

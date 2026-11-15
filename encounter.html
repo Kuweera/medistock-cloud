@@ -412,8 +412,8 @@
       <div id="obMedBox">
         <label>Medicine * (type or choose from this shop's medicines)</label><input type="text" id="obMed" list="drugList" placeholder="Type or choose" autocomplete="off">
         <div class="row"><div><label>Formulation</label><input type="text" id="obForm" list="formList" autocomplete="off"></div><div><label>Strength</label><input type="text" id="obStrength" placeholder="e.g. 500 mg" autocomplete="off"></div></div>
-        <div class="row"><div><label>Dose *</label><input type="number" inputmode="decimal" step="any" id="obDose"></div><div><label>Dose unit *</label><input type="text" id="obUnit" list="doseUnitList" placeholder="e.g. tablet" autocomplete="off"></div></div>
-        <label>Route *</label><input type="text" id="obRoute" list="routeList" autocomplete="off">
+        <div class="row"><div><label>How much for each dose? *</label><input type="number" inputmode="decimal" step="any" id="obDose"></div><div><label>Unit of the dose *</label><input type="text" id="obUnit" list="doseUnitList" placeholder="e.g. tablet" autocomplete="off"></div></div>
+        <label>How is it given? *</label><input type="text" id="obRoute" list="routeList" autocomplete="off"><div class="fhelp" style="font-size:12px;color:#5b6b7a;margin:2px 0 8px;line-height:1.35">Type or choose, for example by mouth, injection into a muscle, or into a vein.</div>
       </div>
       <div id="obProcBox" class="hidden">
         <label>Procedure * (type or choose)</label><input type="text" id="obProc" list="procList" autocomplete="off">
@@ -421,11 +421,12 @@
         <div class="row"><div><label>Materials used</label><input type="text" id="obMat" autocomplete="off"></div><div><label>Who does it</label><input type="text" id="obWho" list="whoList" autocomplete="off"></div></div>
         <label>How long (minutes)</label><input type="number" inputmode="numeric" id="obMinutes">
       </div>
-      <label>Instructions</label><textarea id="obInstr" rows="2" placeholder="e.g. Take after food"></textarea>
-      <label>How often *</label>
+      <label>Instructions for the patient or nurse (optional)</label><textarea id="obInstr" rows="2" placeholder="e.g. Take after food"></textarea>
+      <label>When should it be given? *</label><div class="fhelp" style="font-size:12px;color:#5b6b7a;margin:2px 0 8px;line-height:1.35">Choose the pattern. A short explanation and an example appear below.</div>
       <select id="obType"></select>
-      <div class="row"><div><label>Starts on</label><div class="dateField"><input type="text" id="obStartDate"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div></div>
-        <div><label>At</label><input type="time" id="obStartTime"></div></div>
+      <div class="row"><div><label>First dose on</label><div class="dateField"><input type="text" id="obStartDate"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div></div>
+        <div><label>At what time?</label><input type="time" id="obStartTime"></div></div>
+      <div id="obSchedHelp" class="fhelp" style="font-size:12.5px;color:#34495e;background:#f3f7fb;border-radius:8px;padding:8px 10px;margin:6px 0 8px;line-height:1.4"></div>
       <div id="obSched"></div>
       <div id="obQtyBox"><label>How much should the pharmacy give? (optional)</label><div class="fhelp" style="font-size:12px;color:#5b6b7a;margin:2px 0 8px;line-height:1.35">Enter the total in the smallest unit of the medicine, for example 20 for 20 tablets, or 100 for 100 ml. If you leave it blank, the pharmacist will enter it.</div><input type="number" inputmode="decimal" step="any" id="obQty"></div>
       <div id="obWeightBox" class="hidden"></div>
@@ -467,6 +468,7 @@
   <datalist id="whoList"><option value="Nurse"><option value="Clinical officer"><option value="Doctor"><option value="Physiotherapist"><option value="Patient or guardian"></datalist>
 </div>
 
+<script src="pc-ux.js"></script>
 <script src="pc-fields.js"></script>
 <script src="pc-sched.js"></script>
 <script type="module">
@@ -577,7 +579,8 @@
   const logAudit = (action, path, extra) => setDoc(doc(collection(db, "pc_audit_logs")), auditDoc(action, path, extra)).catch(saveFailed);
   function saveFailed(err) {
     const denied = err && err.code === "permission-denied";
-    const text = denied ? "Firestore refused this save. Your account may not have permission, the visit may already be closed, or the security rules (v12) are not published yet." : "Could not save: " + ((err && err.message) || "unknown problem");
+    console.warn("save failed", err);
+    const text = window.PCUX ? PCUX.friendlyError(err, "record", "You do not have permission to do this, or the visit has already been closed.") : "This could not be saved. Check your internet connection and try again.";
     const el = $("doneMsg"); el.textContent = "NOT SAVED. " + text; el.className = "msg err"; alert(text);
   }
   function ok(msg) { const el = $("doneMsg"); el.className = "msg ok"; el.textContent = msg; }
@@ -985,8 +988,18 @@
   }
 
   // ----- order builder -----
-  const SCHED_MED = [["once", "Once only"], ["interval", "Regular intervals (every N hours)"], ["daily", "Times of day, every day"], ["fixed", "Fixed times (choose the days)"], ["weight", "Weight-based dose"], ["prn", "As needed (PRN)"], ["taper", "Tapering (different doses over time)"], ["custom", "Choose each date and time"]];
-  const SCHED_PROC = [["once", "Once only"], ["interval", "Regular intervals (every N hours)"], ["daily", "Times of day, every day"], ["fixed", "Fixed times (choose the days)"], ["custom", "Choose each date and time"]];
+  const SCHED_MED = [["once", "Give once"], ["interval", "Give at regular intervals"], ["daily", "Give at selected times every day"], ["fixed", "Give on selected weekdays"], ["weight", "Give a dose worked out from the patient's weight"], ["prn", "Give only when needed"], ["taper", "Reduce the dose in stages"], ["custom", "Select individual dates and times"]];
+  const SCHED_PROC = [["once", "Do once"], ["interval", "Do at regular intervals"], ["daily", "Do at selected times every day"], ["fixed", "Do on selected weekdays"], ["custom", "Select individual dates and times"]];
+  const SCHED_HELP = {
+    once: ["One dose at the start date and time.", "Example: a single injection today at 10:00."],
+    interval: ["Repeats after the same number of hours. Enter the hours between doses and how many doses in total.", "Example: every 8 hours, 6 doses."],
+    daily: ["The same times every day. Enter the times and the number of days. Twice daily means two times, for example 08:00 and 20:00.", "Example: 08:00 and 20:00 for 5 days."],
+    fixed: ["Like selected times every day, but only on the weekdays you tick.", "Example: Monday, Wednesday and Friday at 08:00 for 14 days."],
+    weight: ["The dose is calculated from the patient's recorded weight using an approved dosing rule. You must check and confirm the result.", "Example: a rule gives the dose for each kilogram; the weight comes from triage."],
+    prn: ["Only given when the patient needs it. Say what it is for, the shortest time between doses and the most doses in a day.", "Example: for pain, at least 6 hours apart, at most 4 times a day."],
+    taper: ["The dose changes over time. Add a stage for each dose: how many days, and the dose for those days.", "Example: 3 days at 4 tablets, then 3 days at 2 tablets."],
+    custom: ["You choose every date and time yourself. Use this when no other pattern fits.", "Example: Tuesday 09:00, Friday 14:30."]
+  };
   function timesField() { return '<label>Times of day * (24-hour, separated by commas)</label><input type="text" id="obTimes" placeholder="08:00, 20:00" autocomplete="off">'; }
   function freqPreset() { return '<label>Quick fill</label><select id="obFreq"><option value="">Choose…</option><option value="1">Once a day</option><option value="2">Twice a day</option><option value="3">Three times a day</option><option value="4">Four times a day</option></select>'; }
   function patternHtml(p) {
@@ -1004,6 +1017,7 @@
     else if (t === "prn") h = '<label>What is it for? *</label><input type="text" id="obInd" list="indList" placeholder="e.g. Pain" autocomplete="off"><div class="row"><div><label>Shortest time between doses (hours) *</label><input type="number" inputmode="decimal" step="any" id="obMinInt"></div><div><label>Most doses in a day *</label><input type="number" inputmode="numeric" id="obMaxDay"></div></div><label>Most total in a day (optional)</label><input type="number" inputmode="decimal" step="any" id="obMaxDaily"><label>Allowed for how many days</label><input type="number" inputmode="numeric" id="obPrnDays">';
     else if (t === "taper") h = '<label>Stages (each stage has its own dose)</label><div id="obStages">' + stageRow("", "", "") + '</div><button type="button" class="btn-small btn-secondary" id="obAddStage" style="width:100%; margin-top:6px;">Add a stage</button>';
     else if (t === "custom") h = '<label>Dates and times</label><div id="obItems">' + itemRow("", "", "") + '</div><button type="button" class="btn-small btn-secondary" id="obAddItem" style="width:100%; margin-top:6px;">Add another time</button>';
+    const sh = SCHED_HELP[t]; $("obSchedHelp").innerHTML = sh ? esc(sh[0]) + "<br><b>" + esc(sh[1]) + "</b>" : ""; $("obSchedHelp").style.display = sh ? "" : "none";
     $("obSched").innerHTML = h; PCF.initDates();
     $("obWeightBox").classList.toggle("hidden", t !== "weight"); if (t === "weight") buildWeightBox();
     const dose = $("obDose"); dose.readOnly = t === "weight"; if (t !== "weight") dose.placeholder = "";
@@ -1323,7 +1337,7 @@
         if (!loggedView) { loggedView = true; setDoc(doc(collection(db, "pc_access_logs")), Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, patientId: enc.patientId, encounterId: encId, purpose: "Viewed visit " + enc.encounterNo, at: serverTimestamp() })).catch(() => {}); }
       }
       mark(s); rAll();
-    }, err => { showGate(err && err.code === "permission-denied" ? "You do not have permission to view this visit, or the security rules (v12) are not published yet." : "Could not load this visit."); });
+    }, err => { showGate(err && err.code === "permission-denied" ? "You do not have permission to view this visit." : "The this visit could not be loaded. Check your internet connection and try again."); });
   }
 
   onAuthStateChanged(auth, async (user) => {

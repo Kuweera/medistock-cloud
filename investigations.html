@@ -294,6 +294,7 @@
   <datalist id="unitList"><option value="g/dL"><option value="g/L"><option value="mmol/L"><option value="mg/dL"><option value="µmol/L"><option value="U/L"><option value="%"><option value="cells/µL"><option value="×10⁹/L"><option value="×10¹²/L"><option value="fL"><option value="mm/hr"><option value="IU/mL"><option value="ng/mL"></datalist>
 </div>
 
+<script src="pc-ux.js"></script>
 <script src="pc-fields.js"></script>
 <script type="module">
   const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, getDocFromCache } = window.top.MC.api(window);
@@ -352,7 +353,8 @@
   function stamp() { return { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now() }; }
   function saveFailed(err) {
     const denied = err && err.code === "permission-denied";
-    const text = denied ? "Firestore refused this save. You may not have permission, or the security rules (v13) are not published yet." : "Could not save: " + ((err && err.message) || "unknown problem");
+    console.warn("save failed", err);
+    const text = window.PCUX ? PCUX.friendlyError(err, "test") : "This could not be saved. Check your internet connection and try again.";
     const el = $("doneMsg"); el.textContent = "NOT SAVED. " + text; el.className = "msg err"; alert(text);
   }
 
@@ -433,7 +435,7 @@
     $("showFormBtn").classList.toggle("hidden", !can("catalogue.manage"));
     onSnapshot(query(collection(db, "pc_inv_catalogue"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), limit(1000)), { includeMetadataChanges: true }, s => {
       items = s.docs.map(d => ({ id: d.id, ...d.data() })); mark(s); renderList();
-    }, err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view tests, or the security rules (v13) are not published yet." : "Could not load tests.") + "</div>"; });
+    }, err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view tests." : "The tests could not be loaded. Check your internet connection and try again.") + "</div>"; });
   }
 
   onAuthStateChanged(auth, async (user) => {

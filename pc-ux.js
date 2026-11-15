@@ -19,8 +19,9 @@
     "cancelled": "The action was cancelled. Please try again."
   };
   function code(err) { var c = err && (err.code || (err.message && /\b(permission-denied|unavailable|unauthenticated)\b/.exec(err.message) || [])[0]); return c ? String(c).replace(/^firestore\//, "") : ""; }
-  function friendlyError(err, what) {
+  function friendlyError(err, what, deniedText) {
     var c = code(err), base;
+    if (c === "permission-denied" && deniedText) return deniedText;
     if (what && (c === "unavailable" || c === "deadline-exceeded" || c === "")) base = "This " + what + " could not be saved. Check your internet connection and try again.";
     else base = CODES[c] || "Something went wrong. Please try again. If it keeps happening, tell the person in charge.";
     return base;
