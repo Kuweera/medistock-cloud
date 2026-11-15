@@ -21,15 +21,16 @@ I use the contract names exactly and change **no** field names, collections or b
 - `firestore.rules`: the new permission keys only matter once Dev 4 uses them in the rules.
 - Pages that want friendly errors add `<script src="pc-ux.js"></script>` and call `PCUX.friendlyError(err, "patient")` in their catch blocks.
 
-## 4. Review findings (not yet done)
-Counted help text is thin everywhere (2 to 7 hints per page; encounter.html has 74 inputs).
-1. **encounter.html**: consultation, triage and the treatment-order form are the largest. Needs the 3-step flow (basic -> extra -> review) and plain-language schedule picker with an example per type.
-2. **Error messages**: pages show "Could not save: <raw message>" or mention rules versions (v11, v12, v14) to ordinary staff. Replace with `PCUX.friendlyError`. Keep the "rules not published" wording only for the owner.
-3. **patients.html / patient.html**: show age automatically from date of birth (`PCUX.ageFromDob`); BMI beside weight and height in triage (`PCUX.bmi`).
-4. **Typed medicines** in the order form should use the drugs catalogue picker, so Dev 1's pharmacist does not have to match stock by hand.
-5. **Related guidance link** from each clinical screen to Dev 2's library: `mcGo(PCG.linkFor({ q: complaint }))` (needs `pc-guidelines.js` on the page).
-6. Phone layout and tap sizes for the long forms not yet checked.
+## 4. Second pass (completed)
+| Area | What changed (labels, help and messages only; saved fields identical) |
+|---|---|
+| Treatment-order form (`encounter.html`) | Schedule names in plain language: Give once / at regular intervals / at selected times every day / on selected weekdays / only when needed / Reduce the dose in stages / Select individual dates and times / dose worked out from weight. A short explanation **and an example** appear under the choice (`SCHED_HELP`). Option values (`once`, `interval`, `daily`, `fixed`, `weight`, `prn`, `taper`, `custom`) unchanged. Dose, unit, route, instructions, first dose and time relabelled with help. |
+| Error messages (9 pages) | `patients, patient, encounters, encounter, investigations, laboratory, treatment, dosing-rules, users`: save failures use `PCUX.friendlyError`; raw "Firestore refused…", "(v12) rules not published" and database messages removed from user screens (the raw error goes to the browser console only). Pages still work if `pc-ux.js` is not cached yet (fallback text). |
+| Age (`patients.html`) | Live "Age: 6 years" line under the date of birth. Display only. |
+
+**Correction to my first-pass note:** BMI (with the under-2-years guard) and age text already existed in `encounter.html` and `patients.html`; I did not replace them. `PCUX.bmi` is not used.
 
 ## 5. Not done, needs agreement before I start
-- Progressive (stepped) forms change the save flow of `encounter.html`; I will do one form at a time and re-run the Phase 2 to 4 checks.
-- Changing what a form saves (for example splitting blood pressure into two fields) needs Dev 4 and the owner of that data first.
+- Stepped forms (basic -> extra -> review) for the long forms: they change `encounter.html` save flow. One form at a time, after Developer 4's first check.
+- Medicine catalogue picker on the order form, "Related guidance" links, and a phone layout check.
+- Owner-only technical hints (for example "publish rules v14") were removed from ordinary screens; Developer 4 may want an owner diagnostics page.
