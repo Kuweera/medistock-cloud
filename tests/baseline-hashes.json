@@ -1,0 +1,19 @@
+{
+  "_note": "SHA-256 of protected business-management files as supplied in medistock-cloud-main (13).zip, recorded by Developer 4 on 2026-11-15. A change here must be deliberate: update this file in the same commit and get a regression run.",
+  "files": {
+    "mc-core.js": "4bdb7876ad212ff64e028222251eed06b3928927f71dc7dd8ebbe9a38721f1b4",
+    "sales.html": "e081ed7633c14b7c52b347b52aaca821447e6d052b4f964cc67c471eaad86efd",
+    "purchases.html": "09a6e0ff55e3c7169265b8b1e0c97777338880ca40bf7bd981eb3f9c77088991",
+    "inventory.html": "a581f5e97f2ba5d86f7088f4a95468e005a8ea4c3f013f17e54f786f2a238efb",
+    "batches.html": "e955e3e326a317e2881f13636a7a50652c46d26cf43cda20054c42b6e61f5bf6",
+    "suppliers.html": "6bb748c28d305a49341b5f9487d5a0c9ab2abdb64593a04e563625b60d4c30dd",
+    "expiring.html": "d4a12a1c48e2d8652456339934bc936d9ce6e5d997d3d8277c9a9cb954e44b6c",
+    "whattobuy.html": "0bcf2bb0d149a020ce5e143ff4cc41e627522043405aebb443fb773b8985e338",
+    "expenses.html": "a89ef96a9153097a7f5f5b9564720a0bf24033d05cfe06f6d078e94616df51a9",
+    "credit.html": "81f285a67fd16ce10af30b3e63b929423d967b4aa39ca43dd1741ae52f1cc4c7",
+    "cash-position.html": "705a222b2807fb0e54cdbfe46c4562e443bba6978d7630c553b0fe500418b407",
+    "reports.html": "2aef8c517437da93279d27c0955b1b6fb24df8b97a59a2d013375142701d822f",
+    "backup.html": "1bcefa90d9e9a98bdfa56be03d59884616086f030ed9de1e6436bbe38fc47113",
+    "shops.html": "5e155322cf1d8dbdc5dca6eee9c476a0a56edb8a481803a7a6034acb095f89bf"
+  }
+}
