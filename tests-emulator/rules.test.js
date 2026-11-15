@@ -161,10 +161,9 @@ test("guidelines: a new version replaces the old one only in the same commit", a
   await assertSucceeds(b.commit());
 });
 test("guidelines: national entries are readable business-wide, facility protocols only by their facility, other businesses never", async () => {
-    await env.withSecurityRulesDisabled(async c => {
-    const f = c.firestore();
-    await setDoc(doc(f, "guidelines", "n1"), gl("author", { id: "n1" }));
-    await setDoc(doc(f, "guidelines", "f1"), gl("author", { id: "f1", scope: "facility" }));
+  await env.withSecurityRulesDisabled(async c => {
+    await setDoc(doc(c.firestore(), "guidelines", "n1"), gl("author", { id: "n1" }));
+    await setDoc(doc(c.firestore(), "guidelines", "f1"), gl("author", { id: "f1", scope: "facility" }));
   });
   await assertSucceeds(getDoc(doc(db("pharmB"), "guidelines", "n1")));
   await assertFails(getDoc(doc(db("pharmB"), "guidelines", "f1")));
