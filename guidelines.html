@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>if(window.top===window){location.replace("app.html#"+location.pathname.split("/").pop()+location.search);}</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2abfa0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MediStock">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<title>Clinical Guidelines — MediStock Cloud</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:60px;}
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px;}
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select, textarea{width:100%; padding:10px; min-height:42px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px; font-family:inherit;}
+  input:focus, select:focus, textarea:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1; min-width:0;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer; min-height:42px;}
+  button:disabled{opacity:.45; cursor:not-allowed;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px; min-height:48px; font-size:15px;}
+  .btn-small{padding:8px 12px; font-size:13px; min-height:40px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent);}
+  .btn-danger-outline{background:transparent; color:var(--danger); border:1px solid var(--danger);}
+  .hidden{display:none !important;}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+  .msg{font-size:13px; margin-top:8px; line-height:1.5;} .msg.err{color:var(--danger);} .msg.ok{color:var(--accent2);}
+  .hint2{font-size:11.5px; color:var(--muted); line-height:1.5; margin-top:6px;}
+  .pill-row{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 10px;}
+  .pill-btn{background:var(--card); color:var(--text); border:1px solid var(--border); padding:8px 13px; border-radius:999px; font-size:12.5px; font-weight:600; min-height:40px;}
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .pt{padding:12px 0; border-bottom:1px solid var(--border); cursor:pointer;}
+  .pt:last-child{border-bottom:none;} .pt.sel{background:rgba(43,191,160,.10); margin:0 -8px; padding-left:8px; padding-right:8px; border-radius:8px;}
+  .pt-name{font-size:14.5px; font-weight:700; color:var(--text);}
+  .pt-meta{font-size:12.5px; color:var(--muted); margin-top:2px; line-height:1.55;}
+  .chip{display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:4px; vertical-align:middle; background:var(--border); color:var(--muted);}
+  .chip.ok{color:var(--accent2);} .chip.warn{color:var(--warn);} .chip.bad{color:var(--danger);}
+  .qty3{display:flex; gap:6px; margin-top:6px;}
+  .qty3 > div{flex:1; border:1px solid var(--border); border-radius:9px; padding:6px 8px; text-align:center;}
+  .qty3 b{display:block; font-size:17px;} .qty3 span{font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.3px;}
+  .qty3 .out b{color:var(--warn);}
+  .alert-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--danger); color:var(--danger); font-size:13px; line-height:1.5; font-weight:600;}
+  .warn-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--warn); color:var(--text); font-size:13px; line-height:1.5;}
+  .info-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--accent); color:var(--text); font-size:13px; line-height:1.5;}
+  .step{border:1px solid var(--border); border-radius:11px; padding:11px; margin-top:10px;}
+  .step h3{margin:0 0 4px; font-size:13.5px; color:var(--accent);} .step h3 i{font-style:normal; display:inline-block; width:22px; height:22px; line-height:22px; text-align:center; border-radius:50%; background:var(--accent); color:#fff; font-size:12px; margin-right:6px;}
+  .chk{display:flex; align-items:flex-start; gap:10px; font-size:13.5px; color:var(--text); margin:10px 0 2px; line-height:1.45;}
+  .chk input{width:24px; height:24px; flex:0 0 24px; padding:0; margin:0; min-height:0;}
+  table{width:100%; border-collapse:collapse; font-size:13px;} th,td{text-align:left; padding:7px 6px; border-bottom:1px solid var(--border); vertical-align:top;}
+  th{font-size:11px; text-transform:uppercase; letter-spacing:.3px; color:var(--muted);} td.n,th.n{text-align:right; white-space:nowrap;}
+  .tablewrap{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  .stat{display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 12px;} .stat > div{flex:1 1 130px; border:1px solid var(--border); border-radius:10px; padding:9px 11px;}
+  .stat b{display:block; font-size:21px;} .stat span{font-size:11.5px; color:var(--muted);}
+  .sync{display:flex; justify-content:space-between; gap:8px; align-items:center; flex-wrap:wrap; font-size:13px;}
+  .layout{display:block;}
+  @media (min-width:960px){
+    body{padding:18px 24px;}
+    .layout{display:grid; grid-template-columns:minmax(340px,1fr) minmax(440px,1.15fr); gap:16px; align-items:start;}
+    #actCard{position:sticky; top:62px; max-height:calc(100vh - 80px); overflow-y:auto;}
+  }
+  .recordtext{white-space:pre-wrap; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; background:var(--bg); border:1px dashed var(--accent); border-radius:9px; padding:10px; line-height:1.6;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{position:sticky; top:0; z-index:20; background:var(--accent); color:#fff; margin:-16px -16px 14px; padding:16px 18px 14px;}
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{position:sticky; top:0; z-index:25; display:flex; align-items:center; justify-content:space-between; background:var(--accent); color:#fff; margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);}
+  .hamburger-btn{background:none; border:none; color:#fff; font-size:22px; line-height:1; padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .nav-bar-brand{font-size:14px; font-weight:600; color:#fff; cursor:pointer; padding:8px 10px; -webkit-tap-highlight-color:transparent;}
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;} .nav-overlay.visible{display:block;}
+  .nav-panel{position:fixed; top:0; bottom:0; right:0; z-index:30; width:78%; max-width:300px; background:var(--accent); display:flex; flex-direction:column; gap:4px; padding:16px 10px; overflow-y:auto; transform:translateX(105%); transition:transform .22s ease; box-shadow:0 0 20px rgba(0,0,0,.3);}
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px; margin:4px 6px 6px;}
+  .nav-panel a{display:block; background:rgba(255,255,255,.1); color:#fff; border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px; border-radius:10px; font-size:14.5px; font-weight:600; text-align:left; text-decoration:none;}
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{margin-top:10px; background:rgba(255,255,255,.1); color:#fff; border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;}
+
+  /* ===== Guidelines library (Developer 2) ===== */
+  .chip.nat{color:var(--accent);} .chip.loc{color:var(--warn);}
+  .catrow{max-height:none;}
+  @media (max-width:700px){ .catrow{flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:4px;} .catrow .pill-btn{flex:0 0 auto; white-space:nowrap;} }
+  .sect{border:1px solid var(--border); border-radius:11px; padding:10px 12px; margin-top:10px;}
+  .sect.danger{border-color:var(--danger);} .sect.danger h3{color:var(--danger);} .sect.danger h3 i{background:var(--danger);}
+  .sect h3{margin:0 0 6px; font-size:14px; color:var(--accent);} .sect h3 i{font-style:normal; display:inline-block; width:22px; height:22px; line-height:22px; text-align:center; border-radius:50%; background:var(--accent); color:#fff; font-size:12px; margin-right:7px;}
+  .sect ul{margin:2px 0 6px 18px; padding:0; font-size:13.5px; line-height:1.55;}
+  .sublab{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:var(--muted); margin-top:8px;}
+  .ptext{white-space:pre-wrap; font-size:13.5px; line-height:1.55;}
+  .srcline{font-size:11.5px; color:var(--muted); margin-top:6px; padding-top:6px; border-top:1px dashed var(--border);}
+  .srcbox{margin-top:10px; padding:9px 11px; border-radius:9px; background:var(--bg); border:1px solid var(--border); font-size:13px; line-height:1.5;}
+  table.meta{margin-top:6px;} table.meta th{width:34%; text-transform:none; letter-spacing:0; font-size:12px; padding:4px 6px;} table.meta td{padding:4px 6px; font-size:13px;}
+  .mgr{margin-top:14px; padding-top:10px; border-top:1px solid var(--border);}
+  .btn-primary-s{background:var(--accent); color:#fff;}
+  .stepbar{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;} .stepbar span{font-size:12px; padding:5px 10px; border-radius:999px; background:var(--border); color:var(--muted);} .stepbar span.on{background:var(--accent); color:#fff; font-weight:700;} .stepbar span.done{color:var(--accent2);}
+  .req{font-size:10.5px; color:var(--warn); font-weight:700;} .opt{font-size:10.5px; color:var(--muted);}
+  textarea{resize:vertical; line-height:1.45;}
+  #edCard{max-width:760px;} #refCard a{color:var(--accent); font-weight:600;}
+
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Patient Care · Clinical guidelines and protocols</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="mcGo('dashboard.html')">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="expiring.html">Expiring Drugs</a>
+  <a href="guidelines.html" class="active">Guidelines</a>
+  <a href="treatment.html">Treatment &amp; MAR</a>
+  <a href="users.html">Users</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle'), panel = document.getElementById('navPanel'), overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){ panel.classList.contains('open') ? closeNav() : openNav(); });
+    overlay && overlay.addEventListener('click', closeNav);
+    var themeBtn = document.getElementById('themeToggle'), order = ['auto','light','dark'];
+    var labels = {auto:'🌓 Theme: Auto', light:'☀️ Theme: Light', dark:'🌙 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){ current = order[(order.indexOf(current)+1) % order.length]; localStorage.setItem('mcThemePreference', current); applyPref(current); });
+  })();
+</script>
+
+<div class="hint2" id="shopIndicator" style="margin-bottom:8px;"></div>
+<div class="card hidden" id="gateCard"><div id="gateMsg" class="empty"></div></div>
+
+<div id="mainArea" class="hidden">
+  <div class="info-box" style="margin-top:0;margin-bottom:12px;">This is a <b>reference library</b>. It shows information from approved guidelines and protocols, and always shows where it came from. It does not diagnose or prescribe. Clinical decisions stay with the qualified health worker.</div>
+  <div class="msg" id="topMsg"></div>
+
+  <div class="pill-row" id="tabs">
+    <button type="button" class="pill-btn selected" data-t="library">Library</button>
+    <button type="button" class="pill-btn hidden" data-t="editor" id="tabEditor">Add or edit entry</button>
+    <button type="button" class="pill-btn hidden" data-t="import" id="tabImport">Import</button>
+  </div>
+
+  <div id="libraryTab" class="layout">
+    <div>
+      <div class="card">
+        <h2>Clinical Guidelines and Protocols</h2>
+        <label for="q">Search by condition, complaint, symptom, test or medicine</label>
+        <input type="search" id="q" placeholder="For example: cough, fever, wound" autocomplete="off">
+        <div class="pill-row catrow" id="cats"></div>
+        <div class="row">
+          <div><label for="fScope">Show</label><select id="fScope"><option value="">National guidance and our protocols</option><option value="national">National or published guidelines only</option><option value="facility">Our facility's own protocols only</option></select></div>
+          <div class="hidden" id="fStatusBox"><label for="fStatus">Entries</label><select id="fStatus"><option value="current">Current (approved)</option><option value="draft">Drafts waiting for approval</option><option value="review">Review due or overdue</option><option value="old">Old versions and retired</option></select></div>
+        </div>
+        <div class="hint2" id="info"></div>
+        <div id="list"></div>
+        <div class="row hidden" id="addRow" style="margin-top:10px"><button type="button" class="btn-small btn-secondary" id="addBtn">+ Add an entry</button></div>
+      </div>
+    </div>
+    <div class="card hidden" id="refCard"></div>
+  </div>
+
+  <div id="editorTab" class="hidden"><div class="card" id="edCard"></div></div>
+
+  <div id="importTab" class="hidden">
+    <div class="card">
+      <h2>Import entries from a file</h2>
+      <div class="hint2" style="margin-top:0">Use this to load entries that you have copied from an approved source. Nothing is invented for you: the file must contain real, sourced information. Every imported entry is saved as a <b>draft</b>, and an authorised person must check and approve it before staff can see it.</div>
+      <div class="row" style="margin-top:8px"><button type="button" class="btn-small btn-secondary" id="tplBtn">Download blank template</button></div>
+      <label for="impFile">Choose the file</label><input type="file" id="impFile" accept=".json,application/json">
+      <label for="impText">…or paste the contents here</label><textarea id="impText" rows="6" placeholder='{"entries":[ ... ]}'></textarea>
+      <button type="button" class="btn-primary" id="impPreview">Check the file</button>
+      <div id="impOut"></div>
+    </div>
+  </div>
+  <div class="msg ok" id="doneMsg"></div>
+</div>
+
+<script src="pc-guidelines.js"></script>
+<script type="module">
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, collection, onSnapshot, serverTimestamp, query, where, limit, writeBatch, getDocFromCache } = window.top.MC.api(window);
+  async function getDoc(ref) { try { const c = await getDocFromCache(ref); if (c.exists()) return c; } catch (e) {} return _getDoc(ref); }
+  const app = initializeApp({}); const auth = getAuth(app); const db = getFirestore(app);
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const tsMs = v => v && typeof v.toMillis === "function" ? v.toMillis() : (typeof v === "number" ? v : 0);
+  const dmy = iso => PCG.validISO(iso) ? iso.slice(8) + "/" + iso.slice(5, 7) + "/" + iso.slice(0, 4) : (iso || "");
+  const whenText = v => { const ms = tsMs(v); if (!ms) return ""; const d = new Date(ms); return dmy(PCG.todayISO(d)); };
+
+  let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
+  let national = [], local = [], cat = "", tab = "library", openId = null, ed = null, imp = null, busy = false, unsubs = [];
+  const can = k => role === "owner" || perms[k] === true;
+  const canManage = () => can("guidelines.manage"), canApprove = () => can("guidelines.approve");
+  const all = () => national.concat(local);
+  const byId = id => all().find(g => g.id === id) || null;
+  const today = () => PCG.todayISO();
+
+  function showGate(msg) { $("gateMsg").innerHTML = msg; $("gateCard").classList.remove("hidden"); $("mainArea").classList.add("hidden"); }
+  function note(text, cls, ms) { const el = $("topMsg"); el.className = "msg " + (cls || "ok"); el.textContent = text; el.scrollIntoView({ block: "nearest" }); if (ms) setTimeout(() => { if (el.textContent === text) el.textContent = ""; }, ms); }
+  const stamp = () => ({ businessId: businessId, facilityId: facilityId, schemaVersion: PCG.SCHEMA, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now() });
+  const auditDoc = (action, g, extra) => Object.assign(stamp(), { actorUid: me.id, actorName: myName, action: action, recordPath: "guidelines/" + g.id, patientId: null, guidelineKey: g.guidelineKey || null, guidelineVersion: g.version || null, title: g.title || "", at: serverTimestamp() }, extra || {});
+  const clean = o => { Object.keys(o).forEach(k => { if (o[k] === undefined) delete o[k]; }); return o; };
+
+  // sends a batch; says "confirmed" only when the server has answered. Offline writes stay queued and are reported as such.
+  async function commit(batch, label) {
+    const p = batch.commit();
+    const r = await Promise.race([p.then(() => "confirmed"), new Promise(res => setTimeout(() => res("waiting"), 7000))]);
+    if (r === "waiting") p.then(() => note("“" + label + "” has now reached the server.", "ok", 6000)).catch(e => note("“" + label + "” could not be completed: " + PCG.friendlyError(e), "err"));
+    return r;
+  }
+
+  // ---------------------------------------------------------------- list
+  function chipsFor(g, versions) {
+    let c = "";
+    c += g.scope === "facility" ? '<span class="chip loc">Local facility protocol</span>' : '<span class="chip nat">National / published</span>';
+    c += '<span class="chip">v' + esc(g.version || 1) + "</span>";
+    if (g.approvalStatus === "draft") c += '<span class="chip warn">Draft</span>';
+    else if (g.approvalStatus === "superseded") c += '<span class="chip">Old version</span>';
+    else if (g.approvalStatus === "retired") c += '<span class="chip bad">Retired</span>';
+    else c += '<span class="chip ok">Current</span>';
+    if (PCG.reviewOverdue(g, today())) c += '<span class="chip bad">Review overdue</span>'; else if (PCG.reviewSoon(g, today(), 30)) c += '<span class="chip warn">Review due soon</span>';
+    if (PCG.notYetEffective(g, today())) c += '<span class="chip warn">Starts ' + esc(dmy(g.effectiveDate)) + "</span>";
+    if (g._pending) c += '<span class="chip warn">Waiting to sync</span>';
+    if (canManage() && versions && g.approvalStatus === "approved" && PCG.openDraft(versions)) c += '<span class="chip warn">New draft exists</span>';
+    return c;
+  }
+  function rowsFor() {
+    const q = $("q").value.trim(), scope = $("fScope").value, st = canManage() ? $("fStatus").value : "current";
+    let src = all();
+    const m = PCG.byKey(src);
+    let rows;
+    if (st === "current") rows = PCG.currentOnly(src);
+    else if (st === "draft") rows = src.filter(g => g.approvalStatus === "draft");
+    else if (st === "review") rows = PCG.currentOnly(src).filter(g => PCG.reviewOverdue(g, today()) || PCG.reviewSoon(g, today(), 30));
+    else rows = src.filter(g => g.approvalStatus === "superseded" || g.approvalStatus === "retired");
+    const res = PCG.search(rows, q, { category: cat, scope: scope });
+    return { res: res, m: m, total: rows.length };
+  }
+  function renderCats() {
+    const base = PCG.currentOnly(all()).concat(canManage() ? all().filter(g => g.approvalStatus === "draft") : []);
+    const n = {}; base.forEach(g => { n[g.category] = (n[g.category] || 0) + 1; });
+    $("cats").innerHTML = '<button type="button" class="pill-btn' + (!cat ? " selected" : "") + '" data-c="">All</button>' +
+      PCG.CATEGORIES.map(c => '<button type="button" class="pill-btn' + (cat === c[0] ? " selected" : "") + '" data-c="' + c[0] + '">' + esc(c[1]) + (n[c[0]] ? " (" + n[c[0]] + ")" : "") + "</button>").join("");
+  }
+  function renderList() {
+    renderCats();
+    const R = rowsFor(), q = $("q").value.trim();
+    const overdue = PCG.currentOnly(all()).filter(g => PCG.reviewOverdue(g, today())).length;
+    let info = R.res.length + " shown";
+    if (!R.total && !all().length) info = "";
+    $("info").textContent = info;
+    let h = "";
+    if (canManage() && overdue) h += '<div class="warn-box" style="margin-top:0;margin-bottom:8px">' + overdue + " approved entr" + (overdue === 1 ? "y is" : "ies are") + " past the review date. Choose “Review due or overdue” under Entries to see them.</div>";
+    if (!R.res.length) {
+      if (!all().length) h += '<div class="empty">No guidelines have been loaded yet.' + (canManage() ? " Use “Add an entry” or “Import” to enter information from an approved source, then have it approved." : " Ask the person in charge to load and approve the guidelines for this facility.") + "</div>";
+      else h += '<div class="empty">Nothing matches' + (q ? " “" + esc(q) + "”" : "") + ". Try fewer or different words, or choose All categories.</div>";
+    } else h += R.res.slice(0, 200).map(r => {
+      const g = r.g, vs = R.m[g.guidelineKey || g.id];
+      return '<div class="pt' + (openId === g.id ? " sel" : "") + '" data-id="' + esc(g.id) + '"><div class="pt-name">' + esc(g.title) + "</div>" +
+        '<div class="pt-meta">' + chipsFor(g, vs) + "<br>" + esc(PCG.categoryLabel(g.category)) + (g.symptoms && g.symptoms.length ? " · " + esc(g.symptoms.slice(0, 5).join(", ")) : "") + "<br>" + esc(g.source || "") + "</div></div>";
+    }).join("");
+    $("list").innerHTML = h;
+    $("addRow").classList.toggle("hidden", !canManage());
+  }
+
+  // ---------------------------------------------------------------- the reference card
+  const li = a => a && a.length ? "<ul>" + a.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>" : "";
+  function sec(letter, title, cls, refs, body) {
+    if (!body) return "";
+    return '<div class="sect ' + (cls || "") + '"><h3><i>' + letter + "</i>" + esc(title) + "</h3>" + body + '<div class="srcline">Source: ' + esc(refs.src) + (refs.page ? " · " + esc(refs.page) : "") + "</div></div>";
+  }
+  function sub(label, a) { return a && a.length ? '<div class="sublab">' + esc(label) + "</div>" + li(a) : ""; }
+  function cardOf(g) {
+    const vs = PCG.byKey(all())[g.guidelineKey || g.id] || [g], cur = PCG.currentVersion(vs);
+    const a = g.assessment || {}, w = g.warningSigns || {}, r = g.sectionRefs || {}, src = g.source || PCG.composeSource(g);
+    let h = '<div class="row" style="align-items:flex-start"><div><h2 style="margin-bottom:4px;font-size:17px">' + esc(g.title) + '</h2><div>' + chipsFor(g, vs) + '</div></div><button type="button" class="btn-small btn-secondary" style="flex:0 0 auto" data-act="close">Close</button></div>';
+    if (g.approvalStatus === "superseded") h += '<div class="warn-box"><b>This is an old version.</b> Use it only to see what was in force earlier.' + (cur ? ' <a href="#" data-act="open" data-id="' + esc(cur.id) + '">Open the current version (v' + esc(cur.version) + ")</a>" : "") + "</div>";
+    if (g.approvalStatus === "retired") h += '<div class="alert-box">This entry has been retired' + (g.retiredReason ? ": " + esc(g.retiredReason) : "") + ". Do not use it as a reference.</div>";
+    if (g.approvalStatus === "draft") h += '<div class="warn-box"><b>Draft.</b> Not approved yet. Ordinary staff cannot see this entry.</div>';
+    if (PCG.reviewOverdue(g, today())) h += '<div class="alert-box">The review date (' + esc(dmy(g.reviewDate)) + ") has passed. This information may be out of date. Check the source before relying on it.</div>";
+    h += '<div class="srcbox"><div><b>' + (g.scope === "facility" ? "Local facility protocol" : "National or published guideline") + "</b> · version " + esc(g.version || 1) + "</div>" +
+      '<table class="meta"><tr><th>Guideline</th><td>' + esc(g.sourceTitle || "") + "</td></tr><tr><th>Published by</th><td>" + esc(g.sourceOrg || "") + "</td></tr><tr><th>Edition / year</th><td>" + esc(g.sourceEdition || "") + "</td></tr><tr><th>Chapter / page</th><td>" + esc(g.sourceRef || "") + "</td></tr><tr><th>Country / area</th><td>" + esc(g.jurisdiction || "") + "</td></tr>" +
+      "<tr><th>Date entered</th><td>" + esc(dmy(g.enteredDate)) + "</td></tr><tr><th>Effective from</th><td>" + esc(dmy(g.effectiveDate)) + "</td></tr><tr><th>Review by</th><td>" + esc(dmy(g.reviewDate)) + "</td></tr>" +
+      "<tr><th>Approval</th><td>" + esc(PCG.STATUS_LABEL[g.approvalStatus] || g.approvalStatus) + (g.approvedByName ? " by " + esc(g.approvedByName) + (g.approvedAt ? " on " + esc(whenText(g.approvedAt)) : "") : "") + (g.selfApproved ? ' <span class="chip warn">approved by the person who entered it</span>' : "") + "</td></tr></table></div>";
+    if (g.scope === "facility") {
+      const nat = g.basedOnKey ? PCG.currentOnly(national).find(x => x.guidelineKey === g.basedOnKey) : null;
+      h += '<div class="info-box">This is our facility\'s own protocol. It does not replace national guidance.' + (nat ? ' Related national guidance: <a href="#" data-act="open" data-id="' + esc(nat.id) + '">' + esc(nat.title) + "</a>." : "") + "</div>";
+    } else {
+      const loc = PCG.currentOnly(local).filter(x => x.basedOnKey === g.guidelineKey);
+      if (loc.length) h += '<div class="info-box">Our facility also has its own protocol for this: ' + loc.map(x => '<a href="#" data-act="open" data-id="' + esc(x.id) + '">' + esc(x.title) + "</a>").join(", ") + ". The national guidance above still applies.</div>";
+    }
+    const A = sub("Important questions to ask", a.questions) + sub("Relevant history", a.history) + sub("Symptoms to document", a.document) + sub("Examination findings to look for", a.examination);
+    const B = sub("Danger signs", w.danger) + sub("Findings needing urgent assessment", w.urgent) + sub("Referral considerations", w.referral);
+    let C = (g.investigations && g.investigations.length ? sub("Tests mentioned in the source", g.investigations) : "") + sub("What the tests are for and how to read them", g.investigationNotes);
+    let D = (g.treatment ? '<div class="sublab">Treatment information in the source</div><div class="ptext">' + esc(g.treatment) + "</div>" : "") + sub("Precautions", g.precautions) + sub("Follow-up", g.followUp) + sub("Referral", g.referralAdvice);
+    h += sec("A", "Patient assessment", "", { src: src, page: r.assessment }, A) + sec("B", "Warning signs", "danger", { src: src, page: r.warnings }, B) + sec("C", "Investigations", "", { src: src, page: r.investigations }, C) + sec("D", "Management references", "", { src: src, page: r.management }, D);
+    if (g.symptoms && g.symptoms.length) h += '<div class="hint2">Complaints this page is linked to (used for finding it): ' + esc(g.symptoms.join(", ")) + (g.aliases && g.aliases.length ? ". Also known as: " + esc(g.aliases.join(", ")) : "") + "</div>";
+    h += '<div class="hint2">Reference only. Doses and treatment must be decided by a qualified health worker using the source document and the patient\'s own situation.</div>';
+    h += '<div class="row" style="margin-top:10px;flex-wrap:wrap"><button type="button" class="btn-small btn-secondary" data-act="copy">Copy reference for my note</button>' + (vs.length > 1 ? '<button type="button" class="btn-small btn-secondary" data-act="hist">Version history (' + vs.length + ")</button>" : "") + "</div>";
+    if (canManage() || canApprove()) h += mgrButtons(g, vs, cur);
+    h += '<div id="histBox"></div>';
+    return h;
+  }
+  function mgrButtons(g, vs, cur) {
+    let b = "";
+    if (g.approvalStatus === "draft") {
+      if (canManage()) b += '<button type="button" class="btn-small btn-secondary" data-act="edit">Edit this draft</button>';
+      if (canApprove()) b += '<button type="button" class="btn-small btn-primary-s" data-act="approve">Approve this version</button>';
+      if (canApprove() || canManage()) b += '<button type="button" class="btn-small btn-danger-outline" data-act="retire">Discard draft</button>';
+      const p = PCG.approvalProblems(g); if (p.length) b += '<div class="warn-box" style="flex-basis:100%"><b>Not ready to approve:</b><ul>' + p.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul></div>";
+    } else if (g.approvalStatus === "approved") {
+      if (canManage()) b += PCG.openDraft(vs) ? '<button type="button" class="btn-small btn-secondary" data-act="opendraft">Open the draft of the next version</button>' : '<button type="button" class="btn-small btn-secondary" data-act="newver">Create a new version</button>';
+      if (canApprove()) b += '<button type="button" class="btn-small btn-danger-outline" data-act="retire">Retire this entry</button>';
+    }
+    return b ? '<div class="mgr"><div class="sublab">Manage</div><div class="row" style="flex-wrap:wrap;gap:8px">' + b + "</div>" +
+      (g.approvalStatus === "approved" ? '<div class="hint2">Approved entries are never edited, so records that used this version stay accurate. To change something, create a new version.</div>' : "") + "</div>" : "";
+  }
+  function showCard(id) {
+    const g = byId(id); openId = g ? id : null;
+    if (!g) { $("refCard").classList.add("hidden"); renderList(); return; }
+    $("refCard").innerHTML = cardOf(g); $("refCard").classList.remove("hidden"); renderList();
+    $("refCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function histHtml(g) {
+    const vs = PCG.byKey(all())[g.guidelineKey || g.id] || [];
+    return '<div class="step"><h3>Version history</h3>' + vs.map(v => '<div class="pt" data-act="open" data-id="' + esc(v.id) + '"><div class="pt-name">Version ' + esc(v.version) + ' <span class="chip">' + esc(PCG.STATUS_LABEL[v.approvalStatus] || v.approvalStatus) + "</span></div>" +
+      '<div class="pt-meta">Effective ' + esc(dmy(v.effectiveDate) || "—") + (v.approvedByName ? " · approved by " + esc(v.approvedByName) + " " + esc(whenText(v.approvedAt)) : "") + (v.retiredReason ? " · " + esc(v.retiredReason) : "") + "</div></div>").join("") + "</div>";
+  }
+
+  // ---------------------------------------------------------------- manage actions
+  async function doApprove(g) {
+    if (busy) return;
+    if (!navigator.onLine) { note(PCG.friendlyError(PCG.PCGError("offline_approve")), "err"); return; }
+    let plan; try { plan = PCG.planApprove(g, all(), today()); } catch (e) { note(e.problems ? PCG.friendlyError(e) + " " + e.problems.join(" ") : PCG.friendlyError(e), "err"); return; }
+    const self = g.createdBy === me.id;
+    if (!confirm("Approve “" + g.title + "” version " + g.version + "?\n\nStaff will be able to see it as current guidance." + (plan.supersede.length ? "\nThe earlier approved version will be marked as replaced." : "") + (self ? "\n\nYou entered this yourself. It will be recorded as approved by the same person who entered it." : ""))) return;
+    busy = true;
+    try {
+      const b = writeBatch(db), st = { updatedBy: me.id, updatedAt: serverTimestamp() };
+      b.update(doc(db, "guidelines", g.id), Object.assign({ approvalStatus: "approved", approvedBy: me.id, approvedByName: myName, approvedAt: serverTimestamp(), selfApproved: self }, st));
+      plan.supersede.forEach(id => b.update(doc(db, "guidelines", id), Object.assign({ approvalStatus: "superseded", supersededBy: g.id }, st)));
+      b.set(doc(collection(db, "pc_audit_logs")), auditDoc("guideline.approve", g, { supersededIds: plan.supersede, selfApproved: self }));
+      const r = await commit(b, "Approval of " + g.title);
+      note(r === "confirmed" ? "Approved. Staff can now see this version." : "Approval is waiting to reach the server. It is NOT confirmed yet.", r === "confirmed" ? "ok" : "err", 8000);
+    } catch (e) { note(PCG.friendlyError(e), "err"); } finally { busy = false; }
+  }
+  async function doRetire(g) {
+    if (busy) return;
+    const draft = g.approvalStatus === "draft";
+    const reason = prompt(draft ? "Why is this draft being discarded? (at least 3 letters)" : "Why is this entry being retired? Staff will no longer see it. (at least 3 letters)");
+    if (reason == null) return; if (reason.trim().length < 3) { note("Please give a reason of at least 3 letters.", "err"); return; }
+    busy = true;
+    try {
+      const b = writeBatch(db);
+      b.update(doc(db, "guidelines", g.id), { approvalStatus: "retired", retiredReason: reason.trim(), retiredBy: me.id, retiredByName: myName, retiredAt: serverTimestamp(), updatedBy: me.id, updatedAt: serverTimestamp() });
+      b.set(doc(collection(db, "pc_audit_logs")), auditDoc(draft ? "guideline.discard" : "guideline.retire", g, { reason: reason.trim() }));
+      const r = await commit(b, "Retiring " + g.title);
+      note(r === "confirmed" ? (draft ? "Draft discarded." : "Entry retired.") : "This change is waiting to reach the server. It is NOT confirmed yet.", r === "confirmed" ? "ok" : "err", 8000);
+    } catch (e) { note(PCG.friendlyError(e), "err"); } finally { busy = false; }
+  }
+  async function doNewVersion(g) {
+    if (busy) return; const vs = PCG.byKey(all())[g.guidelineKey || g.id] || [g];
+    if (PCG.openDraft(vs)) { note(PCG.friendlyError(PCG.PCGError("draft_exists")), "err"); return; }
+    busy = true;
+    try {
+      const v = PCG.nextVersion(vs), id = PCG.idFor(g.guidelineKey, v);
+      const f = PCG.toForm(g), d = PCG.buildDoc(f, { key: g.guidelineKey, version: v, id: id });
+      const data = clean(Object.assign({}, stamp(), d, { approvalStatus: "draft", supersedes: g.id, enteredDate: today(), enteredByName: myName, origin: "new_version" }));
+      const b = writeBatch(db); b.set(doc(db, "guidelines", id), data);
+      b.set(doc(collection(db, "pc_audit_logs")), auditDoc("guideline.new_version", g, { newId: id, newVersion: v }));
+      const r = await commit(b, "New version of " + g.title);
+      note(r === "confirmed" ? "A draft of version " + v + " was created. Update it from the new source, then have it approved." : "The draft is saved on this device and waiting to sync.", r === "confirmed" ? "ok" : "err", 8000);
+      openEditor(Object.assign({ id: id }, data));
+    } catch (e) { note(PCG.friendlyError(e), "err"); } finally { busy = false; }
+  }
+
+  // ---------------------------------------------------------------- the editor (steps: about, source, clinical information, review)
+  const OPTS = { org: ["Ministry of Health, Uganda", "World Health Organization", "Uganda National Medicines/Programme (specify)"], jur: ["Uganda", "International (WHO)"] };
+  function fld(name, label, help, o) {
+    o = o || {}; const v = ed.form[name] == null ? "" : ed.form[name], id = "f_" + name, req = o.req ? ' <span class="req">required to approve</span>' : ' <span class="opt">optional</span>';
+    let inp;
+    if (o.type === "select") inp = '<select id="' + id + '" data-f="' + name + '"' + (o.disabled ? " disabled" : "") + ">" + o.options.map(x => '<option value="' + esc(x[0]) + '"' + (String(v) === String(x[0]) ? " selected" : "") + ">" + esc(x[1]) + "</option>").join("") + "</select>";
+    else if (o.type === "textarea") inp = '<textarea id="' + id + '" data-f="' + name + '" rows="' + (o.rows || 3) + '" placeholder="' + esc(o.ph || "") + '">' + esc(v) + "</textarea>";
+    else inp = '<input type="' + (o.type || "text") + '" id="' + id + '" data-f="' + name + '" value="' + esc(v) + '" placeholder="' + esc(o.ph || "") + '" autocomplete="off"' + (o.list ? ' list="' + o.list + '"' : "") + ">";
+    return '<label for="' + id + '">' + esc(label) + (o.nolabelflag ? "" : req) + "</label>" + inp + '<div class="hint2">' + help + "</div>";
+  }
+  const STEPS = ["About this entry", "Where it comes from", "Clinical information", "Review and save"];
+  function openEditor(g) {
+    const fresh = !g;
+    if (fresh) ed = { id: null, key: PCG.newKey(), version: 1, supersedes: null, form: { scope: "national", category: "", effectiveDate: "", reviewDate: "" }, step: 0, locked: false };
+    else ed = { id: g.id, key: g.guidelineKey, version: g.version || 1, supersedes: g.supersedes || null, form: PCG.toForm(g), step: 0, locked: true, origin: g };
+    setTab("editor"); renderEditor();
+  }
+  function renderEditor() {
+    const s = ed.step, f = ed.form;
+    let h = '<h2>' + (ed.id ? "Edit draft (version " + ed.version + ")" : "Add a new entry") + "</h2>";
+    h += '<div class="stepbar">' + STEPS.map((t, i) => '<span class="' + (i === s ? "on" : (i < s ? "done" : "")) + '">' + (i + 1) + ". " + esc(t) + "</span>").join("") + "</div>";
+    if (s === 0) {
+      h += fld("scope", "What kind of entry is this?", "Choose <b>national or published</b> for information from a guideline such as the Uganda Clinical Guidelines or WHO. Choose <b>our facility's own protocol</b> for a procedure approved only for this facility. A local protocol never replaces national guidance.", { type: "select", disabled: ed.locked, options: [["national", PCG.SCOPES.national], ["facility", PCG.SCOPES.facility]], nolabelflag: true });
+      h += fld("title", "Title: the condition or topic", "Use the name given in the source, for example the name of the illness or procedure. Required.", { ph: "Name as written in the source", nolabelflag: true });
+      h += fld("category", "Category", "Choose where staff should look for this entry. Required.", { type: "select", options: [["", "Choose…"]].concat(PCG.CATEGORIES), nolabelflag: true });
+      h += fld("symptoms", "Complaints or symptoms it relates to", "Type each one, separated by commas. This only helps staff find the entry when they search a complaint. It does not diagnose anyone. Leave blank if not needed.", { ph: "e.g. cough, fever" });
+      h += fld("aliases", "Other names for this topic", "Other words people use for the same thing, separated by commas, so searching finds it. Leave blank if none.");
+      if (f.scope === "facility") {
+        const nat = PCG.currentOnly(national).sort((a, b) => a.title.localeCompare(b.title));
+        h += fld("basedOnKey", "Related national guideline", "If this local protocol relates to a national guideline already in the library, choose it so staff see both together. Leave blank if there is none.", { type: "select", options: [["", "None"]].concat(nat.map(x => [x.guidelineKey, x.title])) });
+      }
+    } else if (s === 1) {
+      h += '<div class="hint2" style="margin-top:0">Every entry must say exactly where its information comes from. For a local protocol, give the protocol document and your facility as the publisher.</div>';
+      h += fld("sourceTitle", "Name of the guideline or document", "The title printed on the document.", { req: 1, ph: "e.g. Uganda Clinical Guidelines" });
+      h += fld("sourceOrg", "Published by", "Type or choose the organisation that published it.", { req: 1, list: "dlOrg", ph: "Organisation" });
+      h += fld("sourceEdition", "Edition or year", "As printed on the document, for example the year.", { req: 1, ph: "e.g. 2023" });
+      h += fld("sourceRef", "Chapter or page", "Where in the document this information is found, so staff can check it.", { req: 1, ph: "e.g. Chapter 3, page 120" });
+      h += fld("jurisdiction", "Country or area it applies to", "Type or choose.", { req: 1, list: "dlJur", ph: "Country" });
+      h += '<div class="row"><div>' + fld("effectiveDate", "Applies from", "The date the guideline or protocol came into use.", { type: "date", req: 1 }) + "</div><div>" + fld("reviewDate", "Review again by", "The date someone must check whether it is still correct.", { type: "date", req: 1 }) + "</div></div>";
+      h += '<div class="hint2">Date entered: ' + esc(dmy(ed.origin && ed.origin.enteredDate ? ed.origin.enteredDate : today())) + " (filled in automatically).</div>";
+      h += '<datalist id="dlOrg">' + OPTS.org.slice(0, 2).concat([facility && facility.name ? facility.name : "This facility"]).map(x => '<option value="' + esc(x) + '">').join("") + '</datalist><datalist id="dlJur">' + OPTS.jur.map(x => '<option value="' + esc(x) + '">').join("") + "</datalist>";
+    } else if (s === 2) {
+      h += '<div class="hint2" style="margin-top:0">Copy only what the source says. <b>Do not add doses, limits or treatments from memory.</b> Write one point per line. Leave a box empty if the source says nothing on it.</div>';
+      h += '<div class="step"><h3><i>A</i>Patient assessment</h3>' + fld("aQuestions", "Important questions to ask", "One question per line.", { type: "textarea" }) + fld("aHistory", "Relevant history", "One item per line.", { type: "textarea" }) + fld("aDocument", "Symptoms to document", "One item per line.", { type: "textarea" }) + fld("aExam", "Examination findings to look for", "One item per line.", { type: "textarea" }) + fld("refAssessment", "Page for this section", "Where in the source this section comes from (if different from the main reference).", { ph: "e.g. page 121" }) + "</div>";
+      h += '<div class="step"><h3><i>B</i>Warning signs</h3>' + fld("wDanger", "Danger signs", "One per line.", { type: "textarea" }) + fld("wUrgent", "Findings needing urgent assessment", "One per line.", { type: "textarea" }) + fld("wReferral", "Referral considerations", "One per line.", { type: "textarea" }) + fld("refWarnings", "Page for this section", "Optional.", { ph: "e.g. page 122" }) + "</div>";
+      h += '<div class="step"><h3><i>C</i>Investigations</h3>' + fld("investigations", "Tests mentioned in the source", "One test per line. Used for searching and listing.", { type: "textarea" }) + fld("investigationNotes", "What each test is for and how the source says to read it", "One point per line, as written in the source.", { type: "textarea", rows: 4 }) + fld("refInvestigations", "Page for this section", "Optional.", { ph: "e.g. page 123" }) + "</div>";
+      h += '<div class="step"><h3><i>D</i>Management references</h3>' + fld("treatment", "Treatment information in the source", "Copy the treatment information as the source states it, including the page. Staff will see it as a reference, not as an order.", { type: "textarea", rows: 5 }) + fld("precautions", "Precautions", "One per line.", { type: "textarea" }) + fld("followUp", "Follow-up", "One per line.", { type: "textarea" }) + fld("referralAdvice", "Referral", "One per line.", { type: "textarea" }) + fld("refManagement", "Page for this section", "Optional.", { ph: "e.g. page 124" }) + "</div>";
+    } else {
+      const d = PCG.buildDoc(f, {}), dp = PCG.draftProblems(d), ap = PCG.approvalProblems(d);
+      h += '<div class="srcbox"><b>' + esc(d.title || "(no title)") + "</b><br>" + esc(PCG.categoryLabel(d.category)) + " · " + esc(PCG.SCOPES[d.scope]) + "<br>Source: " + esc(d.source || "(not entered)") + "<br>Applies from " + esc(dmy(d.effectiveDate) || "—") + " · review by " + esc(dmy(d.reviewDate) || "—") +
+        "<br>" + (d.symptoms.length ? "Complaints: " + esc(d.symptoms.join(", ")) + "<br>" : "") + "Clinical points entered: " + [d.assessment.questions, d.assessment.history, d.assessment.document, d.assessment.examination, d.warningSigns.danger, d.warningSigns.urgent, d.warningSigns.referral, d.investigations, d.investigationNotes, d.precautions, d.followUp, d.referralAdvice].reduce((n, x) => n + x.length, 0) + (d.treatment ? " + treatment text" : "") + "</div>";
+      if (dp.length) h += '<div class="alert-box">Cannot save yet:<ul>' + dp.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul></div>";
+      else if (ap.length) h += '<div class="warn-box">You can save this as a draft. It cannot be approved until:<ul>' + ap.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul></div>";
+      else h += '<div class="info-box">Everything needed for approval is filled in. Save the draft, then ' + (canApprove() ? "approve it." : "ask an authorised person to approve it.") + "</div>";
+      h += '<button type="button" class="btn-primary" data-act="save"' + (dp.length || busy ? " disabled" : "") + ">Save as draft</button><div class=\"hint2\">Staff cannot see this entry until it has been approved.</div>";
+    }
+    h += '<div class="row" style="margin-top:12px">' + (s > 0 ? '<button type="button" class="btn-small btn-secondary" data-act="back">Back</button>' : '<button type="button" class="btn-small btn-secondary" data-act="cancel">Cancel</button>') + (s < 3 ? '<button type="button" class="btn-small btn-secondary" data-act="next">Next</button>' : "") + "</div>";
+    h += '<div class="msg" id="edMsg"></div>';
+    $("edCard").innerHTML = h;
+  }
+  async function saveDraft() {
+    if (busy) return;
+    const d = PCG.buildDoc(ed.form, { key: ed.key, version: ed.version, id: ed.id || PCG.idFor(ed.key, ed.version) }), dp = PCG.draftProblems(d);
+    if (dp.length) { $("edMsg").className = "msg err"; $("edMsg").textContent = dp[0]; return; }
+    busy = true; renderEditor();
+    try {
+      const b = writeBatch(db), ref = doc(db, "guidelines", d.id), upd = { updatedBy: me.id, updatedAt: serverTimestamp() };
+      let doneId = d.id;
+      if (ed.id) {
+        const keep = Object.assign({}, d); delete keep.id; delete keep.guidelineKey; delete keep.version; delete keep.scope;
+        b.update(ref, clean(Object.assign(keep, upd)));
+        b.set(doc(collection(db, "pc_audit_logs")), auditDoc("guideline.edit_draft", d));
+      } else {
+        b.set(ref, clean(Object.assign({}, stamp(), d, { approvalStatus: "draft", supersedes: ed.supersedes || null, enteredDate: today(), enteredByName: myName, origin: "manual" })));
+        b.set(doc(collection(db, "pc_audit_logs")), auditDoc("guideline.create", d));
+      }
+      const r = await commit(b, d.title);
+      busy = false; ed = null; setTab("library");
+      note(r === "confirmed" ? "Draft saved." + (canApprove() ? " Open it to approve." : " Ask an authorised person to approve it.") : "Saved on this device. It has NOT reached the server yet and will send when you are online.", r === "confirmed" ? "ok" : "err", 9000);
+      $("fStatus").value = "draft"; renderList(); setTimeout(() => { if (byId(doneId)) showCard(doneId); }, 400);
+    } catch (e) { busy = false; renderEditor(); $("edMsg").className = "msg err"; $("edMsg").textContent = PCG.friendlyError(e); }
+  }
+
+  // ---------------------------------------------------------------- import
+  function previewImport(text) {
+    imp = PCG.parseImport(text); let h = "";
+    if (imp.errors.length) h += '<div class="alert-box">' + imp.errors.map(esc).join("<br>") + "</div>";
+    if (imp.items.length) {
+      const nr = imp.items.filter(x => x._notReady).length;
+      h += '<div class="info-box"><b>' + imp.items.length + "</b> entr" + (imp.items.length === 1 ? "y" : "ies") + " can be imported as drafts." + (nr ? " " + nr + " still lack source details or dates and will need completing before approval." : "") + "</div>" +
+        '<div class="tablewrap"><table><tr><th>Title</th><th>Category</th><th>Kind</th></tr>' + imp.items.slice(0, 50).map(x => "<tr><td>" + esc(x.title) + "</td><td>" + esc(PCG.categoryLabel(x.category)) + "</td><td>" + (x.scope === "facility" ? "Local" : "National") + "</td></tr>").join("") + "</table></div>" +
+        '<button type="button" class="btn-primary" id="impGo">Import ' + imp.items.length + " as drafts</button>";
+    }
+    $("impOut").innerHTML = h; const go = $("impGo"); if (go) go.onclick = doImport;
+  }
+  async function doImport() {
+    if (busy || !imp || !imp.items.length) return; busy = true; $("impGo").disabled = true;
+    try {
+      const b = writeBatch(db), ids = [];
+      imp.items.forEach(it => {
+        const key = PCG.newKey(), id = PCG.idFor(key, 1), d = Object.assign({}, it); delete d._notReady;
+        Object.assign(d, { id: id, guidelineKey: key, version: 1 });
+        b.set(doc(db, "guidelines", id), clean(Object.assign({}, stamp(), d, { approvalStatus: "draft", supersedes: null, enteredDate: today(), enteredByName: myName, origin: "import" }))); ids.push(id);
+      });
+      b.set(doc(collection(db, "pc_audit_logs")), Object.assign(stamp(), { actorUid: me.id, actorName: myName, action: "guideline.import", recordPath: "guidelines", patientId: null, count: ids.length, ids: ids, at: serverTimestamp() }));
+      const r = await commit(b, "Import of " + ids.length + " entries");
+      note(r === "confirmed" ? ids.length + (ids.length === 1 ? " draft entry" : " draft entries") + " imported. Check and approve them under Entries > Drafts waiting for approval." : "The import is saved on this device and has NOT reached the server yet.", r === "confirmed" ? "ok" : "err", 10000);
+      imp = null; $("impOut").innerHTML = ""; $("impText").value = ""; $("impFile").value = ""; $("fStatus").value = "draft"; setTab("library"); renderList();
+    } catch (e) { note(PCG.friendlyError(e), "err"); } finally { busy = false; }
+  }
+
+  // ---------------------------------------------------------------- wiring
+  function setTab(t) {
+    tab = t;
+    document.querySelectorAll("#tabs .pill-btn").forEach(b => b.classList.toggle("selected", b.dataset.t === t));
+    $("libraryTab").classList.toggle("hidden", t !== "library"); $("editorTab").classList.toggle("hidden", t !== "editor"); $("importTab").classList.toggle("hidden", t !== "import");
+    $("tabEditor").classList.toggle("hidden", !(canManage() && (t === "editor" || ed)));
+  }
+  function refresh() { renderList(); if (openId) { if (byId(openId)) { $("refCard").innerHTML = cardOf(byId(openId)); } else { $("refCard").classList.add("hidden"); openId = null; } } }
+  function begin() {
+    if (!facility || !(Array.isArray(facility.enabledServices) && facility.enabledServices.indexOf("patient_care") >= 0)) { showGate("Patient Care is not switched on for " + esc(facility ? facility.name : "this shop") + "."); return; }
+    $("shopIndicator").textContent = "Guidelines · " + facility.name;
+    $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
+    $("fStatusBox").classList.toggle("hidden", !canManage()); $("tabImport").classList.toggle("hidden", !canManage());
+    const mark = s => { const b = $("netBadge"); b.textContent = s.metadata.fromCache ? "offline (saved copy)" : "online (synced)"; b.className = "badge " + (s.metadata.fromCache ? "offline" : "online"); };
+    const rows = s => s.docs.map(x => ({ id: x.id, ...x.data(), _pending: !!(x.metadata && x.metadata.hasPendingWrites) }));
+    const denied = err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to open the guidelines, or the Guidelines security rules are not published yet." : "Could not load the guidelines. Check your internet connection.") + "</div>"; };
+    unsubs.forEach(u => { try { u(); } catch (e) {} }); unsubs = [];
+    unsubs.push(onSnapshot(query(collection(db, "guidelines"), where("businessId", "==", businessId), where("scope", "==", "national"), limit(3000)), { includeMetadataChanges: true }, s => { national = rows(s); mark(s); refresh(); handleLink(); }, denied));
+    unsubs.push(onSnapshot(query(collection(db, "guidelines"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("scope", "==", "facility"), limit(3000)), { includeMetadataChanges: true }, s => { local = rows(s); refresh(); handleLink(); }, () => {}));
+    renderList();
+  }
+  // opened from another screen:  guidelines.html?q=cough&cat=respiratory&id=<entry id>
+  let linkParams = undefined, linkOpened = false;
+  function handleLink() {
+    if (linkParams === undefined) {
+      linkParams = null;
+      try { let sp = new URLSearchParams(location.search || ""); if (![...sp.keys()].length) { const h = (window.top.location.hash || "").split("?")[1]; if (h) sp = new URLSearchParams(h); } if ([...sp.keys()].length) linkParams = sp; } catch (e) {}
+      if (linkParams) {
+        if (linkParams.get("cat") && PCG.CATEGORIES.some(c => c[0] === linkParams.get("cat"))) cat = linkParams.get("cat");
+        if (linkParams.get("scope")) $("fScope").value = linkParams.get("scope");
+        if (linkParams.get("q")) $("q").value = linkParams.get("q");
+        renderList();
+      }
+    }
+    const id = linkParams && linkParams.get("id");
+    if (id && !linkOpened && byId(id)) { linkOpened = true; showCard(id); }
+  }
+
+  $("q").addEventListener("input", renderList); $("fScope").addEventListener("change", renderList); $("fStatus").addEventListener("change", renderList);
+  $("cats").addEventListener("click", e => { const b = e.target.closest("[data-c]"); if (!b) return; cat = b.dataset.c; renderList(); });
+  $("list").addEventListener("click", e => { const p = e.target.closest(".pt"); if (p) showCard(p.dataset.id); });
+  $("addBtn").addEventListener("click", () => openEditor(null));
+  document.querySelectorAll("#tabs .pill-btn").forEach(b => b.addEventListener("click", () => { if (b.dataset.t === "editor" && !ed) return; setTab(b.dataset.t); }));
+  $("tplBtn").addEventListener("click", () => {
+    const blob = new Blob([PCG.templateJSON()], { type: "application/json" }), a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "guidelines-import-template.json"; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  });
+  $("impFile").addEventListener("change", e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { $("impText").value = r.result; previewImport(r.result); }; r.readAsText(f); });
+  $("impPreview").addEventListener("click", () => previewImport($("impText").value));
+
+  $("refCard").addEventListener("click", e => {
+    const b = e.target.closest("[data-act]"); if (!b) return; e.preventDefault();
+    const a = b.dataset.act, g = openId ? byId(openId) : null;
+    if (a === "close") { openId = null; $("refCard").classList.add("hidden"); renderList(); }
+    else if (a === "open") showCard(b.dataset.id);
+    else if (!g) return;
+    else if (a === "copy") { const t = PCG.refText(g); (window.top.mcShareText ? window.top.mcShareText(t, "Guideline reference") : navigator.clipboard.writeText(t)).then(() => note("Reference copied. Paste it into your note.", "ok", 4000)).catch(() => note("Could not copy. Select and copy the source details instead.", "err")); }
+    else if (a === "hist") { const bx = $("histBox"); bx.innerHTML = bx.innerHTML ? "" : histHtml(g); }
+    else if (a === "edit") openEditor(g);
+    else if (a === "approve") doApprove(g);
+    else if (a === "retire") doRetire(g);
+    else if (a === "newver") doNewVersion(g);
+    else if (a === "opendraft") { const d = PCG.openDraft(PCG.byKey(all())[g.guidelineKey] || []); if (d) showCard(d.id); }
+  });
+  $("edCard").addEventListener("input", e => { const n = e.target.dataset && e.target.dataset.f; if (n && ed) ed.form[n] = e.target.value; });
+  $("edCard").addEventListener("change", e => { const n = e.target.dataset && e.target.dataset.f; if (n && ed) { ed.form[n] = e.target.value; if (n === "scope") renderEditor(); } });
+  $("edCard").addEventListener("click", e => {
+    const b = e.target.closest("[data-act]"); if (!b || !ed) return; const a = b.dataset.act;
+    if (a === "next") { ed.step = Math.min(3, ed.step + 1); renderEditor(); window.scrollTo(0, 0); }
+    else if (a === "back") { ed.step = Math.max(0, ed.step - 1); renderEditor(); window.scrollTo(0, 0); }
+    else if (a === "cancel") { ed = null; setTab("library"); }
+    else if (a === "save") saveDraft();
+  });
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.mcGo("login.html"); return; }
+    let snap;
+    try { snap = await getDoc(doc(db, "users", user.uid)); } catch (e) { showGate("Could not load your account. Check your connection and reopen this page."); return; }
+    if (!snap.exists()) { window.mcGo("login.html"); return; }
+    me = { id: user.uid, ...snap.data() };
+    if (me.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
+    role = me.role; businessId = me.businessId; perms = me.perms || {}; myName = me.name || "";
+    if (role === "owner") {
+      let started = false;
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
+        const shops = {}; s.docs.forEach(d => { shops[d.id] = { id: d.id, ...d.data() }; });
+        const ids = Object.keys(shops).sort((a, b) => String(shops[a].name).localeCompare(String(shops[b].name)));
+        const want = localStorage.getItem("mc_activeShopId");
+        facilityId = shops[want] ? want : ids[0]; facility = facilityId ? shops[facilityId] : null;
+        if (!started) { started = true; begin(); }
+      });
+    } else {
+      facilityId = me.shopId;
+      try { const sh = await getDoc(doc(db, "shops", facilityId)); facility = sh.exists() ? { id: sh.id, ...sh.data() } : null; } catch (e) { facility = null; }
+      begin();
+    }
+  });
+</script>
+</body>
+</html>
