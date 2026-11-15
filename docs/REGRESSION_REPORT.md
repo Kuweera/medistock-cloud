@@ -57,3 +57,6 @@ The v9 rules you had are included word for word, and the Patient Care rules come
 - Audit and access logs are written by the app; the rules cannot force them, so they show tampering but cannot prevent it.
 - `reports (1).html` stray file remains in the repository (not removed).
 - The repository still has no automated tests.
+
+## Phase 5 integration check (Developer 4, 2026-11-15)
+Automated (`node --test "tests/*.test.js"`, 58 tests): Sales, Purchases, Inventory, Batches, Suppliers, Expiring, What to Buy, Expenses, Credit, Cash Position, Reports, Backup, Shops and `mc-core.js` are byte-identical to the supplied zip. This shows they were not edited; it does **not** show they work against the new rules. The only rule change touching an existing collection is `stock_transactions` (DISPENSE entries only). Manual regression on a deployed test build is still required.

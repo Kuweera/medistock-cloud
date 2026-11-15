@@ -11,6 +11,7 @@
 | 1a | (f) Facility links + consent | Facility links in (c). **Consent sharing built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (g) Merge | **Built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (h) Regression | **Automated and file-level checks done (see REGRESSION_REPORT.md). Owner phone checklist and Rules Playground checks pending** |
+| 5 | Pharmacy dispensing, clinical guidelines, UX simplification, integration (Developers 1-4) | **Built and tested on mock databases only. Rules v15 written but NOT yet run in the Firebase Emulator or against real Firebase. NOT released.** See INTEGRATION_CHECKLIST.md |
 | 4 | Treatment plan engine, schedules, medication record | **Built and tested on a mock database; awaiting rules v14, upload and phone test. Highest-risk phase: test carefully with made-up patients** |
 | 3 | Investigations and diagnoses | **Built and tested on a mock database; awaiting rules v13, upload and phone test** |
 | 2 | Encounters, triage, consultation | **Built and tested on a mock database; awaiting rules v12, upload and phone test** |
@@ -112,3 +113,7 @@ Logic tests (names, phones, ages, duplicate scoring, search) in Node: all passed
 7. Use Sell and Inventory once. Nothing there should change.
 
 Known issues: menu shows Patient Care to every user (the page itself explains missing access); `reports (1).html` stray file; no automated tests in the repo.
+
+## Phase 5 integration (Developer 4, 2026-11-15)
+Changed: `firestore.rules` (v15), `nav.js` (Pharmacy, Guidelines), `sw.js` (mc-v24; also added `pc-ux.js`, which pages already loaded but the offline list did not cache). New: `package.json`, `firebase.json`, `.github/workflows/ci.yml`, `tests/integration.test.js`, `tests/baseline-hashes.json`, `tests-emulator/rules.test.js`, `docs/INTEGRATION_CHECKLIST.md`, `docs/SECURITY_TEST_REPORT.md`, `docs/OFFLINE_SYNC_TEST_REPORT.md`. `mc-core.js` and all Sales/Purchases/Inventory files are byte-identical to the supplied zip (hash-checked by CI).
+Phase 5 stays unreleased until the Phase 4 and Phase 5 gates in the master plan pass. Code existing is not a pass.
