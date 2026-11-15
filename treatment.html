@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>if(window.top===window){location.replace("app.html#"+location.pathname.split("/").pop()+location.search);}</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2abfa0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MediStock">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<title>Treatment — MediStock Cloud</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  /* ===== Users page ===== */
+  .hidden{display:none !important;}
+  .btn-small{padding:8px 12px; font-size:13px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent);}
+  .btn-danger-outline{background:transparent; color:var(--danger); border:1px solid var(--danger);}
+  .op{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;}
+  .op:last-child{margin-bottom:0;}
+  .op-name{font-weight:700; font-size:14.5px; display:flex; justify-content:space-between; gap:8px; align-items:center;}
+  .op-meta{font-size:12px; color:var(--muted); margin-top:3px; line-height:1.5;}
+  .tag{font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid var(--border);}
+  .tag.on{color:var(--accent2); border-color:var(--accent2);} .tag.off{color:var(--danger); border-color:var(--danger);}
+  .op-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .cred{background:var(--bg); border:1px dashed var(--accent); border-radius:10px; padding:12px; margin:10px 0; font-size:14px; line-height:1.7;}
+  .cred b{font-size:16px; letter-spacing:.5px;}
+  .msg{font-size:13px; margin-top:8px;} .msg.err{color:var(--danger);} .msg.ok{color:var(--accent2);}
+  .pill-row{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;}
+  .pill-btn{background:var(--card); color:var(--text); border:1px solid var(--border); padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:600;}
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .day-h{font-size:11.5px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.4px; margin:12px 0 4px;}
+  .ev{display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ev:last-child{border-bottom:none;}
+  .ev-main{min-width:0;} .ev-text{overflow-wrap:anywhere;}
+  .ev-meta{font-size:11.5px; color:var(--muted);}
+  .ev-amt{font-weight:700; white-space:nowrap;} .ev-amt.out{color:var(--danger);}
+  .hint2{font-size:11.5px; color:var(--muted); line-height:1.5; margin-top:6px;}
+
+  /* ===== Patient Care ===== */
+  .sub{font-size:13px; margin:16px 0 2px; color:var(--accent); font-weight:700;}
+  .chk{display:flex; align-items:center; gap:10px; font-size:13.5px; color:var(--text); margin:8px 0;}
+  .chk input{width:22px; height:22px; flex:0 0 22px; padding:0; margin:0;}
+  .pt{padding:11px 0; border-bottom:1px solid var(--border); cursor:pointer;}
+  .pt:last-child{border-bottom:none;}
+  .pt-name{font-size:14.5px; font-weight:700; color:var(--text);}
+  .pt-meta{font-size:12.5px; color:var(--muted); margin-top:2px; line-height:1.5;}
+  .chip{display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:4px; vertical-align:middle; background:var(--border); color:var(--muted);}
+  .chip.ok{color:var(--accent2);} .chip.warn{color:var(--warn);} .chip.bad{color:var(--danger);}
+  .cand{border:1px solid var(--border); border-radius:10px; padding:10px; margin:8px 0;}
+  .cand.strong{border-color:var(--danger);}
+  .cand-head{font-size:14px; font-weight:700; color:var(--danger); margin-top:14px;}
+  .op-actions{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .breakdown-line .v{text-align:right; max-width:62%;}
+  textarea{width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px; font-family:inherit;}
+  textarea:focus{outline:none; border-color:var(--accent);}
+  .back{display:inline-block; font-size:13px; color:var(--accent); margin:0 0 10px; text-decoration:none; font-weight:600;}
+  .alert-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--danger); color:var(--danger); font-size:13px; line-height:1.5; font-weight:600;}
+  .entry{padding:10px 0; border-bottom:1px solid var(--border);} .entry:last-child{border-bottom:none;}
+  .entry.struck .pt-name{text-decoration:line-through; color:var(--muted); font-weight:500;}
+  .pill-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}
+  /* ===== typed or picked dates ===== */
+  .dateField{position:relative; display:flex; gap:8px; align-items:center;}
+  .dateField input[type="text"]{flex:1; min-width:0;}
+  .cal-btn{flex:0 0 46px; height:40px; background:var(--card); border:1px solid var(--border); border-radius:8px; font-size:18px; padding:0;}
+  .cal-native{position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0; padding:0;}
+  .info-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--accent); color:var(--text); font-size:13px; line-height:1.5;}
+  .perm-warn{font-size:12px; color:var(--warn); margin-bottom:8px; line-height:1.5;}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Patient Care · Treatment and medication record</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="mcGo('dashboard.html')">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+<div class="card hidden" id="gateCard"><div id="gateMsg" class="empty"></div></div>
+
+<div id="mainArea" class="hidden">
+  <div class="card">
+    <h2>Treatment and medication record</h2>
+    <div class="pill-row" id="tabs">
+      <button type="button" class="pill-btn selected" data-f="due">Due and late</button>
+      <button type="button" class="pill-btn" data-f="today">Today</button>
+      <button type="button" class="pill-btn" data-f="done">Given / not given</button>
+      <button type="button" class="pill-btn" data-f="prn">As needed (PRN)</button>
+      <button type="button" class="pill-btn" data-f="plans">Active plans</button>
+    </div>
+    <input type="search" id="q" placeholder="Search patient or medicine" autocomplete="off">
+    <div class="row"><div><label>Show</label><select id="kindF"><option value="">Medicines and procedures</option><option value="medicine">Medicines only</option><option value="procedure">Procedures only</option></select></div>
+      <div><label>Look back</label><select id="backF"><option value="1">Today and yesterday</option><option value="0">Today only</option><option value="3">3 days</option><option value="7">7 days</option></select></div></div>
+    <div class="hint2" id="info"></div>
+    <div class="info-box hidden" id="extBox"></div>
+    <div id="list"></div>
+  </div>
+
+  <div class="card hidden" id="actCard"></div>
+  <div class="msg ok" id="doneMsg"></div>
+  <datalist id="reasonList"><option value="Patient asleep"><option value="Patient vomited"><option value="Patient refused"><option value="Medicine not available"><option value="Doctor's instruction"><option value="Patient not present"><option value="Nil by mouth"><option value="Waiting for test result"></datalist>
+  <datalist id="prnReasonList"><option value="Pain"><option value="Fever"><option value="Nausea"><option value="Vomiting"><option value="Anxiety"><option value="Itching"></datalist>
+</div>
+
+<script src="pc-fields.js"></script>
+<script src="pc-sched.js"></script>
+<script type="module">
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, getDocs, setDoc, collection, onSnapshot, serverTimestamp, query, where, limit, writeBatch, getDocFromCache } = window.top.MC.api(window);
+
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDocServerFirst(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDoc(ref) {
+    try { const c = await getDocFromCache(ref); if (c.exists()) return c; } catch (e) {}
+    return getDocServerFirst(ref);
+  }
+
+  const app = initializeApp({});
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
+  let dayEvents = {}, held = [], orders = [], plans = [], allergies = [], filter = "due", selId = null, selPrn = null, selRecs = [], unsubRec = null, evMap = {};
+  const GRACE = 30, SOON = 30;
+  const can = k => role === "owner" || perms[k] === true;
+  const tz = () => (facility && facility.timezone) || "Africa/Kampala";
+  const todayLocal = () => PCS.utcToLocal(Date.now(), tz()).date;
+  const ST = { pending: "Pending", due: "Due now", delayed: "Late", administered: "Given", refused: "Refused", missed: "Missed", held: "Held", not_given: "Not given", cancelled: "Cancelled" };
+  const ST_CLASS = { due: "warn", delayed: "bad", administered: "ok", refused: "bad", missed: "bad", held: "warn", not_given: "warn" };
+
+  function showGate(msg) { $("gateMsg").innerHTML = msg; $("gateCard").classList.remove("hidden"); $("mainArea").classList.add("hidden"); }
+  function stamp() { return { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now() }; }
+  function saveFailed(err) {
+    const denied = err && err.code === "permission-denied";
+    const text = denied ? "Firestore refused this save. It may already have been recorded on another phone, you may not have permission for this, or the security rules (v14) are not published yet. Check the list and try again." : "Could not save: " + ((err && err.message) || "unknown problem");
+    const el = $("doneMsg"); el.textContent = "NOT SAVED. " + text; el.className = "msg err"; alert(text);
+  }
+  function ok(m) { const el = $("doneMsg"); el.className = "msg ok"; el.textContent = m; }
+  const upd = () => ({ updatedAt: serverTimestamp(), updatedBy: me.id });
+  const hhmm = ms => PCS.utcToLocal(ms, tz()).time;
+  function allergyFor(patientId, names) { return PCS.allergyMatches(names, allergies.filter(a => a.patientId === patientId)); }
+  function patientAllergies(pid) { return allergies.filter(a => a.patientId === pid && a.status === "active"); }
+  const auditOp = (o, action, extra) => ["s", doc(collection(db, "pc_audit_logs")), Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, action: action, recordPath: "pc_treatment_events/" + (o.id || ""), patientId: o.patientId, encounterId: o.encounterId || null, orderId: o.orderId || o.id || null, at: serverTimestamp() }, extra || {})];
+  function commit(ops) {
+    const b = writeBatch(db);
+    ops.forEach(o => { if (o[0] === "u") b.update(o[1], o[2]); else b.set(o[1], o[2]); });
+    return b.commit().catch(saveFailed);
+  }
+
+  // ---------- list ----------
+  function allEvents() { const m = {}; Object.keys(dayEvents).forEach(d => dayEvents[d].forEach(e => { m[e.id] = e; })); held.forEach(e => { m[e.id] = e; }); evMap = m; return Object.keys(m).map(k => m[k]); }
+  function stateOf(e) { return PCS.dueState(e, Date.now(), GRACE, SOON); }
+  function render() {
+    const now = Date.now(), evs = allEvents(), q = $("q").value.trim().toLowerCase(), kf = $("kindF").value;
+    const flt = e => (!kf || e.kind === kf) && (!q || (String(e.patientName) + " " + e.label).toLowerCase().indexOf(q) >= 0);
+    const tl = todayLocal();
+    const due = evs.filter(e => { const s = stateOf(e); return s === "due" || s === "delayed" || s === "held"; });
+    document.querySelectorAll("#tabs .pill-btn").forEach(b => { const n = { due: due.length, today: 0, done: 0, prn: orders.filter(o => o.scheduleType === "prn").length, plans: plans.length }[b.dataset.f]; const base = { due: "Due and late", today: "Today", done: "Given / not given", prn: "As needed (PRN)", plans: "Active plans" }[b.dataset.f]; b.textContent = base + (n ? " (" + n + ")" : ""); });
+    $("extBox").classList.add("hidden");
+    if (filter === "prn") return renderPrn();
+    if (filter === "plans") return renderPlans();
+    let rows;
+    if (filter === "due") rows = due;
+    else if (filter === "today") rows = evs.filter(e => e.plannedDay === tl && e.status !== "cancelled");
+    else rows = evs.filter(e => ["administered", "refused", "missed", "not_given"].indexOf(e.status) >= 0);
+    rows = rows.filter(flt).sort((a, b) => filter === "done" ? (b.actualAt || b.plannedAt) - (a.actualAt || a.plannedAt) : a.plannedAt - b.plannedAt);
+    $("info").textContent = filter === "due" ? "Pending administrations that are due within " + SOON + " minutes or more than " + GRACE + " minutes late, and held ones." : filter === "today" ? "Everything planned for today." : "Recorded outcomes in the selected period.";
+    $("list").innerHTML = rows.length ? rows.map(cardHtml).join("") : '<div class="empty">Nothing here.</div>';
+    prescriberBanner();
+  }
+  function cardHtml(e) {
+    const s = stateOf(e), al = e.kind === "medicine" ? allergyFor(e.patientId, [e.label]) : [];
+    return '<div class="pt' + (selId === e.id ? " sel" : "") + '" data-ev="' + esc(e.id) + '"><div class="pt-name">' + esc(hhmm(e.plannedAt)) + (e.plannedDay !== todayLocal() ? " (" + esc(e.plannedDay) + ")" : "") + " · " + esc(e.patientName) + ' <span class="chip ' + (ST_CLASS[s] || "") + '">' + esc(ST[s] || s) + "</span>" + (al.length ? ' <span class="chip bad">ALLERGY</span>' : "") + "</div>" +
+      '<div class="pt-meta">' + esc(e.label) + (e.kind === "medicine" ? " — " + esc(e.plannedDoseValue) + " " + esc(e.doseUnit || "") + (e.route ? " · " + esc(e.route) : "") : "") + (e.instructions ? "<br>" + esc(e.instructions) : "") + "</div></div>";
+  }
+  function renderPlans() {
+    $("info").textContent = "Active treatment plans in this facility.";
+    const tl = todayLocal();
+    $("list").innerHTML = plans.length ? plans.slice().sort((a, b) => ((a.reviewDate || "9") < (b.reviewDate || "9") ? -1 : 1)).map(p => {
+      const os = orders.filter(o => o.planId === p.id), rv = p.reviewDate && p.reviewDate <= tl;
+      return '<div class="pt" data-pat="' + esc(p.patientId) + '"><div class="pt-name">' + esc(p.patientName) + " · " + esc(p.title) + (rv ? ' <span class="chip bad">Review due</span>' : "") + (p.priority === "urgent" ? ' <span class="chip warn">Urgent</span>' : "") + "</div>" +
+        '<div class="pt-meta">' + os.length + " active order" + (os.length === 1 ? "" : "s") + (os.length ? ": " + os.map(o => esc(o.kind === "procedure" ? o.procedureName : o.medicineName)).join(", ") : "") + (p.reviewDate ? "<br>Review " + esc(PCF.toTyped(p.reviewDate)) : "") + "</div></div>";
+    }).join("") : '<div class="empty">No active plans.</div>';
+  }
+  function renderPrn() {
+    $("info").textContent = "Medicines ordered to be given only when needed. Tap one to record a dose.";
+    const q = $("q").value.trim().toLowerCase();
+    const rows = orders.filter(o => o.scheduleType === "prn" && (!q || (String(o.patientName) + " " + o.medicineName).toLowerCase().indexOf(q) >= 0));
+    $("list").innerHTML = rows.length ? rows.map(o => '<div class="pt" data-prn="' + esc(o.id) + '"><div class="pt-name">' + esc(o.patientName) + " · " + esc(o.medicineName) + "</div>" +
+      '<div class="pt-meta">' + esc(o.doseValue) + " " + esc(o.doseUnit || "") + (o.route ? " · " + esc(o.route) : "") + "<br>" + esc(PCS.describe(o)) + "</div></div>").join("") : '<div class="empty">No as-needed orders.</div>';
+  }
+  function prescriberBanner() {
+    if (!can("treatment.prescribe")) return;
+    const need = orders.filter(o => o.scheduleType !== "prn" && o.totalEvents > 0);
+    if (!need.length) return;
+    $("extBox").innerHTML = 'Planned times are written 7 days ahead. <button type="button" class="btn-small btn-secondary" id="extAllBtn">Write the next days for all active orders</button>';
+    $("extBox").classList.remove("hidden");
+    $("extAllBtn").onclick = extendAll;
+  }
+  async function extendAll() {
+    const btn = $("extAllBtn"); btn.disabled = true; btn.textContent = "Working…";
+    const horizon = Date.now() + 7 * 864e5; let ops = [], count = 0;
+    for (const o of orders.filter(x => x.scheduleType !== "prn" && x.totalEvents > 0)) {
+      let have = {};
+      try { const s = await getDocs(query(collection(db, "pc_treatment_events"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("orderId", "==", o.id), limit(500))); s.docs.forEach(d => { have[d.id] = true; }); } catch (e) { continue; }
+      if (Object.keys(have).length >= o.totalEvents) continue;
+      PCS.generate({ scheduleType: o.scheduleType, startAt: o.startAt, tz: o.tz, sched: o.sched, doseValue: o.doseValue }).forEach(e => {
+        const eid = o.id + "_" + e.idKey; if (have[eid] || e.plannedAt > horizon) return;
+        ops.push(["s", doc(db, "pc_treatment_events", eid), Object.assign(stamp(), { orderId: o.id, idKey: e.idKey, idx: e.idx, planId: o.planId, encounterId: o.encounterId, patientId: o.patientId, patientName: o.patientName, kind: o.kind, label: o.kind === "procedure" ? o.procedureName : o.medicineName, plannedAt: e.plannedAt, plannedLocal: e.plannedLocal, plannedDay: e.plannedDay, tz: e.tz,
+          plannedDoseValue: e.doseValue != null ? e.doseValue : o.doseValue, doseUnit: o.doseUnit || "", route: o.route || "", instructions: o.instructions || "", status: "pending" })]); count++;
+      });
+    }
+    for (let i = 0; i < ops.length; i += 400) { const b = writeBatch(db); ops.slice(i, i + 400).forEach(o => b.set(o[1], o[2])); b.commit().catch(saveFailed); }
+    ok(count ? count + " more planned administration(s) written on this phone." : "Nothing new to write: the next days are already planned.");
+    btn.disabled = false; btn.textContent = "Write the next days for all active orders";
+  }
+
+  // ---------- recording an administration ----------
+  function selectEvent(id) {
+    selId = id; selPrn = null; if (unsubRec) { try { unsubRec(); } catch (e) {} unsubRec = null; } selRecs = [];
+    const e = evMap[id]; if (!e) return;
+    unsubRec = onSnapshot(query(collection(db, "pc_mar_records"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("eventId", "==", id), limit(20)), s => { selRecs = s.docs.map(d => ({ id: d.id, ...d.data() })); renderAct(); }, () => renderAct());
+    renderAct(); render(); $("actCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function selectPrn(id) {
+    selPrn = id; selId = null; if (unsubRec) { try { unsubRec(); } catch (e) {} unsubRec = null; } selRecs = [];
+    unsubRec = onSnapshot(query(collection(db, "pc_mar_records"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("orderId", "==", id), limit(200)), s => { selRecs = s.docs.map(d => ({ id: d.id, ...d.data() })); renderAct(); }, () => renderAct());
+    renderAct(); $("actCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function nowFields(prefix) {
+    const n = PCS.utcToLocal(Date.now(), tz());
+    return '<div class="row"><div><label>Date</label><div class="dateField"><input type="text" id="' + prefix + 'Date" value="' + esc(PCF.toTyped(n.date)) + '"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div></div><div><label>Time</label><input type="time" id="' + prefix + 'Time" value="' + n.time + '"></div></div>';
+  }
+  function readTime(prefix) {
+    const di = PCF.dateInfo(prefix + "Date"), tm = $(prefix + "Time").value;
+    if ((di.state !== "ok") || !tm) return NaN;
+    return PCS.localToUtc(di.iso, tm, tz());
+  }
+  function renderAct() {
+    const card = $("actCard");
+    if (selPrn) return renderPrnAct(card);
+    const e = evMap[selId]; if (!e) { card.classList.add("hidden"); return; }
+    card.classList.remove("hidden");
+    const s = stateOf(e), al = e.kind === "medicine" ? allergyFor(e.patientId, [e.label]) : [], pal = patientAllergies(e.patientId);
+    let h = "<h2>" + esc(e.label) + ' <span class="chip ' + (ST_CLASS[s] || "") + '">' + esc(ST[s] || s) + "</span></h2><div class=\"pt-meta\">" + esc(e.patientName) + " · planned " + esc(e.plannedLocal) + (e.kind === "medicine" ? "<br>Dose: " + esc(e.plannedDoseValue) + " " + esc(e.doseUnit || "") + (e.route ? " · " + esc(e.route) : "") : "") + (e.instructions ? "<br>" + esc(e.instructions) : "") + "</div>";
+    if (pal.length) h += '<div class="alert-box" style="margin-top:8px;"><b>Allergies:</b> ' + pal.map(a => esc(a.substance) + (a.severity === "severe" ? " (severe)" : "")).join(", ") + "</div>";
+    if (al.length) h += '<div class="alert-box" style="margin-top:8px;"><b>This medicine matches a recorded allergy (' + al.map(a => esc(a.substance)).join(", ") + ").</b> Do not give it unless a clinician has said it is safe.</div>";
+    const recs = selRecs.filter(r => r.status === "active").sort((a, b) => (b.clientCreatedAt || 0) - (a.clientCreatedAt || 0));
+    if (e.status === "pending" || e.status === "held") {
+      if (can("treatment.administer")) {
+        h += '<h3 class="sub">Record what happened</h3>' + nowFields("a") +
+          (e.kind === "medicine" ? '<label>Dose actually given (' + esc(e.doseUnit || "") + ")</label>" + '<input type="number" inputmode="decimal" step="any" id="aDose" value="' + esc(e.plannedDoseValue != null ? e.plannedDoseValue : "") + '">' : "") +
+          "<label>Observations</label><textarea id=\"aObs\" rows=\"2\"></textarea><label>Reaction or side effect (if any)</label><textarea id=\"aAdv\" rows=\"2\"></textarea>" +
+          (al.length ? '<label class="chk"><input type="checkbox" id="aAlg"><span>I have checked the allergy and a clinician has authorised this</span></label>' : "") +
+          '<button class="btn-primary" data-out="administered">' + (e.kind === "procedure" ? "Procedure done" : "Given") + "</button>" +
+          '<label>If it was not given: the reason (type or choose)</label><input type="text" id="aReason" list="reasonList" autocomplete="off">' +
+          '<div class="op-actions"><button class="btn-small btn-secondary" data-out="refused">Patient refused</button><button class="btn-small btn-secondary" data-out="held">Hold</button><button class="btn-small btn-secondary" data-out="not_given">Not given</button><button class="btn-small btn-secondary" data-out="missed">Missed</button></div>';
+        if (e.status === "held" ) h += '<button class="btn-small btn-secondary" id="relBtn" style="width:100%; margin-top:8px;">Release the hold (back to pending)</button>';
+      } else h += '<div class="pt-meta">You do not have permission to record administrations.</div>';
+    } else {
+      h += '<h3 class="sub">Recorded</h3>' + (recs.length ? recs.map(r => '<div class="cand"><div class="pt-name">' + esc(ST[r.outcome] || r.outcome) + " at " + esc(hhmm(r.actualAt)) + (r.actualDoseValue != null && r.outcome === "administered" ? " · " + esc(r.actualDoseValue) + " " + esc(r.doseUnit || "") : "") + '</div><div class="pt-meta">By ' + esc(r.administeredByName || "") + (r.actualAt - e.plannedAt > GRACE * 60000 && r.outcome === "administered" ? " · given late" : "") +
+        (r.observations ? "<br>" + esc(r.observations) : "") + (r.adverseReaction ? "<br>Reaction: " + esc(r.adverseReaction) : "") + (r.omissionReason ? "<br>Reason: " + esc(r.omissionReason) : "") + "</div></div>").join("") : '<div class="pt-meta">Record details are loading or not on this phone yet.</div>');
+      if (can("mar.amend") && recs.length && e.status !== "cancelled") h += '<button class="btn-small btn-secondary" id="fixBtn" style="width:100%; margin-top:8px;">This record is wrong: correct it</button>';
+      if (e.status === "cancelled") h += '<div class="pt-meta">Cancelled' + (e.cancelReason ? ": " + esc(e.cancelReason) : "") + "</div>";
+    }
+    h += '<button class="btn-small btn-secondary" id="closeActBtn" style="width:100%; margin-top:8px;">Close</button>';
+    card.innerHTML = h; PCF.initDates();
+    card.querySelectorAll("[data-out]").forEach(b => { b.onclick = () => record(e, b.dataset.out); });
+    if ($("fixBtn")) $("fixBtn").onclick = () => correct(e, recs[0]);
+    if ($("relBtn")) $("relBtn").onclick = () => commit([["u", doc(db, "pc_treatment_events", e.id), Object.assign({ status: "pending" }, upd())], auditOp(e, "mar.release")]).then(() => ok("Hold released."));
+    $("closeActBtn").onclick = () => { selId = null; card.classList.add("hidden"); render(); };
+  }
+  function record(e, outcome) {
+    const at = readTime("a"); if (isNaN(at)) { alert("Type the date as DD/MM/YYYY and choose the time."); return; }
+    if (at > Date.now() + 5 * 60000) { alert("The time cannot be in the future."); return; }
+    const reason = ($("aReason") && $("aReason").value.trim()) || "";
+    if (outcome !== "administered" && reason.length < 3) { alert("Give the reason (at least a few letters)."); return; }
+    if (outcome === "administered" && $("aAlg") && !$("aAlg").checked) { alert("This medicine matches a recorded allergy. Tick the box only if a clinician has authorised it."); return; }
+    let dose = null; if (e.kind === "medicine" && outcome === "administered") { dose = Number($("aDose").value); if (!(dose > 0)) { alert("Enter the dose actually given."); return; } }
+    const rref = doc(collection(db, "pc_mar_records"));
+    const rec = Object.assign(stamp(), { eventId: e.id, orderId: e.orderId, planId: e.planId || null, encounterId: e.encounterId || null, patientId: e.patientId, patientName: e.patientName, label: e.label, kind: e.kind, outcome: outcome, plannedAt: e.plannedAt, actualAt: at,
+      actualDoseValue: dose, doseUnit: e.doseUnit || "", route: e.route || "", prescribedDoseValue: e.plannedDoseValue != null ? e.plannedDoseValue : null, observations: ($("aObs").value || "").trim(), adverseReaction: ($("aAdv").value || "").trim(), omissionReason: outcome === "administered" ? null : reason, status: "active", administeredBy: me.id, administeredByName: myName });
+    commit([["s", rref, rec], ["u", doc(db, "pc_treatment_events", e.id), Object.assign({ status: outcome, lastRecordId: rref.id, actualAt: at, actualDoseValue: dose, administeredBy: me.id, administeredByName: myName }, upd())], auditOp(e, "mar." + outcome, { recordId: rref.id, reason: reason || null })]);
+    ok("Recorded on this phone: " + (ST[outcome] || outcome) + " — " + e.label + " for " + e.patientName + ".");
+    selId = null; $("actCard").classList.add("hidden");
+  }
+  function correct(e, rec) {
+    const reason = (window.prompt("Why is this record wrong? (it stays on record, marked as entered in error, and the administration goes back to pending)") || "").trim();
+    if (reason.length < 3) { if (reason) alert("Please give a short reason."); return; }
+    commit([["u", doc(db, "pc_mar_records", rec.id), Object.assign({ status: "entered_in_error", errorReason: reason }, upd())], ["u", doc(db, "pc_treatment_events", e.id), Object.assign({ status: "pending" }, upd())], auditOp(e, "mar.correct", { recordId: rec.id, reason: reason })]);
+    ok("Record marked as entered in error. The administration is pending again."); selId = null; $("actCard").classList.add("hidden");
+  }
+
+  // ---------- as-needed (PRN) doses ----------
+  function prnStats(o) {
+    const recs = selRecs.filter(r => r.status === "active" && r.outcome === "administered" && r.eventId == null).sort((a, b) => b.actualAt - a.actualAt);
+    const tl = todayLocal(), today = recs.filter(r => PCS.utcToLocal(r.actualAt, tz()).date === tl);
+    return { last: recs[0] || null, count: today.length, total: today.reduce((s, r) => s + (r.actualDoseValue || 0), 0), recs: recs };
+  }
+  function renderPrnAct(card) {
+    const o = orders.find(x => x.id === selPrn); if (!o) { card.classList.add("hidden"); return; }
+    card.classList.remove("hidden");
+    const st = prnStats(o), s = o.sched || {}, al = allergyFor(o.patientId, [o.medicineName, o.generic]), pal = patientAllergies(o.patientId);
+    let h = "<h2>" + esc(o.medicineName) + ' <span class="chip">As needed</span></h2><div class="pt-meta">' + esc(o.patientName) + "<br>Dose: " + esc(o.doseValue) + " " + esc(o.doseUnit || "") + (o.route ? " · " + esc(o.route) : "") + "<br>" + esc(PCS.describe(o)) + (o.instructions ? "<br>" + esc(o.instructions) : "") + "</div>";
+    h += '<div class="pt-meta" style="margin-top:6px;">Today: ' + st.count + " dose" + (st.count === 1 ? "" : "s") + (st.total ? " (" + Math.round(st.total * 100) / 100 + " " + esc(o.doseUnit || "") + ")" : "") + (st.last ? " · last given " + esc(PCS.utcToLocal(st.last.actualAt, tz()).date + " " + hhmm(st.last.actualAt)) + " by " + esc(st.last.administeredByName || "") : " · none given yet") + "</div>";
+    if (pal.length) h += '<div class="alert-box" style="margin-top:8px;"><b>Allergies:</b> ' + pal.map(a => esc(a.substance) + (a.severity === "severe" ? " (severe)" : "")).join(", ") + "</div>";
+    if (al.length) h += '<div class="alert-box" style="margin-top:8px;"><b>This medicine matches a recorded allergy (' + al.map(a => esc(a.substance)).join(", ") + ").</b></div>";
+    const endAt = s.periodDays ? o.startAt + s.periodDays * 864e5 : null;
+    if (endAt && Date.now() > endAt) h += '<div class="alert-box" style="margin-top:8px;">The period allowed for this as-needed order has ended. Ask the prescriber to renew it.</div>';
+    else if (can("treatment.administer")) {
+      h += '<h3 class="sub">Give a dose</h3><label>Why is it being given? *</label><input type="text" id="pReason" list="prnReasonList" value="' + esc(s.indication || "") + '" autocomplete="off">' + nowFields("p") +
+        '<label>Dose given (' + esc(o.doseUnit || "") + ')</label><input type="number" inputmode="decimal" step="any" id="pDose" value="' + esc(o.doseValue) + '"><label>Observations</label><textarea id="pObs" rows="2"></textarea><label>Reaction or side effect (if any)</label><textarea id="pAdv" rows="2"></textarea>' +
+        '<div id="pWarn"></div><div id="pOverBox" class="hidden"><label>These limits will be exceeded. Why is it still being given? *</label><textarea id="pOver" rows="2"></textarea></div>' + '<button class="btn-primary" id="pGiveBtn">Record dose given</button>';
+    } else h += '<div class="pt-meta">You do not have permission to record administrations.</div>';
+    if (st.recs.length) h += '<h3 class="sub">Doses given</h3>' + st.recs.slice(0, 8).map(r => '<div class="pt-meta">' + esc(PCS.utcToLocal(r.actualAt, tz()).date + " " + hhmm(r.actualAt)) + " · " + esc(r.actualDoseValue) + " " + esc(r.doseUnit || "") + " · " + esc(r.reason || "") + " · " + esc(r.administeredByName || "") + "</div>").join("");
+    h += '<button class="btn-small btn-secondary" id="closeActBtn" style="width:100%; margin-top:8px;">Close</button>';
+    card.innerHTML = h; PCF.initDates();
+    $("closeActBtn").onclick = () => { selPrn = null; card.classList.add("hidden"); };
+    if ($("pGiveBtn")) { $("pGiveBtn").onclick = () => givePrn(o); ["pDose", "pTime", "pDate"].forEach(id => { $(id).addEventListener("input", () => prnWarn(o)); }); prnWarn(o); }
+  }
+  function prnWarn(o) {
+    const st = prnStats(o), s = o.sched || {}, at = readTime("p"), dose = Number($("pDose").value) || 0, w = [];
+    if (!isNaN(at) && st.last && s.minIntervalHours > 0 && at - st.last.actualAt < s.minIntervalHours * 3600000) w.push("The last dose was given less than " + s.minIntervalHours + " hours before this time.");
+    if (s.maxPerDay >= 1 && st.count + 1 > s.maxPerDay) w.push("This would be dose " + (st.count + 1) + " today; the order allows at most " + s.maxPerDay + " a day.");
+    if (s.maxDailyDose && st.total + dose > s.maxDailyDose) w.push("The total for today would be " + Math.round((st.total + dose) * 100) / 100 + "; the order allows at most " + s.maxDailyDose + " a day.");
+    $("pWarn").innerHTML = w.map(x => '<div class="alert-box">' + esc(x) + "</div>").join(""); $("pOverBox").classList.toggle("hidden", !w.length); return w;
+  }
+  function givePrn(o) {
+    const at = readTime("p"); if (isNaN(at)) { alert("Type the date as DD/MM/YYYY and choose the time."); return; }
+    if (at > Date.now() + 5 * 60000) { alert("The time cannot be in the future."); return; }
+    const reason = $("pReason").value.trim(); if (reason.length < 2) { alert("Say why the dose is being given."); return; }
+    const dose = Number($("pDose").value); if (!(dose > 0)) { alert("Enter the dose given."); return; }
+    const w = prnWarn(o); const over = ($("pOver") && $("pOver").value.trim()) || "";
+    if (w.length && over.length < 5) { alert("Write why it is still being given."); return; }
+    if (allergyFor(o.patientId, [o.medicineName, o.generic]).length && !window.confirm("This medicine matches a recorded allergy. Give it only if a clinician has authorised it. Continue?")) return;
+    const rref = doc(collection(db, "pc_mar_records"));
+    commit([["s", rref, Object.assign(stamp(), { eventId: null, orderId: o.id, planId: o.planId, encounterId: o.encounterId || null, patientId: o.patientId, patientName: o.patientName, label: o.medicineName, kind: "medicine", outcome: "administered", plannedAt: null, actualAt: at, actualDoseValue: dose, doseUnit: o.doseUnit || "", route: o.route || "",
+      prescribedDoseValue: o.doseValue, reason: reason, observations: ($("pObs").value || "").trim(), adverseReaction: ($("pAdv").value || "").trim(), omissionReason: null, overrideReason: over || null, warnings: w, status: "active", administeredBy: me.id, administeredByName: myName })], auditOp({ id: o.id, patientId: o.patientId, encounterId: o.encounterId }, "mar.prn", { recordId: rref.id, reason: reason, warnings: w.length })]);
+    ok("As-needed dose recorded on this phone: " + o.medicineName + " for " + o.patientName + "."); selPrn = null; $("actCard").classList.add("hidden");
+  }
+
+  // ---------- wiring ----------
+  $("list").addEventListener("click", e => {
+    const ev = e.target.closest("[data-ev]"); if (ev) { selectEvent(ev.dataset.ev); return; }
+    const pr = e.target.closest("[data-prn]"); if (pr) { selectPrn(pr.dataset.prn); return; }
+    const pt = e.target.closest("[data-pat]"); if (pt) window.mcGo("patient.html?id=" + encodeURIComponent(pt.dataset.pat));
+  });
+  $("q").addEventListener("input", render); $("kindF").addEventListener("change", render); $("backF").addEventListener("change", () => { startEvents(); });
+  document.querySelectorAll("#tabs .pill-btn").forEach(b => b.addEventListener("click", () => { filter = b.dataset.f; document.querySelectorAll("#tabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b)); $("actCard").classList.add("hidden"); selId = null; selPrn = null; render(); }));
+  PCF.initDates();
+
+  let evUnsubs = [];
+  function mark(s) {
+    const badge = $("netBadge");
+    badge.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)";
+    badge.className = "badge " + (s.metadata.fromCache ? "offline" : "online");
+  }
+  function startEvents() {
+    evUnsubs.forEach(u => { try { u(); } catch (e) {} }); evUnsubs = []; dayEvents = {};
+    const back = parseInt($("backF").value, 10) || 0, t = todayLocal();
+    for (let i = -back; i <= 1; i++) {
+      const d = PCS.addDays(t, i);
+      evUnsubs.push(onSnapshot(query(collection(db, "pc_treatment_events"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("plannedDay", "==", d), limit(500)), { includeMetadataChanges: true }, s => {
+        dayEvents[d] = s.docs.map(x => ({ id: x.id, ...x.data() })); mark(s); render(); if (selId && evMap[selId]) renderAct();
+      }, err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view treatments, or the security rules (v14) are not published yet." : "Could not load treatments.") + "</div>"; }));
+    }
+  }
+  function begin() {
+    if (!facility || !(Array.isArray(facility.enabledServices) && facility.enabledServices.indexOf("patient_care") >= 0)) { showGate("Patient Care is not switched on for " + esc(facility ? facility.name : "this shop") + "."); return; }
+    if (!can("patient.view")) { showGate("You do not have Patient Care access yet. Ask the owner to give you access in Users."); return; }
+    $("shopIndicator").textContent = "Patient Care · " + facility.name;
+    $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
+    startEvents();
+    onSnapshot(query(collection(db, "pc_treatment_events"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "held"), limit(300)), s => { held = s.docs.map(x => ({ id: x.id, ...x.data() })); render(); }, () => {});
+    onSnapshot(query(collection(db, "pc_treatment_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "active"), limit(500)), s => { orders = s.docs.map(x => ({ id: x.id, ...x.data() })); render(); }, () => {});
+    onSnapshot(query(collection(db, "pc_treatment_plans"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "active"), limit(300)), s => { plans = s.docs.map(x => ({ id: x.id, ...x.data() })); render(); }, () => {});
+    onSnapshot(query(collection(db, "pc_allergies"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "active"), limit(1000)), s => { allergies = s.docs.map(x => ({ id: x.id, ...x.data() })); render(); }, () => {});
+    setInterval(render, 60000);
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.mcGo("login.html"); return; }
+    let snap;
+    try { snap = await getDoc(doc(db, "users", user.uid)); } catch (e) { showGate("Could not load your account. Check your connection and reopen this page."); return; }
+    if (!snap.exists()) { window.mcGo("login.html"); return; }
+    me = { id: user.uid, ...snap.data() };
+    if (me.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
+    role = me.role; businessId = me.businessId; perms = me.perms || {}; myName = me.name || "";
+    if (role === "owner") {
+      let started = false;
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
+        const shops = {}; s.docs.forEach(d => { shops[d.id] = { id: d.id, ...d.data() }; });
+        const ids = Object.keys(shops).sort((a, b) => String(shops[a].name).localeCompare(String(shops[b].name)));
+        const want = localStorage.getItem("mc_activeShopId");
+        facilityId = shops[want] ? want : ids[0]; facility = facilityId ? shops[facilityId] : null;
+        if (!started) { started = true; begin(); }
+      });
+    } else {
+      facilityId = me.shopId;
+      try { const sh = await getDoc(doc(db, "shops", facilityId)); facility = sh.exists() ? { id: sh.id, ...sh.data() } : null; } catch (e) { facility = null; }
+      begin();
+    }
+  });
+</script>
+</body>
+</html>

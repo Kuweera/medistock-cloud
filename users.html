@@ -444,13 +444,17 @@
     ["lab.collect", "Laboratory: collect samples"],
     ["lab.process", "Laboratory: process samples"],
     ["lab.result", "Laboratory: enter and correct results"],
-    ["lab.verify", "Laboratory: verify results"]
+    ["lab.verify", "Laboratory: verify results"],
+    ["treatment.prescribe", "Prescribe: treatment plans, medicine and procedure orders"],
+    ["treatment.administer", "Record giving medicines and procedures (medication record)"],
+    ["mar.amend", "Correct wrong medication records"],
+    ["rules.manage", "Set up and approve dosing rules"]
   ];
   // quick-fill only: you can still tick or untick anything before saving
   const PERM_PRESETS = {
     reception: ["patient.view", "patient.register", "encounter.open"],
-    nurse: ["patient.view", "patient.register", "history.record", "allergy.record", "encounter.open", "triage.record"],
-    clinician: ["patient.view", "patient.register", "patient.edit", "history.record", "allergy.record", "patient.consent", "encounter.open", "triage.record", "consult.record", "consult.sign", "encounter.close", "investigation.request", "investigation.review", "diagnosis.record"],
+    nurse: ["patient.view", "patient.register", "history.record", "allergy.record", "encounter.open", "triage.record", "treatment.administer"],
+    clinician: ["patient.view", "patient.register", "patient.edit", "history.record", "allergy.record", "patient.consent", "encounter.open", "triage.record", "consult.record", "consult.sign", "encounter.close", "investigation.request", "investigation.review", "diagnosis.record", "treatment.prescribe", "mar.amend"],
     lab: ["patient.view", "lab.collect", "lab.process", "lab.result", "lab.verify"]
   };
   const permsOpen = new Set();

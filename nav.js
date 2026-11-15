@@ -21,6 +21,8 @@
     ["encounters.html", "Visits & Queue"],
     ["laboratory.html", "Laboratory"],
     ["investigations.html", "Test catalogue"],
+    ["treatment.html", "Treatment & MAR"],
+    ["dosing-rules.html", "Dosing rules"],
     ["directory.html", "Facility Directory"],
     ["users.html", "Users"],
     ["shops.html", "Shops"],

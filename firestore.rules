@@ -1,6 +1,7 @@
 rules_version = '2';
 
-// MediStock Cloud — multi-shop roles & security (v13)
+// MediStock Cloud — multi-shop roles & security (v14)
+// v14: adds Phase 4 (treatment plans, orders, planned administrations, medication record) rules at the end.
 // v13: adds Phase 3 (investigations and diagnoses) rules at the end.
 // v12: adds Phase 2 (encounters, triage, consultation) rules at the end of the Patient Care section.
 // v10: Patient Care (pc_*) rules. v11: patients are visible only to the facility that registered them;
@@ -825,6 +826,218 @@ service cloud.firestore {
             && request.resource.data.errorReason is string && request.resource.data.errorReason.size() >= 3
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'errorReason', 'updatedAt', 'updatedBy']))
         );
+      allow delete: if false;
+    }
+
+    // =====================================================================================
+    // PHASE 4: treatment plans, medicine and procedure orders, planned administrations, and the
+    // medication administration record (new in v14). Facility-only, add-only.
+    // Planned administrations are made once and never duplicated. An administration can be recorded once;
+    // a wrong record is marked in error and the planned administration goes back to pending.
+    // =====================================================================================
+    function planPath(id) { return /databases/$(database)/documents/pc_treatment_plans/$(id); }
+    function ordPath(id) { return /databases/$(database)/documents/pc_treatment_orders/$(id); }
+    function evPath(id) { return /databases/$(database)/documents/pc_treatment_events/$(id); }
+    function marPath(id) { return /databases/$(database)/documents/pc_mar_records/$(id); }
+    function planActiveOk(d) {
+      return d.planId is string && exists(planPath(d.planId))
+        && get(planPath(d.planId)).data.status == 'active'
+        && get(planPath(d.planId)).data.patientId == d.patientId
+        && get(planPath(d.planId)).data.facilityId == d.facilityId;
+    }
+    function evOrderOk(d) {
+      return d.orderId is string && existsAfter(ordPath(d.orderId))
+        && getAfter(ordPath(d.orderId)).data.status == 'active'
+        && getAfter(ordPath(d.orderId)).data.patientId == d.patientId
+        && getAfter(ordPath(d.orderId)).data.facilityId == d.facilityId;
+    }
+
+    match /pc_dosing_rules/{ruleId} {
+      allow read: if childReadOk(resource.data);
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'rules.manage')
+        && request.resource.data.medicineName is string && request.resource.data.medicineName.size() > 0
+        && request.resource.data.source is string && request.resource.data.source.size() >= 3
+        && request.resource.data.jurisdiction is string && request.resource.data.jurisdiction.size() >= 2
+        && request.resource.data.version is int && request.resource.data.version >= 1
+        && request.resource.data.approvalStatus in ['draft', 'approved']
+        && (request.resource.data.approvalStatus == 'draft'
+            || (request.resource.data.approvedBy == request.auth.uid && request.resource.data.approvedAt == request.time))
+        && numOk(request.resource.data, 'dosePerKg', 0, 10000)
+        && numOk(request.resource.data, 'minDosePerAdmin', 0, 100000)
+        && numOk(request.resource.data, 'maxDosePerAdmin', 0, 100000)
+        && numOk(request.resource.data, 'maxDailyDose', 0, 1000000)
+        && numOk(request.resource.data, 'minWeightKg', 0, 500)
+        && numOk(request.resource.data, 'maxWeightKg', 0, 500)
+        && numOk(request.resource.data, 'minAgeMonths', 0, 1500)
+        && numOk(request.resource.data, 'maxAgeMonths', 0, 1500);
+      allow update: if hasPerm(resource.data.businessId, 'rules.manage')
+        && canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && pcUpdateStamped()
+        && (
+          (resource.data.approvalStatus == 'draft' && request.resource.data.approvalStatus == 'approved'
+            && request.resource.data.approvedBy == request.auth.uid
+            && request.resource.data.approvedAt == request.time
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['approvalStatus', 'approvedBy', 'approvedByName', 'approvedAt', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.approvalStatus in ['draft', 'approved'] && request.resource.data.approvalStatus == 'retired'
+            && request.resource.data.retiredReason is string && request.resource.data.retiredReason.size() >= 3
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'retiredReason', 'updatedAt', 'updatedBy']))
+        );
+      allow delete: if false;
+    }
+
+    match /pc_treatment_plans/{planId} {
+      allow read: if childReadOk(resource.data);
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'treatment.prescribe')
+        && encounterOpenOk(request.resource.data)
+        && request.resource.data.status == 'active'
+        && request.resource.data.prescriberId == request.auth.uid
+        && request.resource.data.title is string && request.resource.data.title.size() >= 2
+        && request.resource.data.careSetting in ['outpatient', 'inpatient', 'home', 'procedure_room']
+        && request.resource.data.priority in ['routine', 'urgent'];
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && hasPerm(resource.data.businessId, 'treatment.prescribe')
+        && pcUpdateStamped()
+        && resource.data.status == 'active'
+        && (
+          (request.resource.data.status in ['completed', 'stopped', 'cancelled']
+            && request.resource.data.endedBy == request.auth.uid
+            && (request.resource.data.status == 'completed'
+                || (request.resource.data.get('endReason', null) is string && request.resource.data.endReason.size() >= 3))
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'endedAt', 'endedBy', 'endedByName', 'endReason', 'updatedAt', 'updatedBy']))
+          ||
+          (request.resource.data.status == 'active'
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['reviewDate', 'expectedEnd', 'clinicalNotes', 'updatedAt', 'updatedBy']))
+        );
+      allow delete: if false;
+    }
+
+    match /pc_treatment_orders/{orderId} {
+      allow read: if childReadOk(resource.data);
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'treatment.prescribe')
+        && encounterOpenOk(request.resource.data)
+        && planActiveOk(request.resource.data)
+        && request.resource.data.status == 'active'
+        && request.resource.data.prescriberId == request.auth.uid
+        && request.resource.data.kind in ['medicine', 'procedure']
+        && request.resource.data.scheduleType in ['once', 'interval', 'daily', 'fixed', 'weight', 'prn', 'taper', 'custom']
+        && request.resource.data.version is int
+        && (
+          (request.resource.data.kind == 'procedure'
+            && request.resource.data.procedureName is string && request.resource.data.procedureName.size() > 0)
+          ||
+          (request.resource.data.kind == 'medicine'
+            && request.resource.data.medicineName is string && request.resource.data.medicineName.size() > 0
+            && request.resource.data.doseValue is number && request.resource.data.doseValue > 0)
+        )
+        && (request.resource.data.scheduleType != 'weight'
+            || (request.resource.data.ruleId is string && request.resource.data.weightKg is number
+                && request.resource.data.doseConfirmedBy == request.auth.uid));
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && hasPerm(resource.data.businessId, 'treatment.prescribe')
+        && pcUpdateStamped()
+        && resource.data.status == 'active'
+        && (
+          (request.resource.data.status in ['stopped', 'completed']
+            && request.resource.data.endedBy == request.auth.uid
+            && (request.resource.data.status == 'completed'
+                || (request.resource.data.get('endReason', null) is string && request.resource.data.endReason.size() >= 3))
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'endedAt', 'endedBy', 'endedByName', 'endReason', 'updatedAt', 'updatedBy']))
+          ||
+          (request.resource.data.status == 'superseded'
+            && request.resource.data.supersededBy is string
+            && request.resource.data.endedBy == request.auth.uid
+            && request.resource.data.get('endReason', null) is string && request.resource.data.endReason.size() >= 3
+            && existsAfter(ordPath(request.resource.data.supersededBy))
+            && getAfter(ordPath(request.resource.data.supersededBy)).data.supersedes == orderId
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'supersededBy', 'endedAt', 'endedBy', 'endedByName', 'endReason', 'updatedAt', 'updatedBy']))
+        );
+      allow delete: if false;
+    }
+
+    match /pc_treatment_events/{evId} {
+      allow read: if childReadOk(resource.data);
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'treatment.prescribe')
+        && evOrderOk(request.resource.data)
+        && request.resource.data.status == 'pending'
+        && request.resource.data.idKey is string
+        && evId == request.resource.data.orderId + '_' + request.resource.data.idKey
+        && request.resource.data.plannedAt is number
+        && request.resource.data.plannedDay is string;
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && pcUpdateStamped()
+        && (
+          (resource.data.status in ['pending', 'held']
+            && request.resource.data.status in ['administered', 'refused', 'missed', 'not_given', 'held']
+            && !(resource.data.status == 'held' && request.resource.data.status == 'held')
+            && hasPerm(resource.data.businessId, 'treatment.administer')
+            && request.resource.data.lastRecordId is string
+            && existsAfter(marPath(request.resource.data.lastRecordId))
+            && getAfter(marPath(request.resource.data.lastRecordId)).data.eventId == evId
+            && getAfter(marPath(request.resource.data.lastRecordId)).data.outcome == request.resource.data.status
+            && getAfter(marPath(request.resource.data.lastRecordId)).data.status == 'active'
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'lastRecordId', 'actualAt', 'actualDoseValue', 'administeredBy', 'administeredByName', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.status == 'held' && request.resource.data.status == 'pending'
+            && (hasPerm(resource.data.businessId, 'treatment.administer') || hasPerm(resource.data.businessId, 'treatment.prescribe'))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.status in ['pending', 'held'] && request.resource.data.status == 'cancelled'
+            && hasPerm(resource.data.businessId, 'treatment.prescribe')
+            && request.resource.data.cancelReason is string && request.resource.data.cancelReason.size() >= 3
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'cancelReason', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.status in ['administered', 'refused', 'missed', 'not_given'] && request.resource.data.status == 'pending'
+            && hasPerm(resource.data.businessId, 'mar.amend')
+            && getAfter(marPath(resource.data.lastRecordId)).data.status == 'entered_in_error'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'updatedBy']))
+        );
+      allow delete: if false;
+    }
+
+    match /pc_mar_records/{marId} {
+      allow read: if childReadOk(resource.data);
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'treatment.administer')
+        && request.resource.data.status == 'active'
+        && request.resource.data.administeredBy == request.auth.uid
+        && request.resource.data.outcome in ['administered', 'refused', 'missed', 'held', 'not_given']
+        && request.resource.data.actualAt is number
+        && (request.resource.data.outcome == 'administered'
+            || (request.resource.data.get('omissionReason', null) is string && request.resource.data.omissionReason.size() >= 3))
+        && (
+          (request.resource.data.get('eventId', null) is string
+            && exists(evPath(request.resource.data.eventId))
+            && get(evPath(request.resource.data.eventId)).data.status in ['pending', 'held']
+            && get(evPath(request.resource.data.eventId)).data.patientId == request.resource.data.patientId
+            && get(evPath(request.resource.data.eventId)).data.facilityId == request.resource.data.facilityId)
+          ||
+          (request.resource.data.get('eventId', null) == null
+            && request.resource.data.orderId is string
+            && request.resource.data.outcome == 'administered'
+            && request.resource.data.get('reason', null) is string && request.resource.data.reason.size() >= 2
+            && exists(ordPath(request.resource.data.orderId))
+            && get(ordPath(request.resource.data.orderId)).data.scheduleType == 'prn'
+            && get(ordPath(request.resource.data.orderId)).data.status == 'active'
+            && get(ordPath(request.resource.data.orderId)).data.patientId == request.resource.data.patientId)
+        );
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && hasPerm(resource.data.businessId, 'mar.amend')
+        && pcUpdateStamped()
+        && resource.data.status == 'active'
+        && request.resource.data.status == 'entered_in_error'
+        && request.resource.data.errorReason is string && request.resource.data.errorReason.size() >= 3
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'errorReason', 'updatedAt', 'updatedBy']);
       allow delete: if false;
     }
   }
