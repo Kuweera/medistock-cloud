@@ -1,0 +1,70 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Pharmacy test harness</title></head>
+<body style="margin:0"><iframe id="f" src="/pharmacy.html" style="border:0;width:100vw;height:100vh"></iframe>
+<script>
+/* Test harness: pretends to be the app shell (window.top.MC.api) with an in-memory Firestore, so pharmacy.html can be exercised in a real browser. */
+(function () {
+  var store = new Map(), ver = new Map(), listeners = [], clock = Date.now();
+  var AS = new Date(); var iso = function (n) { var d = new Date(AS.getFullYear(), AS.getMonth(), AS.getDate() + n); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+  function put(c, id, d) { store.set(c + "/" + id, JSON.parse(JSON.stringify(d))); ver.set(c + "/" + id, 1); }
+  var B = "biz1", F = "shop1";
+  put("shops", F, { businessId: B, name: "Test Clinic Pharmacy", enabledServices: ["patient_care"], timezone: "Africa/Kampala", facilityType: "clinic" });
+  put("users", "owner1", { businessId: B, role: "owner", name: "Owner One", active: true });
+  put("drugs", "d1", { businessId: B, shopId: F, name: "Paracetamol 500mg", dosageForm: "Tablet", baseUnit: "Tablet", stockUnit: "Packet", intermediateUnit: "Strip", hasIntermediate: true, basePerIntermediate: 10, baseUnitsPerStock: 100, currentStockBase: 42 });
+  put("drugs", "d2", { businessId: B, shopId: F, name: "Amoxicillin 250mg", dosageForm: "Capsule", baseUnit: "Capsule", currentStockBase: 30 });
+  put("drugs", "d3", { businessId: B, shopId: F, name: "Amoxicillin 500mg", dosageForm: "Capsule", baseUnit: "Capsule", currentStockBase: 30 });
+  put("batches", "b1", { businessId: B, shopId: F, drugId: "d1", batchNumber: "P-OLD", expiryDate: iso(-5), quantity: 10 });
+  put("batches", "b2", { businessId: B, shopId: F, drugId: "d1", batchNumber: "P-SOON", expiryDate: iso(40), quantity: 12 });
+  put("batches", "b3", { businessId: B, shopId: F, drugId: "d1", batchNumber: "P-LATE", expiryDate: iso(400), quantity: 20 });
+  put("batches", "b4", { businessId: B, shopId: F, drugId: "d3", batchNumber: "A5", expiryDate: iso(200), quantity: 30 });
+  put("pc_patient_facility_links", "p1_" + F, { businessId: B, facilityId: F, patientId: "p1", localRegNo: "P-O-1" });
+  put("pc_patient_facility_links", "p2_" + F, { businessId: B, facilityId: F, patientId: "p2", localRegNo: "P-O-2" });
+  var base = { businessId: B, facilityId: F, kind: "medicine", status: "active", encounterId: "e1", encounterNo: "V-12", planId: "pl1", prescriberId: "doc1", prescriberName: "Dr Test", version: 1, route: "oral", prescribedAt: Date.now() - 3600000 };
+  put("pc_treatment_orders", "o1", Object.assign({}, base, { patientId: "p1", patientName: "Test Patient One", medicineId: "d1", medicineName: "Paracetamol 500mg", formulation: "Tablet", strength: "500mg", doseValue: 1, doseUnit: "tablet", instructions: "Twice a day for 5 days", quantityPrescribed: 20 }));
+  put("pc_treatment_orders", "o2", Object.assign({}, base, { patientId: "p2", patientName: "Test Patient Two", medicineId: null, medicineName: "Amoxicillin", formulation: "Capsule", strength: "500mg", doseValue: 1, doseUnit: "capsule", instructions: "Three times a day", quantityPrescribed: null, prescribedAt: Date.now() - 7200000 }));
+  put("pc_treatment_orders", "o3", Object.assign({}, base, { patientId: "p1", patientName: "Test Patient One", medicineId: "d1", medicineName: "Paracetamol 500mg", status: "stopped", doseValue: 1, doseUnit: "tablet", quantityPrescribed: 6 }));
+  put("pc_allergies", "a1", { businessId: B, facilityId: F, patientId: "p2", substance: "Amoxicillin", severity: "severe", status: "active" });
+  window.__db = { store: store, put: put, get: function (c, i) { var v = store.get(c + "/" + i); return v ? JSON.parse(JSON.stringify(v)) : null; }, all: function (c) { var o = []; store.forEach(function (v, k) { if (k.indexOf(c + "/") === 0) o.push(Object.assign({ _id: k.slice(c.length + 1) }, v)); }); return o; }, failNext: false };
+
+  function snapOf(q) {
+    var docs = [];
+    store.forEach(function (v, k) {
+      var i = k.indexOf("/"), c = k.slice(0, i), id = k.slice(i + 1); if (c !== q.coll) return;
+      for (var j = 0; j < q.wheres.length; j++) { var w = q.wheres[j]; if (v[w.f] !== w.v) return; }
+      docs.push({ id: id, data: function () { return JSON.parse(JSON.stringify(v)); }, exists: function () { return true; }, metadata: { hasPendingWrites: false } });
+    });
+    return { docs: docs, size: docs.length, empty: !docs.length, metadata: { fromCache: false }, forEach: function (f) { docs.forEach(f); } };
+  }
+  function notifyAll() { listeners.forEach(function (l) { setTimeout(function () { l.next(snapOf(l.q)); }, 0); }); }
+  var api = {
+    initializeApp: function () { return {}; }, getAuth: function () { return { currentUser: { uid: "owner1" }, signOut: function () { return Promise.resolve(); } }; },
+    onAuthStateChanged: function (a, cb) { setTimeout(function () { cb({ uid: "owner1" }); }, 0); return function () {}; },
+    getFirestore: function () { return { __db: 1 }; },
+    doc: function (d, c, id) { return { type: "document", coll: c, id: id, path: c + "/" + id }; },
+    collection: function (d, c) { return { type: "collection", coll: c, wheres: [] }; },
+    where: function (f, op, v) { return { f: f, op: op, v: v }; }, limit: function (n) { return { limit: n }; },
+    query: function (c) { var ws = Array.prototype.slice.call(arguments, 1).filter(function (x) { return x.f; }); return { type: "query", coll: c.coll, wheres: ws }; },
+    serverTimestamp: function () { return { __ts: 1 }; },
+    getDocs: function (q) { return Promise.resolve(snapOf(q)); },
+    getDocFromCache: function (r) { return api.getDoc(r).then(function (s) { if (!s.exists()) throw new Error("not in cache"); return s; }); },
+    getDoc: function (r) { var has = store.has(r.path), v = has ? JSON.parse(JSON.stringify(store.get(r.path))) : null; return Promise.resolve({ id: r.id, exists: function () { return has; }, data: function () { return v; } }); },
+    setDoc: function (r, d) { store.set(r.path, JSON.parse(JSON.stringify(d, function (k, v) { return v && v.__ts ? ++clock : v; }))); ver.set(r.path, (ver.get(r.path) || 0) + 1); notifyAll(); return Promise.resolve(); },
+    onSnapshot: function (q) { var next = arguments[arguments.length - 2] && typeof arguments[arguments.length - 2] === "function" ? arguments[arguments.length - 2] : arguments[1]; if (typeof next !== "function") next = arguments[2]; var l = { q: q, next: next }; listeners.push(l); setTimeout(function () { next(snapOf(q)); }, 0); return function () { listeners = listeners.filter(function (x) { return x !== l; }); }; },
+    runTransaction: async function (d, fn) {
+      for (var at = 0; at < 6; at++) {
+        if (window.__db.failNext) { window.__db.failNext = false; var e = new Error("offline"); e.code = "unavailable"; throw e; }
+        var reads = {}, buf = [];
+        var tx = { get: async function (r) { await Promise.resolve(); reads[r.path] = ver.get(r.path) || 0; var has = store.has(r.path), v = has ? JSON.parse(JSON.stringify(store.get(r.path))) : null; return { id: r.id, exists: function () { return has; }, data: function () { return v; } }; },
+          set: function (r, v) { buf.push(["set", r, v]); return tx; }, update: function (r, v) { buf.push(["update", r, v]); return tx; } };
+        var out = await fn(tx);
+        if (Object.keys(reads).some(function (p) { return (ver.get(p) || 0) !== reads[p]; })) continue;
+        buf.forEach(function (w) { var v = JSON.parse(JSON.stringify(w[2], function (k, x) { return x && x.__ts ? ++clock : x; })); if (w[0] === "update") store.set(w[1].path, Object.assign(store.get(w[1].path), v)); else store.set(w[1].path, v); ver.set(w[1].path, (ver.get(w[1].path) || 0) + 1); });
+        notifyAll(); return out;
+      }
+      var e3 = new Error("retries"); e3.code = "aborted"; throw e3;
+    }
+  };
+  window.MC = { api: function () { return api; }, go: function () {}, home: function () {} };
+  window.mcShareText = function (t) { window.__shared = t; return Promise.resolve("copied"); };
+  window.mcPrintText = function (t) { window.__printed = t; };
+})();
+</script></body></html>

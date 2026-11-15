@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>if(window.top===window){location.replace("app.html#"+location.pathname.split("/").pop()+location.search);}</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2abfa0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MediStock">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<title>Pharmacy — MediStock Cloud</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:60px;}
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px;}
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select, textarea{width:100%; padding:10px; min-height:42px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px; font-family:inherit;}
+  input:focus, select:focus, textarea:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1; min-width:0;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer; min-height:42px;}
+  button:disabled{opacity:.45; cursor:not-allowed;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px; min-height:48px; font-size:15px;}
+  .btn-small{padding:8px 12px; font-size:13px; min-height:40px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent);}
+  .btn-danger-outline{background:transparent; color:var(--danger); border:1px solid var(--danger);}
+  .hidden{display:none !important;}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+  .msg{font-size:13px; margin-top:8px; line-height:1.5;} .msg.err{color:var(--danger);} .msg.ok{color:var(--accent2);}
+  .hint2{font-size:11.5px; color:var(--muted); line-height:1.5; margin-top:6px;}
+  .pill-row{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 10px;}
+  .pill-btn{background:var(--card); color:var(--text); border:1px solid var(--border); padding:8px 13px; border-radius:999px; font-size:12.5px; font-weight:600; min-height:40px;}
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .pt{padding:12px 0; border-bottom:1px solid var(--border); cursor:pointer;}
+  .pt:last-child{border-bottom:none;} .pt.sel{background:rgba(43,191,160,.10); margin:0 -8px; padding-left:8px; padding-right:8px; border-radius:8px;}
+  .pt-name{font-size:14.5px; font-weight:700; color:var(--text);}
+  .pt-meta{font-size:12.5px; color:var(--muted); margin-top:2px; line-height:1.55;}
+  .chip{display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:4px; vertical-align:middle; background:var(--border); color:var(--muted);}
+  .chip.ok{color:var(--accent2);} .chip.warn{color:var(--warn);} .chip.bad{color:var(--danger);}
+  .qty3{display:flex; gap:6px; margin-top:6px;}
+  .qty3 > div{flex:1; border:1px solid var(--border); border-radius:9px; padding:6px 8px; text-align:center;}
+  .qty3 b{display:block; font-size:17px;} .qty3 span{font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.3px;}
+  .qty3 .out b{color:var(--warn);}
+  .alert-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--danger); color:var(--danger); font-size:13px; line-height:1.5; font-weight:600;}
+  .warn-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--warn); color:var(--text); font-size:13px; line-height:1.5;}
+  .info-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--accent); color:var(--text); font-size:13px; line-height:1.5;}
+  .step{border:1px solid var(--border); border-radius:11px; padding:11px; margin-top:10px;}
+  .step h3{margin:0 0 4px; font-size:13.5px; color:var(--accent);} .step h3 i{font-style:normal; display:inline-block; width:22px; height:22px; line-height:22px; text-align:center; border-radius:50%; background:var(--accent); color:#fff; font-size:12px; margin-right:6px;}
+  .chk{display:flex; align-items:flex-start; gap:10px; font-size:13.5px; color:var(--text); margin:10px 0 2px; line-height:1.45;}
+  .chk input{width:24px; height:24px; flex:0 0 24px; padding:0; margin:0; min-height:0;}
+  table{width:100%; border-collapse:collapse; font-size:13px;} th,td{text-align:left; padding:7px 6px; border-bottom:1px solid var(--border); vertical-align:top;}
+  th{font-size:11px; text-transform:uppercase; letter-spacing:.3px; color:var(--muted);} td.n,th.n{text-align:right; white-space:nowrap;}
+  .tablewrap{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  .stat{display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 12px;} .stat > div{flex:1 1 130px; border:1px solid var(--border); border-radius:10px; padding:9px 11px;}
+  .stat b{display:block; font-size:21px;} .stat span{font-size:11.5px; color:var(--muted);}
+  .sync{display:flex; justify-content:space-between; gap:8px; align-items:center; flex-wrap:wrap; font-size:13px;}
+  .layout{display:block;}
+  @media (min-width:960px){
+    body{padding:18px 24px;}
+    .layout{display:grid; grid-template-columns:minmax(340px,1fr) minmax(440px,1.15fr); gap:16px; align-items:start;}
+    #actCard{position:sticky; top:62px; max-height:calc(100vh - 80px); overflow-y:auto;}
+  }
+  .recordtext{white-space:pre-wrap; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; background:var(--bg); border:1px dashed var(--accent); border-radius:9px; padding:10px; line-height:1.6;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{position:sticky; top:0; z-index:20; background:var(--accent); color:#fff; margin:-16px -16px 14px; padding:16px 18px 14px;}
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{position:sticky; top:0; z-index:25; display:flex; align-items:center; justify-content:space-between; background:var(--accent); color:#fff; margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);}
+  .hamburger-btn{background:none; border:none; color:#fff; font-size:22px; line-height:1; padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .nav-bar-brand{font-size:14px; font-weight:600; color:#fff; cursor:pointer; padding:8px 10px; -webkit-tap-highlight-color:transparent;}
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;} .nav-overlay.visible{display:block;}
+  .nav-panel{position:fixed; top:0; bottom:0; right:0; z-index:30; width:78%; max-width:300px; background:var(--accent); display:flex; flex-direction:column; gap:4px; padding:16px 10px; overflow-y:auto; transform:translateX(105%); transition:transform .22s ease; box-shadow:0 0 20px rgba(0,0,0,.3);}
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px; margin:4px 6px 6px;}
+  .nav-panel a{display:block; background:rgba(255,255,255,.1); color:#fff; border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px; border-radius:10px; font-size:14.5px; font-weight:600; text-align:left; text-decoration:none;}
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{margin-top:10px; background:rgba(255,255,255,.1); color:#fff; border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Patient Care · Pharmacy and dispensing</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="mcGo('dashboard.html')">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="expiring.html">Expiring Drugs</a>
+  <a href="treatment.html">Treatment &amp; MAR</a>
+  <a href="users.html">Users</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle'), panel = document.getElementById('navPanel'), overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){ panel.classList.contains('open') ? closeNav() : openNav(); });
+    overlay && overlay.addEventListener('click', closeNav);
+    var themeBtn = document.getElementById('themeToggle'), order = ['auto','light','dark'];
+    var labels = {auto:'🌓 Theme: Auto', light:'☀️ Theme: Light', dark:'🌙 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){ current = order[(order.indexOf(current)+1) % order.length]; localStorage.setItem('mcThemePreference', current); applyPref(current); });
+  })();
+</script>
+
+<div class="hint2" id="shopIndicator" style="margin-bottom:8px;"></div>
+<div class="card hidden" id="gateCard"><div id="gateMsg" class="empty"></div></div>
+
+<div id="mainArea" class="hidden">
+  <div class="card" id="syncCard">
+    <div class="sync"><div id="syncText"></div><button type="button" class="btn-small btn-secondary" id="syncBtn">Send waiting items now</button></div>
+    <div id="syncList"></div>
+  </div>
+
+  <div class="pill-row" id="tabs">
+    <button type="button" class="pill-btn selected" data-t="queue">Prescription queue</button>
+    <button type="button" class="pill-btn" data-t="history">Dispensing history</button>
+    <button type="button" class="pill-btn" data-t="reports" id="tabReports">Reports</button>
+  </div>
+
+  <div id="queueTab" class="layout">
+    <div>
+      <div class="card">
+        <h2>Prescriptions to dispense</h2>
+        <div class="pill-row" id="filters">
+          <button type="button" class="pill-btn selected" data-f="waiting">Waiting to be dispensed</button>
+          <button type="button" class="pill-btn" data-f="partial">Partially dispensed</button>
+          <button type="button" class="pill-btn" data-f="done">Fully dispensed</button>
+          <button type="button" class="pill-btn" data-f="stopped">Cancelled or stopped</button>
+        </div>
+        <input type="search" id="q" placeholder="Search patient, registration number or medicine" autocomplete="off">
+        <div class="hint2" id="info"></div>
+        <div id="list"></div>
+      </div>
+    </div>
+    <div class="card hidden" id="actCard"></div>
+  </div>
+
+  <div id="historyTab" class="hidden">
+    <div class="card">
+      <h2>Dispensing history</h2>
+      <div class="row"><div><label for="hMonth">Month</label><input type="month" id="hMonth"></div><div><label for="hq">Search</label><input type="search" id="hq" placeholder="Patient, medicine or operator" autocomplete="off"></div></div>
+      <div class="hint2">Dispensing records cannot be edited or deleted. Tap a record to see or share it.</div>
+      <div id="hList"></div>
+    </div>
+    <div class="card hidden" id="recCard"></div>
+  </div>
+
+  <div id="reportsTab" class="hidden">
+    <div class="card">
+      <h2>Pharmacy reports</h2>
+      <label for="rMonth">Month</label><input type="month" id="rMonth">
+      <div id="rBody"></div>
+    </div>
+  </div>
+  <div class="msg ok" id="doneMsg"></div>
+</div>
+
+<script src="pc-sched.js"></script>
+<script src="pc-dispense.js"></script>
+<script type="module">
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, getDocs, setDoc, collection, onSnapshot, serverTimestamp, query, where, limit, runTransaction, getDocFromCache } = window.top.MC.api(window);
+
+  async function getDoc(ref) {
+    try { const c = await getDocFromCache(ref); if (c.exists()) return c; } catch (e) {}
+    return _getDoc(ref);
+  }
+  const app = initializeApp({});
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const tools = { db, doc, collection, runTransaction, serverTimestamp };
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const num = v => { const n = Number(v); return isFinite(n) ? n : 0; };
+
+  let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
+  let orders = new Map(), rxPartial = new Map(), rxDone = new Map(), stoppedOrders = new Map(), allergies = [], drugs = [];
+  let regNos = {}, regAsked = {}, filter = "waiting", tab = "queue", D = null, queue = null, syncing = false, doneLoaded = false, stoppedLoaded = false;
+  let hRecords = [], hMonthLoaded = "", unsubHist = null;
+  const can = k => role === "owner" || perms[k] === true;
+  const tz = () => (facility && facility.timezone) || "Africa/Kampala";
+  const localDay = () => PCS.utcToLocal(Date.now(), tz()).date;
+  const fmtWhen = ms => { if (!ms) return ""; const l = PCS.utcToLocal(ms, tz()); return l.date + " " + l.time; };
+  const tsMs = v => v && typeof v.toMillis === "function" ? v.toMillis() : (typeof v === "number" ? v : 0);
+
+  function showGate(msg) { $("gateMsg").innerHTML = msg; $("gateCard").classList.remove("hidden"); $("mainArea").classList.add("hidden"); }
+  function ok(m) { const el = $("doneMsg"); el.className = "msg ok"; el.textContent = m; }
+  function stockText(d, base) {
+    base = num(base); const u = d.baseUnit || "unit";
+    const bps = num(d.baseUnitsPerStock), bpi = num(d.basePerIntermediate); let stock = 0, rem = base;
+    if (bps > 0) { stock = Math.floor(base / bps); rem = base - stock * bps; }
+    let inter = 0, loose = rem; if (bpi > 0 && d.hasIntermediate) { inter = Math.floor(rem / bpi); loose = rem - inter * bpi; }
+    const parts = []; if (stock) parts.push(stock + " " + (d.stockUnit || "pack") + "(s)"); if (inter) parts.push(inter + " " + (d.intermediateUnit || "strip") + "(s)"); if (loose || !parts.length) parts.push(PCD.r4(loose) + " " + u + "(s)");
+    return base + " " + u + "(s)" + (parts.length > 1 || stock || inter ? " = " + parts.join(", ") : "");
+  }
+
+  // ---------------------------------------------------------------- rows for the queue
+  function rxOf(id) { return rxPartial.get(id) || rxDone.get(id) || null; }
+  function info(r) {
+    const o = r.order || {}, x = r.rx || {};
+    const pick = k => (o[k] != null && o[k] !== "") ? o[k] : x[k];
+    return { patientId: pick("patientId"), patientName: pick("patientName") || "(no name)", medicine: o.medicineName || x.prescribedName || x.drugName || "", formulation: pick("formulation") || "", strength: pick("strength") || "",
+      dose: o.doseValue != null ? PCD.doseText(o) : (x.dose || ""), route: pick("route") || "", instructions: pick("instructions") || "", prescriber: pick("prescriberName") || "", encounterNo: pick("encounterNo") || "", prescribedAt: pick("prescribedAt") };
+  }
+  function allRows() {
+    const m = new Map();
+    orders.forEach(o => m.set(o.id, { id: o.id, order: o, rx: rxOf(o.id) }));
+    [rxPartial, rxDone].forEach(mp => mp.forEach(x => { if (!m.has(x.id)) m.set(x.id, { id: x.id, order: stoppedOrders.get(x.id) || null, rx: x }); }));
+    stoppedOrders.forEach(o => { if (!m.has(o.id)) m.set(o.id, { id: o.id, order: o, rx: rxOf(o.id) }); });
+    return Array.from(m.values()).map(r => Object.assign(r, { group: PCD.queueGroup(r.order, r.rx), q: r.order ? PCD.qtyState(r.order, r.rx) : PCD.qtyState({}, r.rx) }));
+  }
+  function queuedQty(orderId) { return queue ? queue.list().filter(x => x.params.orderId === orderId && x.status !== "conflict").reduce((s, x) => s + num(x.params.qty), 0) : 0; }
+  function queuedItems(orderId) { return queue ? queue.list().filter(x => x.params.orderId === orderId) : []; }
+
+  function chipsOf(r) {
+    const i = info(r); let c = "";
+    if (r.order && !r.order.medicineId && !(r.rx && r.rx.drugId)) c += '<span class="chip warn">Not linked to stock list</span>';
+    if (r.group !== "done" && r.group !== "stopped" && !r.q.known) c += '<span class="chip warn">No quantity stated</span>';
+    if (r.order && r.order.warnings && r.order.warnings.length) c += '<span class="chip warn">Prescriber warning</span>';
+    const al = i.patientId ? PCS.allergyMatches([i.medicine], allergies.filter(a => a.patientId === i.patientId)) : [];
+    if (al.length) c += '<span class="chip bad">ALLERGY</span>';
+    const qi = queuedItems(r.id); if (qi.some(x => x.status === "conflict")) c += '<span class="chip bad">Sync problem</span>'; else if (qi.length) c += '<span class="chip warn">Pending sync</span>';
+    return c;
+  }
+  const STATUS = { waiting: ["Waiting", "warn"], partial: ["Partly dispensed", "warn"], done: ["Fully dispensed", "ok"], stopped: ["Stopped", "bad"] };
+  function cardHtml(r) {
+    const i = info(r), st = STATUS[r.group], u = (r.rx && r.rx.qtyUnit) || "";
+    const reg = regNos[i.patientId];
+    const q = r.q;
+    return '<div class="pt' + (D && D.id === r.id ? " sel" : "") + '" data-id="' + esc(r.id) + '">' +
+      '<div class="pt-name">' + esc(i.patientName) + (reg ? " · " + esc(reg) : "") + ' <span class="chip ' + st[1] + '">' + esc(st[0]) + "</span>" + chipsOf(r) + "</div>" +
+      '<div class="pt-meta"><b>' + esc(i.medicine) + "</b>" + (i.formulation ? " · " + esc(i.formulation) : "") + (i.strength ? " · " + esc(i.strength) : "") + "<br>" +
+      (i.dose ? "Dose: " + esc(i.dose) + (i.route ? " · " + esc(i.route) : "") + "<br>" : "") + (i.instructions ? esc(i.instructions) + "<br>" : "") +
+      esc((facility && facility.name) || "") + (i.encounterNo ? " · Visit " + esc(i.encounterNo) : "") + (i.prescriber ? " · Prescriber: " + esc(i.prescriber) : "") + (i.prescribedAt ? " · " + esc(fmtWhen(i.prescribedAt)) : "") + "</div>" +
+      (q.known ? '<div class="qty3"><div><b>' + esc(q.prescribed) + '</b><span>Prescribed</span></div><div><b>' + esc(q.dispensed) + '</b><span>Dispensed</span></div><div class="out"><b>' + esc(q.outstanding) + '</b><span>Outstanding' + (u ? " (" + esc(u) + ")" : "") + "</span></div></div>" : "") + "</div>";
+  }
+  function resolveRegNos(rows) {
+    rows.forEach(r => {
+      const pid = info(r).patientId; if (!pid || regAsked[pid]) return; regAsked[pid] = true;
+      getDoc(doc(db, "pc_patient_facility_links", pid + "_" + facilityId)).then(s => { if (s.exists()) { regNos[pid] = s.data().localRegNo || ""; renderList(); } }).catch(() => {});
+    });
+  }
+  function matches(r, q) {
+    if (!q) return true; const i = info(r);
+    return (i.patientName + " " + (regNos[i.patientId] || "") + " " + i.medicine + " " + i.formulation + " " + i.strength).toLowerCase().indexOf(q) >= 0;
+  }
+  function renderList() {
+    const rows = allRows(), q = $("q").value.trim().toLowerCase();
+    const cnt = g => rows.filter(r => r.group === g).length;
+    document.querySelectorAll("#filters .pill-btn").forEach(b => {
+      const base = { waiting: "Waiting to be dispensed", partial: "Partially dispensed", done: "Fully dispensed", stopped: "Cancelled or stopped" }[b.dataset.f];
+      const n = cnt(b.dataset.f); b.textContent = base + (n && (b.dataset.f !== "done" || doneLoaded) && (b.dataset.f !== "stopped" || stoppedLoaded) ? " (" + n + ")" : (n && b.dataset.f === "waiting" ? " (" + n + ")" : ""));
+    });
+    const list = rows.filter(r => r.group === filter && matches(r, q)).sort((a, b) => filter === "done" ? tsMs((b.rx || {}).lastDispensedAt) - tsMs((a.rx || {}).lastDispensedAt) : num(info(a).prescribedAt) - num(info(b).prescribedAt));
+    $("info").textContent = { waiting: "Prescriptions that have not been dispensed yet, oldest first.", partial: "Some of the medicine has been given out. The outstanding quantity is still to be dispensed.",
+      done: "Recently completed prescriptions.", stopped: "Prescriptions that were stopped or replaced by the prescriber. These cannot be dispensed." }[filter];
+    $("list").innerHTML = list.length ? list.map(cardHtml).join("") : '<div class="empty">Nothing here.</div>';
+    resolveRegNos(list.slice(0, 60));
+  }
+
+  // ---------------------------------------------------------------- the dispensing panel
+  async function openRow(id) {
+    const r = allRows().find(x => x.id === id); if (!r) return;
+    const i = info(r);
+    D = { id: id, row: r, order: r.order, rx: r.rx, drugId: (r.rx && r.rx.drugId) || (r.order && r.order.medicineId) || "", drug: null, batches: [], mode: "fefo", picks: {}, qty: "", qtyOver: "", patientOk: false, medOk: false, allowUnbatched: false,
+      requestId: PCD.newRequestId(), busy: false, msg: "", msgClass: "err", earlier: [], result: null, linkedByMe: false };
+    $("actCard").classList.remove("hidden");
+    loadDrug(); renderAct(); renderList();
+    $("actCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    if (r.order && r.order.supersedes) loadEarlier(r.order.supersedes, id);
+  }
+  async function loadEarlier(startId, forId) {
+    let cur = startId, out = [];
+    for (let n = 0; n < 4 && cur; n++) {
+      try {
+        const x = await getDoc(doc(db, "prescriptions", cur)); if (x.exists()) out.push(x.data());
+        const o = await getDoc(doc(db, "pc_treatment_orders", cur)); cur = o.exists() ? o.data().supersedes : null;
+      } catch (e) { break; }
+    }
+    if (D && D.id === forId) { D.earlier = out; renderAct(); }
+  }
+  function loadDrug() {
+    if (!D) return;
+    D.drug = D.drugId ? (drugs.find(d => d.id === D.drugId) || null) : null; D.batches = []; D.batchesLoaded = false;
+    if (!D.drug) return;
+    const dr = D.drug;
+    getDocs(query(collection(db, "batches"), where("businessId", "==", businessId), where("shopId", "==", facilityId), where("drugId", "==", dr.id))).then(s => {
+      if (!D || D.drugId !== dr.id) return;
+      D.batches = s.docs.map(x => ({ id: x.id, ...x.data() })); D.batchesLoaded = true;
+      if (D.qty === "") { const st = stockState(); D.qty = Math.max(0, Math.min(st.outstanding, st.usable)) || ""; }
+      renderAct();
+    }).catch(() => { D.msg = "Stock could not be loaded. Check your internet connection."; D.msgClass = "err"; renderAct(); });
+  }
+  function stockState() {
+    const now = new Date(), dr = D.drug, q = D.order ? PCD.qtyState(D.order, D.rx) : PCD.qtyState({}, D.rx);
+    let prescribed = q.known ? q.prescribed : num(D.qtyOver), dispensed = q.known ? q.dispensed : 0;
+    const reserved = queuedQty(D.id);
+    const outstanding = PCD.r4(Math.max(0, prescribed - dispensed - reserved));
+    const sum = PCD.summarise(D.batches, now);
+    const unbatched = !!dr && D.batchesLoaded && D.batches.length === 0 && num(dr.currentStockBase) > 0;
+    const usable = unbatched ? num(dr.currentStockBase) : sum.usable;
+    return { prescribed: prescribed, dispensed: dispensed, reserved: reserved, outstanding: outstanding, sum: sum, unbatched: unbatched, usable: PCD.r4(usable), known: q.known };
+  }
+  function plan(st) {
+    const qty = PCD.r4(num(D.qty)), now = new Date();
+    if (!(qty > 0)) return { allocations: [], short: 0, error: "" };
+    if (st.unbatched) return { allocations: [{ batchId: null, batchNumber: "", expiryDate: "", qty: qty }], short: Math.max(0, PCD.r4(qty - st.usable)), error: "" };
+    if (D.mode === "manual") {
+      try { return Object.assign(PCD.planManual(D.batches, Object.keys(D.picks).map(k => ({ batchId: k, qty: D.picks[k] })), qty, now), { error: "" }); }
+      catch (e) { return { allocations: [], short: 0, error: PCD.friendlyError(e) }; }
+    }
+    return Object.assign(PCD.planFefo(D.batches, qty, now), { error: "" });
+  }
+  function expLabel(d, asOf) { if (!d) return "No expiry date"; const n = PCD.daysUntil(d, asOf); return d + (n < 0 ? " (EXPIRED)" : n <= 90 ? " (" + n + " days left)" : ""); }
+
+  function renderAct() {
+    const card = $("actCard"); if (!D) { card.classList.add("hidden"); return; }
+    card.classList.remove("hidden");
+    if (D.result) return renderResult(card);
+    const r = D.row, i = info(r), dr = D.drug, now = new Date();
+    const closed = r.group === "stopped" || r.group === "done";
+    let h = '<h2>' + esc(i.medicine) + ' <span class="chip ' + STATUS[r.group][1] + '">' + esc(STATUS[r.group][0]) + '</span></h2>';
+    h += '<div class="pt-meta">' + esc(i.patientName) + (regNos[i.patientId] ? " · " + esc(regNos[i.patientId]) : "") + (i.encounterNo ? " · Visit " + esc(i.encounterNo) : "") + "</div>";
+    const al = i.patientId ? PCS.allergyMatches([i.medicine], allergies.filter(a => a.patientId === i.patientId)) : [];
+    if (al.length) h += '<div class="alert-box">Allergy warning: this patient has a recorded allergy that matches this medicine. Check with the prescriber before dispensing.</div>';
+    h += '<div class="info-box">Dispensing only gives out the medicine and removes it from stock. It does <b>not</b> record that the patient took it. The nurse records that separately in Treatment &amp; MAR.</div>';
+    if (D.earlier.length) { const tot = D.earlier.reduce((s, x) => s + num(x.qtyDispensed), 0); if (tot > 0) h += '<div class="warn-box">An earlier version of this prescription already had <b>' + esc(tot) + "</b> dispensed. This version was created when the order was changed. Check how much the patient still needs before dispensing.</div>"; }
+    const qi = queuedItems(D.id);
+    if (qi.length) h += '<div class="warn-box">' + qi.length + " dispensing on this phone is waiting to sync" + (qi.some(x => x.status === "conflict") ? " and has a problem (see the box at the top)" : "") + ". Those quantities are already taken off what can be dispensed here.</div>";
+    if (closed) {
+      h += r.group === "stopped" ? '<div class="alert-box">This prescription was stopped or replaced. It cannot be dispensed.</div>' : '<div class="info-box">This prescription has been fully dispensed.</div>';
+      h += '<button type="button" class="btn-primary" data-act="close">Close</button>'; card.innerHTML = h; return;
+    }
+    if (!can("dispense.perform")) { h += '<div class="warn-box">You can view this prescription but you do not have permission to dispense. Ask the owner to give you the Dispense permission in Users.</div><button type="button" class="btn-primary" data-act="close">Close</button>'; card.innerHTML = h; return; }
+
+    // 1 patient
+    h += '<div class="step"><h3><i>1</i>Confirm the patient</h3><div class="pt-meta">Ask the patient or carer to say their name. <b>' + esc(i.patientName) + "</b>" + (regNos[i.patientId] ? " · Registration " + esc(regNos[i.patientId]) : "") + "</div>" +
+      '<label class="chk"><input type="checkbox" id="cPat"' + (D.patientOk ? " checked" : "") + '><span>This is the right patient.</span></label></div>';
+
+    // 2 medicine
+    h += '<div class="step"><h3><i>2</i>Confirm the medicine and form</h3><div class="pt-meta">Prescribed: <b>' + esc(i.medicine) + "</b>" + (i.formulation ? " · " + esc(i.formulation) : "") + (i.strength ? " · " + esc(i.strength) : "") + (i.dose ? "<br>Dose: " + esc(i.dose) + (i.route ? " · " + esc(i.route) : "") : "") + "</div>";
+    const linked = !!(D.order && D.order.medicineId) || !!(D.rx && D.rx.drugId);
+    if (!linked) {
+      h += '<div class="warn-box">The prescriber typed this medicine and it is not linked to your stock list. Choose the exact item from your stock. Similar names are not enough: check the strength and form.</div>';
+      const first = String(i.medicine).trim().split(/\s+/)[0].toLowerCase();
+      const sug = first.length > 2 ? drugs.filter(d => String(d.name).toLowerCase().indexOf(first) >= 0).slice(0, 6) : [];
+      h += '<label for="dPick">Medicine in your stock list</label><input type="text" id="dPick" list="drugList" placeholder="Start typing the medicine name" autocomplete="off" value="' + esc(dr ? dr.name : "") + '">';
+      if (sug.length) h += '<div class="pill-row" style="margin-top:8px">' + sug.map(d => '<button type="button" class="pill-btn' + (dr && dr.id === d.id ? " selected" : "") + '" data-act="pickdrug" data-d="' + esc(d.id) + '">' + esc(d.name) + "</button>").join("") + "</div>";
+    }
+    if (dr) {
+      h += '<div class="pt-meta" style="margin-top:6px">Stock item: <b>' + esc(dr.name) + "</b>" + (dr.dosageForm ? " · " + esc(dr.dosageForm) : "") + "</div>";
+      const wantForm = String(i.formulation).trim().toLowerCase(), haveForm = String(dr.dosageForm || "").trim().toLowerCase();
+      const wantStr = String(i.strength).replace(/\s+/g, "").toLowerCase(), haveName = String(dr.name).replace(/\s+/g, "").toLowerCase();
+      if (wantForm && haveForm && wantForm !== haveForm) h += '<div class="warn-box">Form differs: prescribed <b>' + esc(i.formulation) + "</b>, stock item is <b>" + esc(dr.dosageForm) + "</b>. Do not continue unless the prescriber agrees.</div>";
+      if (wantStr && haveName.indexOf(wantStr) < 0) h += '<div class="warn-box">The strength <b>' + esc(i.strength) + "</b> is not in the stock item name. Check the strength on the pack.</div>";
+      h += '<label class="chk"><input type="checkbox" id="cMed"' + (D.medOk ? " checked" : "") + '><span>The medicine, form and strength I am giving out match the prescription.</span></label>';
+    } else if (linked) h += '<div class="alert-box">This medicine is not in your stock list any more. It cannot be dispensed.</div>';
+    h += "</div>";
+
+    // 3 quantity + 4 stock
+    if (dr) {
+      const st = stockState(), pl = plan(st), u = dr.baseUnit || "unit";
+      h += '<div class="step"><h3><i>3</i>Quantity</h3>';
+      if (!st.known) h += '<div class="warn-box">The prescriber did not state a quantity. Work out the total to supply and enter it. It will be recorded as set by the pharmacy.</div><label for="qOver">Total quantity to supply (' + esc(u) + "s)</label><input type=\"number\" inputmode=\"decimal\" step=\"any\" min=\"0\" id=\"qOver\" value=\"" + esc(D.qtyOver) + '">';
+      h += '<div class="qty3"><div><b>' + esc(st.prescribed) + "</b><span>Prescribed</span></div><div><b>" + esc(st.dispensed) + '</b><span>Already dispensed</span></div><div class="out"><b>' + esc(st.outstanding) + "</b><span>Outstanding" + (st.reserved ? " (after " + esc(st.reserved) + " waiting to sync)" : "") + "</span></div></div></div>";
+
+      h += '<div class="step"><h3><i>4</i>Check stock and choose the batch</h3>';
+      if (!D.batchesLoaded) h += '<div class="pt-meta">Checking stock…</div>';
+      else if (st.unbatched) {
+        h += '<div class="pt-meta">Stock on record: ' + esc(stockText(dr, st.usable)) + '</div><div class="warn-box">This medicine has no batch record, so the batch number and expiry date are unknown. Check the pack in your hand.</div>' +
+          '<label class="chk"><input type="checkbox" id="cUnb"' + (D.allowUnbatched ? " checked" : "") + '><span>I have checked the pack and it is not expired. Dispense without a batch record.</span></label>';
+      } else {
+        h += '<div class="pt-meta">Available to dispense: <b>' + esc(stockText(dr, st.usable)) + "</b>" + (st.sum.expired > 0 ? '<br><span style="color:var(--danger)">' + esc(st.sum.expired) + " " + esc(u) + "(s) are expired and cannot be dispensed. Write them off in Batches.</span>" : "") + "</div>";
+        if (st.usable <= 0) h += '<div class="alert-box">This medicine is not available in the selected stock.</div>';
+      }
+      h += '<label for="qDo">Quantity to dispense now (' + esc(u) + "s)</label><input type=\"number\" inputmode=\"decimal\" step=\"any\" min=\"0\" id=\"qDo\" value=\"" + esc(D.qty) + '">';
+      const q = PCD.r4(num(D.qty));
+      if (q > st.outstanding && st.outstanding > 0) h += '<div class="alert-box">That is more than the outstanding quantity (' + esc(st.outstanding) + ").</div>";
+      else if (q > 0 && q > st.usable) h += '<div class="warn-box">Only ' + esc(st.usable) + " " + esc(u) + "(s) can be dispensed now. Lower the quantity to dispense what is available; the rest stays outstanding for a later dispensing.</div>";
+      else if (q > 0 && q < st.outstanding) h += '<div class="info-box">Partial dispensing: ' + esc(q) + " now, " + esc(PCD.r4(st.outstanding - q)) + " will stay outstanding.</div>";
+      if (!st.unbatched && st.usable > 0) {
+        const list = PCD.fefoSort(D.batches.filter(b => PCD.sellable(b, now)));
+        h += '<div class="hint2" style="margin-top:10px">Batches are chosen automatically, earliest expiry first.</div>';
+        if (D.mode === "manual") {
+          h += '<div class="tablewrap"><table><tr><th>Batch</th><th>Expiry</th><th class="n">In stock</th><th class="n">Give</th></tr>' + list.map(b => '<tr><td>' + esc(b.batchNumber || "—") + "</td><td>" + esc(expLabel(b.expiryDate, now)) + '</td><td class="n">' + esc(b.quantity) + '</td><td class="n"><input type="number" inputmode="decimal" step="any" min="0" style="width:90px" data-pick="' + esc(b.id) + '" value="' + esc(D.picks[b.id] != null ? D.picks[b.id] : "") + '"></td></tr>').join("") + "</table></div>";
+          if (pl.allocations.length && list.length && pl.allocations[0].batchId !== list[0].id) h += '<div class="warn-box">You are not using the batch that expires first. Only do this for a good reason (for example a damaged pack).</div>';
+          h += '<button type="button" class="btn-small btn-secondary" data-act="auto" style="margin-top:8px">Go back to automatic batches</button>';
+        } else if (pl.allocations.length) {
+          h += '<div class="tablewrap"><table><tr><th>Batch</th><th>Expiry</th><th class="n">Give</th></tr>' + pl.allocations.map(a => "<tr><td>" + esc(a.batchNumber || "—") + "</td><td>" + esc(expLabel(a.expiryDate, now)) + '</td><td class="n">' + esc(a.qty) + "</td></tr>").join("") + "</table></div>";
+          h += '<button type="button" class="btn-small btn-secondary" data-act="manual" style="margin-top:8px">Choose the batches myself</button>';
+        }
+      }
+      if (pl.error) h += '<div class="alert-box">' + esc(pl.error) + "</div>";
+      h += "</div>";
+
+      // 5 confirm
+      const unbOk = !st.unbatched || D.allowUnbatched;
+      const ready = D.batchesLoaded && D.patientOk && D.medOk && q > 0 && q <= st.outstanding + 1e-9 && st.outstanding > 0 && pl.short <= 0 && !pl.error && pl.allocations.length > 0 && unbOk && st.usable >= q && !D.busy;
+      h += '<div class="step"><h3><i>5</i>Confirm dispensing</h3><div class="pt-meta">' + (D.busy ? "Saving…" : "A dispensing record is created and stock is reduced together, in one step. Records cannot be edited afterwards.") + "</div>" +
+        '<button type="button" class="btn-primary" data-act="confirm"' + (ready ? "" : " disabled") + ">" + (D.busy ? "Saving…" : "Confirm dispensing of " + esc(q || 0) + " " + esc(u) + "(s)") + "</button>";
+      if (navigator.onLine === false) h += '<div class="warn-box">No internet. If you confirm, this is saved on this phone as <b>PENDING SYNC</b>. Stock is <b>not</b> reduced until the phone reconnects and the server confirms it.</div>';
+      h += "</div>";
+    }
+    if (D.msg) h += '<div class="msg ' + D.msgClass + '">' + esc(D.msg) + "</div>";
+    h += '<button type="button" class="btn-small btn-secondary" data-act="close" style="margin-top:10px;width:100%">Close without dispensing</button>';
+    card.innerHTML = h + '<datalist id="drugList">' + drugs.map(d => '<option value="' + esc(d.name) + '">').join("") + "</datalist>";
+  }
+
+  function recordText(rec) {
+    // rec: { requestId, lines:[{batchNumber,expiryDate,qty}], qty, unit, drugName, patientName, regNo, dose, instructions, when, by, total, dispensedTo, outstanding, pending }
+    const L = ["DISPENSING RECORD" + (rec.pending ? " — PENDING SYNC (stock not yet deducted)" : ""), (facility && facility.name) || "", "Ref: " + String(rec.requestId).slice(0, 8).toUpperCase(), "Date: " + rec.when, "",
+      "Patient: " + rec.patientName + (rec.regNo ? " (" + rec.regNo + ")" : ""), "Medicine: " + rec.drugName + (rec.formulation ? " · " + rec.formulation : "") + (rec.strength ? " · " + rec.strength : "")];
+    if (rec.dose) L.push("Dose: " + rec.dose); if (rec.instructions) L.push("Instructions: " + rec.instructions);
+    L.push("Quantity dispensed: " + rec.qty + " " + rec.unit + "(s)");
+    (rec.lines || []).forEach(l => L.push("  Batch " + (l.batchNumber || "none") + (l.expiryDate ? " (exp " + l.expiryDate + ")" : "") + ": " + l.qty));
+    if (rec.total != null) L.push("Prescription: " + rec.total + " prescribed · " + rec.dispensedTo + " dispensed so far · " + rec.outstanding + " outstanding");
+    L.push("Dispensed by: " + rec.by, "", "Dispensing does not mean the medicine was given to the patient. The nurse records administration separately.");
+    return L.join("\n");
+  }
+  function renderResult(card) {
+    const R = D.result;
+    card.innerHTML = '<h2>' + (R.pending ? "Saved on this phone — PENDING SYNC" : R.duplicate ? "Already recorded" : "Dispensed and confirmed") + "</h2>" +
+      (R.pending ? '<div class="warn-box">The server has <b>not</b> confirmed this yet, so stock has <b>not</b> been reduced. It will be sent automatically when this phone is online. If the stock has gone in the meantime, you will be told here.</div>'
+        : R.duplicate ? '<div class="info-box">This dispensing was already confirmed earlier. Nothing was taken off stock a second time.</div>' : '<div class="info-box">Confirmed by the server. Stock has been reduced.</div>') +
+      '<div class="recordtext">' + esc(R.text) + "</div>" +
+      '<div class="row" style="margin-top:10px"><button type="button" class="btn-small btn-secondary" data-act="share">Share / copy</button><button type="button" class="btn-small btn-secondary" data-act="print">Print</button></div>' +
+      '<button type="button" class="btn-primary" data-act="close">Done</button>';
+  }
+
+  // ---------------------------------------------------------------- confirming
+  function buildParams(st) {
+    const q = PCD.r4(num(D.qty)), unbOk = st.unbatched && D.allowUnbatched;
+    return { businessId: businessId, facilityId: facilityId, uid: me.id, userName: myName, orderId: D.id, drugId: D.drugId, qty: q, requestId: D.requestId,
+      mode: D.mode, picks: D.mode === "manual" ? Object.keys(D.picks).map(k => ({ batchId: k, qty: num(D.picks[k]) })).filter(p => p.qty > 0) : [], allowUnbatched: !!unbOk,
+      qtyPrescribedOverride: st.known ? null : num(D.qtyOver) || null, patientConfirmed: D.patientOk, medicineConfirmed: D.medOk, localDay: localDay(), clientAt: Date.now() };
+  }
+  function makeRecord(params, lines, extra) {
+    const i = info(D.row), dr = D.drug;
+    return Object.assign({ requestId: params.requestId, lines: lines, qty: params.qty, unit: dr.baseUnit || "unit", drugName: dr.name, patientName: i.patientName, regNo: regNos[i.patientId] || "", formulation: i.formulation, strength: i.strength,
+      dose: i.dose + (i.route ? " · " + i.route : ""), instructions: i.instructions, when: fmtWhen(params.clientAt), by: myName || "operator" }, extra || {});
+  }
+  function withTimeout(p, ms) { return new Promise((res, rej) => { const t = setTimeout(() => { const e = new Error("timed out"); e.code = "unavailable"; rej(e); }, ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); }); }
+  function queueIt(params, st, lines) {
+    const rec = makeRecord(params, lines, { pending: true });
+    const okSaved = queue.add({ requestId: params.requestId, createdAt: Date.now(), summary: { patientName: rec.patientName, drugName: rec.drugName, qty: params.qty, unit: rec.unit }, params: params });
+    if (!okSaved) { D.msg = "This could not be saved on the phone (storage is full or blocked). Nothing was dispensed in the system. Try again when you are online."; D.msgClass = "err"; D.busy = false; renderAct(); return; }
+    D.result = { pending: true, text: recordText(rec) }; D.busy = false; ok("Saved on this phone as PENDING SYNC. The server has not confirmed it and stock has not been reduced yet."); renderAct(); renderSync(); renderList();
+  }
+  async function doConfirm() {
+    if (!D || D.busy) return;
+    const st = stockState(), pl = plan(st);
+    if (!can("dispense.perform")) return;
+    const params = buildParams(st);
+    const i = info(D.row), dr = D.drug;
+    const summary = "Dispense " + params.qty + " " + (dr.baseUnit || "unit") + "(s) of " + dr.name + " to " + i.patientName + "?\n\n" + pl.allocations.map(a => "Batch " + (a.batchNumber || "none") + (a.expiryDate ? " (exp " + a.expiryDate + ")" : "") + ": " + a.qty).join("\n");
+    if (!confirm(summary)) return;
+    D.busy = true; D.msg = ""; $("doneMsg").textContent = ""; renderAct();
+    if (navigator.onLine === false) {
+      if (confirm("There is no internet connection.\n\nSave this as PENDING SYNC on this phone? Stock will NOT be reduced until the server confirms it when you are back online.")) return queueIt(params, st, pl.allocations);
+      D.busy = false; renderAct(); return;
+    }
+    try {
+      const out = await withTimeout(PCD.runDispense(tools, Object.assign({}, params, { candidateBatchIds: D.batches.map(b => b.id), asOf: new Date(), source: "online" })), 25000);
+      const rec = makeRecord(params, out.lines || pl.allocations, { total: out.duplicate ? null : st.prescribed, dispensedTo: out.duplicate ? null : PCD.r4(st.dispensed + params.qty), outstanding: out.duplicate ? null : out.outstanding });
+      D.result = { duplicate: !!out.duplicate, text: recordText(rec) }; D.busy = false; D.requestId = PCD.newRequestId(); renderAct(); renderList();
+      ok("Dispensing confirmed by the server.");
+    } catch (err) {
+      D.busy = false;
+      if (PCD.isOfflineError(err)) {
+        if (confirm("The server could not be reached, so this could not be confirmed.\n\nSave it as PENDING SYNC on this phone? It will be sent when the connection returns. It is safe to send twice: stock can only be taken off once.")) return queueIt(params, st, pl.allocations);
+        D.msg = "Not confirmed. Nothing is saved on this phone. If you gave the medicine out, save it as pending or try again when the connection returns."; D.msgClass = "err";
+      } else { D.msg = PCD.friendlyError(err); D.msgClass = "err"; loadDrug(); }
+      renderAct();
+    }
+  }
+
+  // ---------------------------------------------------------------- waiting-to-sync box
+  function renderSync() {
+    const items = queue ? queue.list() : [], wait = items.filter(x => x.status !== "conflict"), bad = items.filter(x => x.status === "conflict");
+    $("syncCard").classList.toggle("hidden", items.length === 0);
+    $("syncText").innerHTML = "<b>" + wait.length + "</b> dispensing waiting to be confirmed by the server" + (bad.length ? ' · <b style="color:var(--danger)">' + bad.length + " with a problem</b>" : "") + '<div class="hint2">Waiting items have NOT reduced stock yet.</div>';
+    $("syncBtn").disabled = syncing || wait.length === 0; $("syncBtn").textContent = syncing ? "Sending…" : "Send waiting items now";
+    $("syncList").innerHTML = items.map(x => '<div class="pt" style="cursor:default"><div class="pt-name">' + esc(x.summary.patientName) + " · " + esc(x.summary.drugName) + " · " + esc(x.summary.qty) + " " + esc(x.summary.unit) + '(s) <span class="chip ' + (x.status === "conflict" ? "bad" : "warn") + '">' + (x.status === "conflict" ? "Problem" : "Pending sync") + "</span></div>" +
+      '<div class="pt-meta">Saved ' + esc(fmtWhen(x.createdAt)) + (x.message ? "<br>" + esc(x.message) : "") + "</div>" +
+      (x.status === "conflict" ? '<div class="op-actions" style="display:flex;gap:8px;margin-top:6px"><button type="button" class="btn-small btn-secondary" data-q="retry" data-r="' + esc(x.requestId) + '">Try again</button><button type="button" class="btn-small btn-danger-outline" data-q="discard" data-r="' + esc(x.requestId) + '">Remove from this phone</button></div>' : "") + "</div>").join("");
+  }
+  async function syncNow(quiet) {
+    if (syncing || !queue || !queue.list().some(x => x.status !== "conflict") || navigator.onLine === false) return;
+    syncing = true; renderSync();
+    try {
+      const res = await PCD.syncQueue(tools, queue, async it => (await getDocs(query(collection(db, "batches"), where("businessId", "==", businessId), where("shopId", "==", facilityId), where("drugId", "==", it.params.drugId)))).docs.map(d => d.id), {});
+      if (!quiet || res.done || res.conflicts) ok(res.done + " confirmed by the server" + (res.conflicts ? ", " + res.conflicts + " with a problem" : "") + (res.waiting ? ", " + res.waiting + " still waiting" : "") + ".");
+    } catch (e) { ok("Could not send waiting items: " + PCD.friendlyError(e)); }
+    syncing = false; renderSync(); renderList(); if (D && !D.result) loadDrug();
+  }
+  async function discardItem(requestId) {
+    const it = queue.list().find(x => x.requestId === requestId); if (!it) return;
+    const reason = prompt("Remove this from the phone?\n\nThe server never confirmed it, so no stock was taken off. If the medicine WAS handed to the patient, tell the pharmacist in charge so stock is corrected.\n\nWhy are you removing it? (at least 3 letters)");
+    if (reason === null) return; if (reason.trim().length < 3) { alert("Please write a short reason."); return; }
+    try {
+      await setDoc(doc(db, "pc_audit_logs", "dispq_" + requestId), { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now(), actorUid: me.id, actorName: myName, action: "dispense.queue_discard", recordPath: "prescriptions/" + it.params.orderId, patientId: null, orderId: it.params.orderId, qty: it.params.qty, reason: reason.trim(), lastProblem: it.message || "", at: serverTimestamp() });
+    } catch (e) { if (!confirm("The removal could not be logged (no connection or no permission). Remove it from this phone anyway?")) return; }
+    queue.remove(requestId); renderSync(); renderList();
+  }
+
+  // ---------------------------------------------------------------- history
+  function groupRecords(list) {
+    const g = {}; list.forEach(r => { const k = r.requestId || r.id; (g[k] = g[k] || []).push(r); });
+    return Object.keys(g).map(k => { const ls = g[k].sort((a, b) => a.lineNo - b.lineNo), f = ls[0]; return { key: k, lines: ls, f: f, qty: PCD.r4(ls.reduce((s, x) => s + num(x.qtyDispensed), 0)), at: tsMs(f.dispensedAt) || num(f.clientDispensedAt) }; }).sort((a, b) => b.at - a.at);
+  }
+  function startHistory() {
+    const month = $("hMonth").value || localDay().slice(0, 7);
+    if (unsubHist && hMonthLoaded === month) { renderHistory(); return; }
+    if (unsubHist) { try { unsubHist(); } catch (e) {} }
+    hMonthLoaded = month; hRecords = [];
+    unsubHist = onSnapshot(query(collection(db, "dispense_records"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("dispensedMonth", "==", month), limit(1000)), s => { hRecords = s.docs.map(x => ({ id: x.id, ...x.data() })); renderHistory(); if (tab === "reports") renderReports(); },
+      err => { $("hList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view dispensing records." : "Could not load dispensing history. Check your internet connection.") + "</div>"; });
+  }
+  function renderHistory() {
+    const q = $("hq").value.trim().toLowerCase();
+    const gs = groupRecords(hRecords).filter(g => !q || (String(g.f.patientName) + " " + g.f.drugName + " " + g.f.dispensedByName).toLowerCase().indexOf(q) >= 0);
+    $("hList").innerHTML = gs.length ? gs.map(g => '<div class="pt" data-g="' + esc(g.key) + '"><div class="pt-name">' + esc(g.f.drugName) + " · " + esc(g.qty) + " " + esc(g.f.qtyUnit || "") + '(s) <span class="chip ok">Confirmed</span></div><div class="pt-meta">' + esc(g.f.patientName) + " · " + esc(fmtWhen(g.at)) + " · " + esc(g.f.dispensedByName || g.f.dispensedBy) + (g.f.source === "offline_replay" ? " · done offline, confirmed later" : "") + "<br>" + g.lines.map(l => "Batch " + esc(l.batchNumber || "none") + ": " + esc(l.qtyDispensed)).join(" · ") + "</div></div>").join("") : '<div class="empty">No dispensing recorded for this month.</div>';
+  }
+  function showRecord(key) {
+    const g = groupRecords(hRecords).find(x => x.key === key); if (!g) return;
+    const f = g.f, rx = rxOf(f.prescriptionId);
+    const rec = { requestId: g.key, lines: g.lines.map(l => ({ batchNumber: l.batchNumber, expiryDate: l.expiryDate, qty: l.qtyDispensed })), qty: g.qty, unit: f.qtyUnit || "unit", drugName: f.drugName, patientName: f.patientName, regNo: regNos[f.patientId] || "", dose: "", instructions: "", when: fmtWhen(g.at), by: f.dispensedByName || f.dispensedBy,
+      total: rx ? rx.qtyPrescribed : null, dispensedTo: rx ? rx.qtyDispensed : null, outstanding: rx ? rx.qtyOutstanding : null };
+    const card = $("recCard"); card.classList.remove("hidden");
+    card.innerHTML = '<h2>Dispensing record</h2><div class="recordtext">' + esc(recordText(rec)) + '</div><div class="row" style="margin-top:10px"><button type="button" class="btn-small btn-secondary" data-act="hshare">Share / copy</button><button type="button" class="btn-small btn-secondary" data-act="hprint">Print</button></div><button type="button" class="btn-small btn-secondary" data-act="hclose" style="margin-top:8px;width:100%">Close</button>';
+    card._text = recordText(rec); card.scrollIntoView({ behavior: "smooth", block: "start" });
+    getDoc(doc(db, "pc_patient_facility_links", f.patientId + "_" + facilityId)).then(s => { if (s.exists()) { regNos[f.patientId] = s.data().localRegNo || ""; if (!card.classList.contains("hidden")) { rec.regNo = regNos[f.patientId]; card._text = recordText(rec); card.querySelector(".recordtext").textContent = card._text; } } }).catch(() => {});
+  }
+
+  // ---------------------------------------------------------------- reports
+  function ensureStopped() {
+    if (stoppedLoaded) return; stoppedLoaded = true;
+    ["stopped", "superseded"].forEach(st => onSnapshot(query(collection(db, "pc_treatment_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("kind", "==", "medicine"), where("status", "==", st), limit(300)), s => { s.docs.forEach(x => stoppedOrders.set(x.id, { id: x.id, ...x.data() })); renderList(); if (tab === "reports") renderReports(); }, () => {}));
+  }
+  function ensureDone() {
+    if (doneLoaded) return; doneLoaded = true;
+    onSnapshot(query(collection(db, "prescriptions"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "completed"), limit(300)), s => { rxDone = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); renderList(); }, () => {});
+  }
+  function renderReports() {
+    const month = $("rMonth").value || localDay().slice(0, 7);
+    if (hMonthLoaded !== month) { $("hMonth").value = month; startHistory(); }
+    if (!can("dispense.report")) { $("rBody").innerHTML = '<div class="empty">You do not have permission to view pharmacy reports.</div>'; return; }
+    ensureStopped();
+    const seen = {}, rxList = []; rxPartial.forEach(x => { rxList.push(x); seen[x.id] = 1; });
+    rxDone.forEach(x => { if (!seen[x.id]) { rxList.push(x); seen[x.id] = 1; } });
+    hRecords.forEach(r => { if (!seen[r.prescriptionId]) { seen[r.prescriptionId] = 1; rxList.push({ id: r.prescriptionId, status: "completed", qtyOutstanding: 0 }); } });
+    const medOrders = []; orders.forEach(o => medOrders.push(o)); stoppedOrders.forEach(o => medOrders.push(o));
+    const R = PCD.buildReport(rxList, hRecords, medOrders, month);
+    const tbl = (head, rows) => rows.length ? '<div class="tablewrap"><table><tr>' + head.map((h, i) => '<th' + (i ? ' class="n"' : "") + ">" + esc(h) + "</th>").join("") + "</tr>" + rows.map(r => "<tr>" + r.map((c, i) => "<td" + (i ? ' class="n"' : "") + ">" + esc(c) + "</td>").join("") + "</tr>").join("") + "</table></div>" : '<div class="empty">Nothing recorded.</div>';
+    $("rBody").innerHTML = '<div class="stat"><div><b>' + R.received + "</b><span>Prescriptions received</span></div><div><b>" + R.prescriptionsDispensedOn + "</b><span>Prescriptions dispensed on</span></div><div><b>" + R.completed + "</b><span>Fully dispensed</span></div><div><b>" + R.partial + "</b><span>Partially dispensed</span></div><div><b>" + R.outstanding.length + "</b><span>Still outstanding</span></div><div><b>" + R.stockDeducted + "</b><span>Units deducted from stock</span></div></div>" +
+      '<h2 style="margin-top:6px">Medicines dispensed</h2>' + tbl(["Medicine", "Quantity"], R.medicinesDispensed.map(d => [d.name, d.qty + " " + (d.unit || "")])) +
+      '<h2 style="margin-top:14px">Dispensing by operator</h2>' + tbl(["Operator", "Prescriptions", "Quantity"], R.byOperator.map(o => [o.name, o.prescriptions, o.qty])) +
+      '<h2 style="margin-top:14px">Outstanding prescriptions</h2>' + tbl(["Patient · medicine", "Outstanding"], R.outstanding.map(o => [(o.patientName || "") + " · " + (o.drugName || ""), o.outstanding + " " + (o.unit || "")])) +
+      '<div class="hint2">"Prescriptions received" counts medicine orders written in this month that are loaded on this screen. Stock deducted counts only dispensing confirmed by the server.</div>';
+  }
+
+  // ---------------------------------------------------------------- wiring
+  function begin() {
+    if (!facility || !(Array.isArray(facility.enabledServices) && facility.enabledServices.indexOf("patient_care") >= 0)) { showGate("Patient Care is not switched on for " + esc(facility ? facility.name : "this shop") + "."); return; }
+    if (!can("dispense.view")) { showGate("You do not have Pharmacy access yet. Ask the owner to give you the Dispense permission in Users."); return; }
+    $("shopIndicator").textContent = "Pharmacy · " + facility.name;
+    $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
+    $("tabReports").classList.toggle("hidden", !can("dispense.report"));
+    queue = PCD.Queue(window.localStorage, "mcDispQ:" + me.id + ":" + facilityId);
+    $("hMonth").value = $("rMonth").value = localDay().slice(0, 7);
+    renderSync();
+    const mark = s => { const b = $("netBadge"); b.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)"; b.className = "badge " + (s.metadata.fromCache ? "offline" : "online"); };
+    const denied = err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view prescriptions, or the Phase 5 security rules are not published yet." : "Could not load prescriptions. Check your internet connection.") + "</div>"; };
+    onSnapshot(query(collection(db, "pc_treatment_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("kind", "==", "medicine"), where("status", "==", "active"), limit(500)), { includeMetadataChanges: true }, s => { orders = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); mark(s); renderList(); if (D && !D.result) { D.order = orders.get(D.id) || D.order; D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row; } }, denied);
+    onSnapshot(query(collection(db, "prescriptions"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "partially_dispensed"), limit(500)), s => { rxPartial = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); renderList(); if (D && !D.result) { D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row; renderAct(); } }, () => {});
+    onSnapshot(query(collection(db, "pc_allergies"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "active"), limit(1000)), s => { allergies = s.docs.map(x => ({ id: x.id, ...x.data() })); renderList(); }, () => {});
+    onSnapshot(query(collection(db, "drugs"), where("businessId", "==", businessId), where("shopId", "==", facilityId)), s => { drugs = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.name && d.active !== false).sort((a, b) => String(a.name).localeCompare(String(b.name))); }, () => {});
+    window.addEventListener("online", () => { syncNow(true); if (D && !D.result) renderAct(); });
+    window.addEventListener("offline", () => { if (D && !D.result) renderAct(); });
+    setInterval(() => { syncNow(true); }, 30000); setTimeout(() => syncNow(true), 3000);
+  }
+
+  $("q").addEventListener("input", renderList);
+  $("hq").addEventListener("input", renderHistory);
+  $("hMonth").addEventListener("change", () => { startHistory(); });
+  $("rMonth").addEventListener("change", renderReports);
+  $("syncBtn").addEventListener("click", () => syncNow(false));
+  document.querySelectorAll("#filters .pill-btn").forEach(b => b.addEventListener("click", () => {
+    filter = b.dataset.f; document.querySelectorAll("#filters .pill-btn").forEach(x => x.classList.toggle("selected", x === b));
+    if (filter === "done") ensureDone(); if (filter === "stopped") ensureStopped(); renderList();
+  }));
+  document.querySelectorAll("#tabs .pill-btn").forEach(b => b.addEventListener("click", () => {
+    tab = b.dataset.t; document.querySelectorAll("#tabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b));
+    $("queueTab").classList.toggle("hidden", tab !== "queue"); $("historyTab").classList.toggle("hidden", tab !== "history"); $("reportsTab").classList.toggle("hidden", tab !== "reports");
+    if (tab === "history") startHistory(); if (tab === "reports") { startHistory(); renderReports(); }
+  }));
+  $("list").addEventListener("click", e => { const el = e.target.closest("[data-id]"); if (el) openRow(el.dataset.id); });
+  $("hList").addEventListener("click", e => { const el = e.target.closest("[data-g]"); if (el) showRecord(el.dataset.g); });
+  $("syncList").addEventListener("click", e => {
+    const b = e.target.closest("[data-q]"); if (!b) return;
+    if (b.dataset.q === "retry") { queue.update(b.dataset.r, { status: "pending", message: "" }); renderSync(); syncNow(false); } else discardItem(b.dataset.r);
+  });
+  $("recCard").addEventListener("click", e => {
+    const b = e.target.closest("[data-act]"); if (!b) return; const card = $("recCard");
+    if (b.dataset.act === "hclose") card.classList.add("hidden");
+    else if (b.dataset.act === "hshare") window.top.mcShareText(card._text, "Dispensing record");
+    else if (b.dataset.act === "hprint") window.top.mcPrintText(card._text, "Dispensing record");
+  });
+  $("actCard").addEventListener("input", e => {
+    if (!D) return; const t = e.target;
+    if (t.id === "qDo") { D.qty = t.value; D.msg = ""; renderAct(); const n = $("qDo"); if (n) { n.focus(); const v = n.value; n.value = ""; n.value = v; } }
+    else if (t.id === "qOver") { D.qtyOver = t.value; renderAct(); const n = $("qOver"); if (n) { n.focus(); const v = n.value; n.value = ""; n.value = v; } }
+    else if (t.id === "dPick") { const d = drugs.find(x => x.name === t.value); if (d && d.id !== D.drugId) { D.drugId = d.id; D.medOk = false; D.qty = ""; D.picks = {}; loadDrug(); renderAct(); } }
+    else if (t.dataset && t.dataset.pick) { D.picks[t.dataset.pick] = t.value; renderAct(); const n = document.querySelector('[data-pick="' + t.dataset.pick + '"]'); if (n) { n.focus(); const v = n.value; n.value = ""; n.value = v; } }
+  });
+  $("actCard").addEventListener("change", e => {
+    if (!D) return; const t = e.target;
+    if (t.id === "cPat") { D.patientOk = t.checked; renderAct(); } else if (t.id === "cMed") { D.medOk = t.checked; renderAct(); } else if (t.id === "cUnb") { D.allowUnbatched = t.checked; renderAct(); }
+  });
+  $("actCard").addEventListener("click", e => {
+    const b = e.target.closest("[data-act]"); if (!b || !D) return; const a = b.dataset.act;
+    if (a === "close") { D = null; $("actCard").classList.add("hidden"); renderList(); }
+    else if (a === "confirm") doConfirm();
+    else if (a === "pickdrug") { D.drugId = b.dataset.d; D.medOk = false; D.qty = ""; D.picks = {}; loadDrug(); renderAct(); }
+    else if (a === "manual") { const p = plan(stockState()); D.picks = {}; p.allocations.forEach(x => { D.picks[x.batchId] = x.qty; }); D.mode = "manual"; renderAct(); }
+    else if (a === "auto") { D.mode = "fefo"; D.picks = {}; renderAct(); }
+    else if (a === "share") window.top.mcShareText(D.result.text, "Dispensing record");
+    else if (a === "print") window.top.mcPrintText(D.result.text, "Dispensing record");
+  });
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.mcGo("login.html"); return; }
+    let snap;
+    try { snap = await getDoc(doc(db, "users", user.uid)); } catch (e) { showGate("Could not load your account. Check your connection and reopen this page."); return; }
+    if (!snap.exists()) { window.mcGo("login.html"); return; }
+    me = { id: user.uid, ...snap.data() };
+    if (me.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
+    role = me.role; businessId = me.businessId; perms = me.perms || {}; myName = me.name || "";
+    if (role === "owner") {
+      let started = false;
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
+        const shops = {}; s.docs.forEach(d => { shops[d.id] = { id: d.id, ...d.data() }; });
+        const ids = Object.keys(shops).sort((a, b) => String(shops[a].name).localeCompare(String(shops[b].name)));
+        const want = localStorage.getItem("mc_activeShopId");
+        facilityId = shops[want] ? want : ids[0]; facility = facilityId ? shops[facilityId] : null;
+        if (!started) { started = true; begin(); }
+      });
+    } else {
+      facilityId = me.shopId;
+      try { const sh = await getDoc(doc(db, "shops", facilityId)); facility = sh.exists() ? { id: sh.id, ...sh.data() } : null; } catch (e) { facility = null; }
+      begin();
+    }
+  });
+</script>
+</body>
+</html>
