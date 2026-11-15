@@ -1,0 +1,76 @@
+// PROPOSED Firestore rules for `guidelines` (Developer 2 -> Developer 4). NOT applied, NOT tested against the emulator or real Firebase.
+// Add inside `match /databases/{database}/documents { ... }` after the Phase 4 rules, using the existing v14 helpers
+// (isMemberOfBusiness, canAccessShop, hasPerm, pcCreateOk, pcUpdateStamped, pcLocked).
+//
+// New permission keys (owner has all):  guidelines.manage  (enter / edit DRAFTS / import / start a new version)
+//                                       guidelines.approve (approve, supersede, retire, discard)
+//
+// KNOWN LIMIT: security rules do not filter query results. The page lists every guideline of the business, so any active member
+// can READ drafts at database level; the screen hides them from people without guidelines.manage. Drafts hold only reference text.
+
+    function glCategoryOk(c) {
+      return c in ['general_assessment','common_illnesses','infectious','respiratory','gastrointestinal','paediatric','maternal','ncd','emergency','wound','laboratory','medication_safety','followup_referral'];
+    }
+    function glReadOk(d) {
+      return (d.scope == 'national' && isMemberOfBusiness(d.businessId))
+          || (d.scope == 'facility' && canAccessShop(d.businessId, d.facilityId));
+    }
+
+    match /guidelines/{glId} {
+      allow read: if glReadOk(resource.data);
+
+      // new draft (also used for "new version" and for import)
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'guidelines.manage')
+        && request.resource.data.scope in ['national', 'facility']
+        && request.resource.data.approvalStatus == 'draft'
+        && request.resource.data.guidelineKey is string && request.resource.data.version is int && request.resource.data.version >= 1
+        && glId == 'gl_' + request.resource.data.guidelineKey + '_v' + string(request.resource.data.version)
+        && request.resource.data.id == glId
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200
+        && glCategoryOk(request.resource.data.category)
+        && request.resource.data.symptoms is list && request.resource.data.investigations is list
+        && request.resource.data.treatment is string && request.resource.data.source is string;
+
+      allow update: if pcUpdateStamped() && canAccessShop(resource.data.businessId, resource.data.facilityId) && (
+        // 1. edit a DRAFT (approved text is never edited: a new version is created instead)
+        (resource.data.approvalStatus == 'draft' && request.resource.data.approvalStatus == 'draft'
+          && hasPerm(resource.data.businessId, 'guidelines.manage')
+          && request.resource.data.diff(resource.data).unchangedKeys().hasAll(['id','businessId','facilityId','guidelineKey','version','scope','createdBy','createdAt','enteredDate'])
+          && glCategoryOk(request.resource.data.category))
+        ||
+        // 2. approve a draft: only the approval fields change, and the source details must be complete
+        (resource.data.approvalStatus == 'draft' && request.resource.data.approvalStatus == 'approved'
+          && hasPerm(resource.data.businessId, 'guidelines.approve')
+          && request.resource.data.approvedBy == request.auth.uid && request.resource.data.approvedAt == request.time
+          && request.resource.data.selfApproved == (resource.data.createdBy == request.auth.uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus','approvedBy','approvedByName','approvedAt','selfApproved','updatedAt','updatedBy'])
+          && resource.data.sourceTitle.size() > 0 && resource.data.sourceOrg.size() > 0 && resource.data.sourceEdition.size() > 0
+          && resource.data.sourceRef.size() > 0 && resource.data.jurisdiction.size() > 0
+          && resource.data.effectiveDate.size() == 10 && resource.data.reviewDate.size() == 10 && resource.data.reviewDate >= resource.data.effectiveDate)
+        ||
+        // 3. replace the previous approved version (same commit approves the newer one)
+        (resource.data.approvalStatus == 'approved' && request.resource.data.approvalStatus == 'superseded'
+          && hasPerm(resource.data.businessId, 'guidelines.approve')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus','supersededBy','updatedAt','updatedBy'])
+          && getAfter(/databases/$(database)/documents/guidelines/$(request.resource.data.supersededBy)).data.approvalStatus == 'approved'
+          && getAfter(/databases/$(database)/documents/guidelines/$(request.resource.data.supersededBy)).data.guidelineKey == resource.data.guidelineKey
+          && getAfter(/databases/$(database)/documents/guidelines/$(request.resource.data.supersededBy)).data.version > resource.data.version)
+        ||
+        // 4. retire an approved entry, or discard a draft (a reason is required)
+        (resource.data.approvalStatus in ['draft','approved'] && request.resource.data.approvalStatus == 'retired'
+          && (hasPerm(resource.data.businessId, 'guidelines.approve') || (resource.data.approvalStatus == 'draft' && hasPerm(resource.data.businessId, 'guidelines.manage')))
+          && request.resource.data.retiredReason is string && request.resource.data.retiredReason.size() >= 3
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus','retiredReason','retiredBy','retiredByName','retiredAt','updatedAt','updatedBy']))
+      );
+      allow delete: if false;   // history is never deleted
+    }
+
+// Emulator tests still to write (Developer 4):
+//  - member of ANOTHER business cannot read; operator of another shop cannot read a facility protocol but CAN read national entries of the same business
+//  - create needs guidelines.manage; approve needs guidelines.approve; manage-only user cannot approve
+//  - approved entry: any content update is denied; delete always denied; version/key/scope/facility cannot change
+//  - approve is denied if any source field or date is empty; approve is denied if selfApproved does not match createdBy
+//  - superseding v2 is denied unless the same commit approves a higher version of the same key
+//  - id must equal gl_{guidelineKey}_v{version}; category outside the 13 keys is denied
+//  - shops without patient_care enabled cannot create

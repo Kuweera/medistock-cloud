@@ -1,0 +1,42 @@
+{
+  "_readme": "Fill ONLY from an approved source (e.g. Uganda Clinical Guidelines, MoH, WHO, or your facility's approved protocol). Do not invent doses or thresholds. Every entry is imported as a DRAFT and must be approved by an authorised person. category must be one of: general_assessment, common_illnesses, infectious, respiratory, gastrointestinal, paediatric, maternal, ncd, emergency, wound, laboratory, medication_safety, followup_referral. Dates are YYYY-MM-DD.",
+  "entries": [
+    {
+      "title": "",
+      "category": "common_illnesses",
+      "scope": "national",
+      "symptoms": [],
+      "aliases": [],
+      "sourceTitle": "",
+      "sourceOrg": "",
+      "sourceEdition": "",
+      "sourceRef": "",
+      "jurisdiction": "",
+      "effectiveDate": "YYYY-MM-DD",
+      "reviewDate": "YYYY-MM-DD",
+      "assessment": {
+        "questions": [],
+        "history": [],
+        "document": [],
+        "examination": []
+      },
+      "warningSigns": {
+        "danger": [],
+        "urgent": [],
+        "referral": []
+      },
+      "investigations": [],
+      "investigationNotes": [],
+      "treatment": "",
+      "precautions": [],
+      "followUp": [],
+      "referralAdvice": [],
+      "sectionRefs": {
+        "assessment": "",
+        "warnings": "",
+        "investigations": "",
+        "management": ""
+      }
+    }
+  ]
+}
