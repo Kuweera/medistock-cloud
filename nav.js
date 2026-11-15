@@ -23,6 +23,8 @@
     ["investigations.html", "Test catalogue"],
     ["treatment.html", "Treatment & MAR"],
     ["dosing-rules.html", "Dosing rules"],
+    ["pharmacy.html", "Pharmacy"],
+    ["guidelines.html", "Guidelines"],
     ["directory.html", "Facility Directory"],
     ["users.html", "Users"],
     ["shops.html", "Shops"],

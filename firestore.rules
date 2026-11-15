@@ -1,6 +1,8 @@
 rules_version = '2';
 
-// MediStock Cloud — multi-shop roles & security (v14)
+// MediStock Cloud — multi-shop roles & security (v15)
+// v15 (Phase 5): adds prescriptions, dispense_records (append-only) and guidelines rules at the end; stock_transactions entries of type
+//   DISPENSE can no longer be changed or deleted, and can only be created together with their dispense record. Everything else is UNCHANGED from v14.
 // v14: adds Phase 4 (treatment plans, orders, planned administrations, medication record) rules at the end.
 // v13: adds Phase 3 (investigations and diagnoses) rules at the end.
 // v12: adds Phase 2 (encounters, triage, consultation) rules at the end of the Patient Care section.
@@ -136,7 +138,20 @@ service cloud.firestore {
     match /purchases/{docId}              { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
     match /suppliers/{docId}              { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
     match /supplier_transactions/{docId}  { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
-    match /stock_transactions/{docId}     { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
+    // v15: DISPENSE entries are written only by the dispensing transaction and are then permanent. Every other type behaves exactly as before.
+    match /stock_transactions/{docId} {
+      allow read: if shopScoped();
+      allow update: if shopScoped()
+        && resource.data.get('type', '') != 'DISPENSE' && request.resource.data.get('type', '') != 'DISPENSE';
+      allow delete: if shopScoped() && resource.data.get('type', '') != 'DISPENSE';
+      allow create: if shopScopedCreate()
+        && (request.resource.data.get('type', '') != 'DISPENSE'
+            || (hasPerm(request.resource.data.businessId, 'dispense.perform')
+                && request.resource.data.baseUnitsChange is number && request.resource.data.baseUnitsChange < 0
+                && request.resource.data.dispenseRequestId is string
+                && docId.matches('dsp_' + request.resource.data.dispenseRequestId + '_[0-9]+')
+                && existsAfter(/databases/$(database)/documents/dispense_records/$(request.resource.data.dispenseRequestId + '_0'))));
+    }
     match /stock_adjustments/{docId}      { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
     match /counters/{docId} {
       allow read: if isSignedIn() && (resource == null || shopScoped());
@@ -1038,6 +1053,154 @@ service cloud.firestore {
         && request.resource.data.status == 'entered_in_error'
         && request.resource.data.errorReason is string && request.resource.data.errorReason.size() >= 3
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'errorReason', 'updatedAt', 'updatedBy']);
+      allow delete: if false;
+    }
+
+    // =====================================================================================
+    // PHASE 5 (v15) — PHARMACY DISPENSING AND CLINICAL GUIDELINES
+    // prescriptions / dispense_records / guidelines use the field names fixed by the team Data Contract.
+    // Permissions (users/{uid}.perms): dispense.view, dispense.perform, dispense.report, guidelines.manage, guidelines.approve.
+    // dispense_records are append-only. A prescription can only move forward, and only in the same commit that writes
+    // the matching dispense record. Nothing here can be deleted.
+    // KNOWN LIMITS (rules cannot do these): they cannot force drugs/batches quantities to change together with a dispense
+    // (audit finding R5: drugs and batches stay writable by every shop member so Sales keeps working), and they cannot
+    // filter list queries (guideline drafts are readable by business members; the screen hides them).
+    // =====================================================================================
+    function rxPath(id) { return /databases/$(database)/documents/prescriptions/$(id); }
+    function dspPath(id) { return /databases/$(database)/documents/dispense_records/$(id); }
+    function qtyClose(a, b) { return math.abs(a - b) < 0.001; }
+    function rxStatusOk(d) {
+      return d.status in ['partially_dispensed', 'completed']
+        && ((d.qtyOutstanding <= 0.0001) == (d.status == 'completed'));
+    }
+
+    match /prescriptions/{rxId} {
+      allow read: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && hasPerm(resource.data.businessId, 'dispense.view');
+
+      // created by the first dispensing: id = the medicine order's id, the order must be an active medicine order of this
+      // facility and patient, and the same commit must write the first dispense record for exactly the quantity stated
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'dispense.perform')
+        && request.resource.data.id == rxId && request.resource.data.orderId == rxId
+        && request.resource.data.patientId is string && request.resource.data.drugId is string
+        && request.resource.data.qtyPrescribed is number && request.resource.data.qtyPrescribed > 0
+        && request.resource.data.qtyDispensed is number && request.resource.data.qtyDispensed > 0
+        && request.resource.data.qtyDispensed <= request.resource.data.qtyPrescribed
+        && qtyClose(request.resource.data.qtyOutstanding, request.resource.data.qtyPrescribed - request.resource.data.qtyDispensed)
+        && rxStatusOk(request.resource.data)
+        && request.resource.data.lastDispensedBy == request.auth.uid
+        && request.resource.data.lastRequestId is string
+        && exists(ordPath(rxId))
+        && get(ordPath(rxId)).data.status == 'active'
+        && get(ordPath(rxId)).data.kind == 'medicine'
+        && get(ordPath(rxId)).data.businessId == request.resource.data.businessId
+        && get(ordPath(rxId)).data.facilityId == request.resource.data.facilityId
+        && get(ordPath(rxId)).data.patientId == request.resource.data.patientId
+        && existsAfter(dspPath(request.resource.data.lastRequestId + '_0'))
+        && getAfter(dspPath(request.resource.data.lastRequestId + '_0')).data.prescriptionId == rxId
+        && qtyClose(getAfter(dspPath(request.resource.data.lastRequestId + '_0')).data.groupQty, request.resource.data.qtyDispensed);
+
+      // later dispensing: only the quantity/status fields move, only upwards, and only with a new dispense record in the same commit
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && hasPerm(resource.data.businessId, 'dispense.perform')
+        && pcUpdateStamped()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qtyDispensed', 'qtyOutstanding', 'status', 'lastDispensedAt', 'lastDispensedBy', 'lastRequestId', 'updatedBy', 'updatedAt'])
+        && request.resource.data.qtyDispensed > resource.data.qtyDispensed
+        && request.resource.data.qtyDispensed <= resource.data.qtyPrescribed
+        && qtyClose(request.resource.data.qtyOutstanding, resource.data.qtyPrescribed - request.resource.data.qtyDispensed)
+        && rxStatusOk(request.resource.data)
+        && resource.data.status != 'completed'
+        && request.resource.data.lastDispensedBy == request.auth.uid
+        && request.resource.data.lastRequestId is string && request.resource.data.lastRequestId != resource.data.lastRequestId
+        && existsAfter(dspPath(request.resource.data.lastRequestId + '_0'))
+        && getAfter(dspPath(request.resource.data.lastRequestId + '_0')).data.prescriptionId == rxId
+        && qtyClose(getAfter(dspPath(request.resource.data.lastRequestId + '_0')).data.groupQty, request.resource.data.qtyDispensed - resource.data.qtyDispensed);
+
+      allow delete: if false;
+    }
+
+    match /dispense_records/{dspId} {
+      allow read: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && hasPerm(resource.data.businessId, 'dispense.view');
+
+      // one record per batch used; id = requestId_lineNo, so a repeated submission can never create a second record
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'dispense.perform')
+        && request.resource.data.requestId is string && request.resource.data.lineNo is int && request.resource.data.lineNo >= 0
+        && dspId == request.resource.data.requestId + '_' + string(request.resource.data.lineNo)
+        && request.resource.data.id == dspId
+        && request.resource.data.dispensedBy == request.auth.uid
+        && request.resource.data.dispensedAt == request.time
+        && request.resource.data.isSynced == true
+        && request.resource.data.qtyDispensed is number && request.resource.data.qtyDispensed > 0
+        && request.resource.data.groupQty is number && request.resource.data.groupQty >= request.resource.data.qtyDispensed
+        && request.resource.data.prescriptionId is string && request.resource.data.patientId is string
+        && existsAfter(rxPath(request.resource.data.prescriptionId))
+        && getAfter(rxPath(request.resource.data.prescriptionId)).data.businessId == request.resource.data.businessId
+        && getAfter(rxPath(request.resource.data.prescriptionId)).data.facilityId == request.resource.data.facilityId
+        && getAfter(rxPath(request.resource.data.prescriptionId)).data.patientId == request.resource.data.patientId
+        && getAfter(rxPath(request.resource.data.prescriptionId)).data.lastRequestId == request.resource.data.requestId;
+
+      allow update, delete: if false;   // append-only
+    }
+
+    // ---- Clinical guidelines (reviewed from Developer 2's proposal; nothing is ever deleted) ----
+    function glCategoryOk(c) {
+      return c in ['general_assessment','common_illnesses','infectious','respiratory','gastrointestinal','paediatric','maternal','ncd','emergency','wound','laboratory','medication_safety','followup_referral'];
+    }
+    function glReadOk(d) {
+      return (d.scope == 'national' && isMemberOfBusiness(d.businessId))
+          || (d.scope == 'facility' && canAccessShop(d.businessId, d.facilityId));
+    }
+    function glPath(id) { return /databases/$(database)/documents/guidelines/$(id); }
+
+    match /guidelines/{glId} {
+      allow read: if glReadOk(resource.data);
+
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'guidelines.manage')
+        && request.resource.data.scope in ['national', 'facility']
+        && request.resource.data.approvalStatus == 'draft'
+        && request.resource.data.guidelineKey is string && request.resource.data.version is int && request.resource.data.version >= 1
+        && glId == 'gl_' + request.resource.data.guidelineKey + '_v' + string(request.resource.data.version)
+        && request.resource.data.id == glId
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200
+        && glCategoryOk(request.resource.data.category)
+        && request.resource.data.symptoms is list && request.resource.data.investigations is list
+        && request.resource.data.treatment is string && request.resource.data.source is string;
+
+      allow update: if pcUpdateStamped() && canAccessShop(resource.data.businessId, resource.data.facilityId) && (
+        // 1. edit a DRAFT (approved text is never edited: a new version is created instead)
+        (resource.data.approvalStatus == 'draft' && request.resource.data.approvalStatus == 'draft'
+          && hasPerm(resource.data.businessId, 'guidelines.manage')
+          && request.resource.data.diff(resource.data).unchangedKeys().hasAll(['id', 'businessId', 'facilityId', 'guidelineKey', 'version', 'scope', 'createdBy', 'createdAt', 'enteredDate'])
+          && glCategoryOk(request.resource.data.category))
+        ||
+        // 2. approve a draft: only the approval fields change, and the source details must be complete
+        (resource.data.approvalStatus == 'draft' && request.resource.data.approvalStatus == 'approved'
+          && hasPerm(resource.data.businessId, 'guidelines.approve')
+          && request.resource.data.approvedBy == request.auth.uid && request.resource.data.approvedAt == request.time
+          && request.resource.data.selfApproved == (resource.data.createdBy == request.auth.uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedByName', 'approvedAt', 'selfApproved', 'updatedAt', 'updatedBy'])
+          && resource.data.sourceTitle.size() > 0 && resource.data.sourceOrg.size() > 0 && resource.data.sourceEdition.size() > 0
+          && resource.data.sourceRef.size() > 0 && resource.data.jurisdiction.size() > 0
+          && resource.data.effectiveDate.size() == 10 && resource.data.reviewDate.size() == 10 && resource.data.reviewDate >= resource.data.effectiveDate)
+        ||
+        // 3. replace the previous approved version (the same commit approves a newer version of the same entry)
+        (resource.data.approvalStatus == 'approved' && request.resource.data.approvalStatus == 'superseded'
+          && hasPerm(resource.data.businessId, 'guidelines.approve')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'supersededBy', 'updatedAt', 'updatedBy'])
+          && getAfter(glPath(request.resource.data.supersededBy)).data.approvalStatus == 'approved'
+          && getAfter(glPath(request.resource.data.supersededBy)).data.guidelineKey == resource.data.guidelineKey
+          && getAfter(glPath(request.resource.data.supersededBy)).data.version > resource.data.version)
+        ||
+        // 4. retire an approved entry, or discard a draft (a reason is required)
+        (resource.data.approvalStatus in ['draft', 'approved'] && request.resource.data.approvalStatus == 'retired'
+          && (hasPerm(resource.data.businessId, 'guidelines.approve') || (resource.data.approvalStatus == 'draft' && hasPerm(resource.data.businessId, 'guidelines.manage')))
+          && request.resource.data.retiredReason is string && request.resource.data.retiredReason.size() >= 3
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'retiredReason', 'retiredBy', 'retiredByName', 'retiredAt', 'updatedAt', 'updatedBy']))
+      );
       allow delete: if false;
     }
   }
