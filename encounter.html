@@ -300,7 +300,7 @@
       <h2>Add a presenting complaint</h2>
       <label>Complaint *</label><input type="text" id="cName" list="complaintList" placeholder="Type or choose" autocomplete="off">
       <div class="row"><div><label>Started (type or choose)</label><input type="text" id="cOnset" list="onsetList" placeholder="e.g. 3 days ago" autocomplete="off"></div><div><label>Lasted (number)</label><input type="number" inputmode="numeric" id="cDurVal" min="0"></div></div>
-      <label>Duration unit</label>
+      <label>How long has the patient had this complaint? (unit)</label><div class="fhelp" style="font-size:12px;color:#5b6b7a;margin:2px 0 8px;line-height:1.35">Choose hours, days, weeks, months or years. Use together with the number above. Optional.</div>
       <select id="cDurUnit"><option value="">-</option><option value="hours">hours</option><option value="days">days</option><option value="weeks">weeks</option><option value="months">months</option><option value="years">years</option></select>
       <div class="row"><div><label>Severity</label><select id="cSev"><option value="">Not stated</option><option value="mild">Mild</option><option value="moderate">Moderate</option><option value="severe">Severe</option></select></div>
         <div><label>Progression</label><select id="cProg"><option value="">Not stated</option><option value="improving">Improving</option><option value="same">Staying the same</option><option value="worsening">Getting worse</option><option value="comes_and_goes">Comes and goes</option></select></div></div>
@@ -427,7 +427,7 @@
       <div class="row"><div><label>Starts on</label><div class="dateField"><input type="text" id="obStartDate"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div></div>
         <div><label>At</label><input type="time" id="obStartTime"></div></div>
       <div id="obSched"></div>
-      <div id="obQtyBox"><label>Quantity to supply (optional)</label><input type="number" inputmode="decimal" step="any" id="obQty"></div>
+      <div id="obQtyBox"><label>How much should the pharmacy give? (optional)</label><div class="fhelp" style="font-size:12px;color:#5b6b7a;margin:2px 0 8px;line-height:1.35">Enter the total in the smallest unit of the medicine, for example 20 for 20 tablets, or 100 for 100 ml. If you leave it blank, the pharmacist will enter it.</div><input type="number" inputmode="decimal" step="any" id="obQty"></div>
       <div id="obWeightBox" class="hidden"></div>
       <div id="obSafety"></div>
       <div id="obOverrideBox" class="hidden"><label>These warnings need a reason before you can continue *</label><textarea id="obOverride" rows="2" placeholder="Why is it safe to continue?"></textarea></div>
