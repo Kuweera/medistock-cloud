@@ -12,11 +12,11 @@ Developer 4. Date: 2026-11-15. Legend: [x] done and checked here · [~] written,
 - [x] `nav.js`: Pharmacy and Guidelines added.
 - [x] `sw.js`: `pharmacy.html`, `pc-dispense.js`, `guidelines.html`, `pc-guidelines.js`, `pc-ux.js` cached; version mc-v24. A test fails if any page uses a script the service worker does not cache.
 - [x] `users.html` (Developer 3) already has `dispense.view/perform/report`, `guidelines.manage/approve` and a Pharmacist quick-fill. Rules v15 use the same keys.
-- [~] `firestore.rules` v15: prescriptions, dispense_records (append-only), guidelines, protected DISPENSE stock entries. Balanced and statically checked; **emulator run pending**.
+- [x] `firestore.rules` v15: prescriptions, dispense_records (append-only), guidelines, protected DISPENSE stock entries. 22/22 emulator tests pass (CI run #8). Real-project check still pending.
 - [x] `docs/IMPLEMENTATION_PROGRESS.md` updated. [ ] `docs/DATABASE_SCHEMA.md`: add the three collections (use PHARMACY_DISPENSING_SPEC section 1 and GUIDELINES_SPEC section 1) - owners to supply final text.
 
 ## C. Before anything is released
-- [ ] Push to GitHub and get `rules` job green (first real run of tests-emulator/rules.test.js; expect to fix test or rule mistakes).
+- [x] `rules` job green (run #8).
 - [ ] Publish rules v12-v15 to a **test** Firebase project, repeat the Rules Playground checks.
 - [ ] Phase 1-4 phone tests (master plan section 5 gate) - owner.
 - [ ] Phase 5 phone tests, two-device stock conflict test, airplane-mode test (see OFFLINE_SYNC_TEST_REPORT.md).

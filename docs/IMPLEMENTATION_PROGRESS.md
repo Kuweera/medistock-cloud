@@ -11,7 +11,7 @@
 | 1a | (f) Facility links + consent | Facility links in (c). **Consent sharing built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (g) Merge | **Built and tested on a mock database; awaiting upload and phone test** |
 | 1a | (h) Regression | **Automated and file-level checks done (see REGRESSION_REPORT.md). Owner phone checklist and Rules Playground checks pending** |
-| 5 | Pharmacy dispensing, clinical guidelines, UX simplification, integration (Developers 1-4) | **Built and tested on mock databases only. Rules v15 written but NOT yet run in the Firebase Emulator or against real Firebase. NOT released.** See INTEGRATION_CHECKLIST.md |
+| 5 | Pharmacy dispensing, clinical guidelines, UX simplification, integration (Developers 1-4) | **Built and tested on mock databases only. Rules v15 pass 22/22 emulator tests (CI run #8) but are NOT yet tested against real Firebase. NOT released.** See INTEGRATION_CHECKLIST.md |
 | 4 | Treatment plan engine, schedules, medication record | **Built and tested on a mock database; awaiting rules v14, upload and phone test. Highest-risk phase: test carefully with made-up patients** |
 | 3 | Investigations and diagnoses | **Built and tested on a mock database; awaiting rules v13, upload and phone test** |
 | 2 | Encounters, triage, consultation | **Built and tested on a mock database; awaiting rules v12, upload and phone test** |

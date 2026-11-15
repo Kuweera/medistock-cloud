@@ -1,11 +1,15 @@
 # SECURITY_TEST_REPORT.md
-Developer 4. Date: 2026-11-15. **Result: NOT VALIDATED.** The sandbox used for this work has no internet access, so the Firebase Emulator could not be installed or run. Nothing below has been executed against the Firestore rules engine. No security claim should be made from this document yet.
+Developer 4. Date: 2026-11-15. **Result: PASSED in the Firebase Emulator, 2026-11-15 (GitHub Actions run #8): 22 of 22 emulator tests pass, and the 58 offline tests in the `checks` job pass.** Not yet verified against a real Firebase project, so this is not a release approval.
+
+History: run #7 had 2 failures, both mistakes in the tests, not in the rules (a read-back helper that returned nothing, and `firestore()` called twice in one context). Fixed; run #8 is clean.
+
+Known observation: the guidelines `update` rule reports "maximum of 1000 expressions" on requests that are correctly denied. Every request that should succeed (approve, replace a version, retire, discard) passed in run #8, so it is harmless today. Re-check if guideline documents grow large, and watch the Rules Playground in the real project.
 
 ## What was done
 | Item | State |
 |---|---|
 | Rules v15 written (prescriptions, dispense_records, guidelines, DISPENSE stock protection) | Written; brace/paren balance and structural checks pass in `tests/integration.test.js` |
-| Emulator tests (`tests-emulator/rules.test.js`, 21 tests) | Written; syntax-checked; **never run** |
+| Emulator tests (`tests-emulator/rules.test.js`, 22 tests) | **22/22 pass** (run #8) |
 | GitHub Actions (`.github/workflows/ci.yml`) | Written; runs syntax checks, 58 offline tests, then the emulator job |
 | Rules v12-v14 | Not re-tested. Three v14 behaviours are included in the emulator file (dosing-rule approval, signed notes, patient isolation) |
 
@@ -24,4 +28,4 @@ Developer 4. Date: 2026-11-15. **Result: NOT VALIDATED.** The sandbox used for t
 - Rules read limits (10 document lookups per write) were counted by hand: worst case about 6. The emulator will confirm.
 
 ## Required next
-Run `npm install && npm run test:rules` or push to GitHub. Treat every failure as either a test bug or a rule bug and record the outcome here. Then repeat in the Rules Playground against the real project.
+Publish rules to a TEST Firebase project and repeat the key checks in the Rules Playground, then do the phone tests in OFFLINE_SYNC_TEST_REPORT.md. Only then consider the real project.
