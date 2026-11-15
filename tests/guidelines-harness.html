@@ -1,0 +1,60 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Guidelines test harness</title></head>
+<body style="margin:0"><iframe id="f" style="border:0;width:100vw;height:100vh"></iframe>
+<script>
+/* Test harness: pretends to be the app shell (window.top.MC.api) with an in-memory Firestore so guidelines.html runs in a real browser.
+   ?as=owner (default) | viewer | manager.   TEST CONTENT ONLY: the entries below are obviously fake and are never shipped. */
+(function () {
+  var as = new URLSearchParams(location.search).get("as") || "owner", pageQ = new URLSearchParams(location.search).get("pq") || "";
+  var store = new Map(), listeners = [], clock = Date.now(), B = "biz1", F = "shop1";
+  function put(c, id, d) { store.set(c + "/" + id, JSON.parse(JSON.stringify(d))); }
+  put("shops", F, { businessId: B, name: "Test Clinic", enabledServices: ["patient_care"], timezone: "Africa/Kampala" });
+  put("users", "owner1", { businessId: B, role: "owner", name: "Owner One", active: true });
+  put("users", "viewer1", { businessId: B, role: "operator", shopId: F, name: "Viewer", active: true, perms: {} });
+  put("users", "mgr1", { businessId: B, role: "operator", shopId: F, name: "Manager", active: true, perms: { "guidelines.manage": true } });
+  var uid = as === "viewer" ? "viewer1" : as === "manager" ? "mgr1" : "owner1";
+  function g(id, key, v, st, extra) { return Object.assign({ id: id, guidelineKey: key, version: v, approvalStatus: st, businessId: B, facilityId: F, scope: "national", category: "respiratory", title: "TEST topic " + key, symptoms: ["test cough"], aliases: [], investigations: ["Test investigation X"],
+    treatment: "TEST TEXT ONLY — not clinical content.", assessment: { questions: ["TEST question?"], history: [], document: [], examination: [] }, warningSigns: { danger: ["TEST danger sign"], urgent: [], referral: [] }, investigationNotes: [], precautions: [], followUp: [], referralAdvice: [],
+    sectionRefs: { assessment: "", warnings: "p. 2", investigations: "", management: "" }, sourceTitle: "Test Guideline", sourceOrg: "Test Org", sourceEdition: "2023", sourceRef: "p. 1", jurisdiction: "Uganda", source: "Test Guideline (2023) — Test Org — p. 1 — Uganda",
+    enteredDate: "2026-01-01", effectiveDate: "2026-01-01", reviewDate: "2027-01-01", createdBy: "owner1", schemaVersion: 1 }, extra || {}); }
+  put("guidelines", "gl_a_v1", g("gl_a_v1", "a", 1, "superseded", { approvedByName: "Owner One", supersededBy: "gl_a_v2" }));
+  put("guidelines", "gl_a_v2", g("gl_a_v2", "a", 2, "approved", { title: "TEST topic alpha", approvedByName: "Owner One", supersedes: "gl_a_v1", symptoms: ["test cough", "test fever"] }));
+  put("guidelines", "gl_b_v1", g("gl_b_v1", "b", 1, "approved", { title: "TEST topic bravo overdue", category: "wound", reviewDate: "2026-02-01", approvedByName: "Owner One" }));
+  put("guidelines", "gl_c_v1", g("gl_c_v1", "c", 1, "draft", { title: "TEST draft charlie", sourceRef: "" }));
+  put("guidelines", "gl_l_v1", g("gl_l_v1", "l", 1, "approved", { title: "TEST local protocol", scope: "facility", basedOnKey: "a", sourceOrg: "Test Clinic", approvedByName: "Owner One" }));
+  window.__db = { store: store, get: function (c, i) { var v = store.get(c + "/" + i); return v ? JSON.parse(JSON.stringify(v)) : null; }, all: function (c) { var o = []; store.forEach(function (v, k) { if (k.indexOf(c + "/") === 0) o.push(Object.assign({ _id: k.slice(c.length + 1) }, v)); }); return o; }, writes: [] };
+  function snapOf(q) {
+    var docs = [];
+    store.forEach(function (v, k) { var i = k.indexOf("/"), c = k.slice(0, i), id = k.slice(i + 1); if (c !== q.coll) return; for (var j = 0; j < q.wheres.length; j++) if (v[q.wheres[j].f] !== q.wheres[j].v) return;
+      docs.push({ id: id, data: function () { return JSON.parse(JSON.stringify(v)); }, exists: function () { return true; }, metadata: { hasPendingWrites: false } }); });
+    return { docs: docs, size: docs.length, empty: !docs.length, metadata: { fromCache: false }, forEach: function (f) { docs.forEach(f); } };
+  }
+  function notifyAll() { listeners.forEach(function (l) { setTimeout(function () { l.next(snapOf(l.q)); }, 0); }); }
+  function stampV(d) { return JSON.parse(JSON.stringify(d, function (k, v) { return v && v.__ts ? ++clock : v; })); }
+  var api = {
+    initializeApp: function () { return {}; }, getAuth: function () { return { currentUser: { uid: uid }, signOut: function () { return Promise.resolve(); } }; },
+    onAuthStateChanged: function (a, cb) { setTimeout(function () { cb({ uid: uid }); }, 0); return function () {}; }, getFirestore: function () { return {}; },
+    doc: function (d, c, id) { if (d && d.type === "collection") { c = d.coll; id = "auto_" + Math.random().toString(36).slice(2); } return { type: "document", coll: c, id: id, path: c + "/" + id }; },
+    collection: function (d, c) { return { type: "collection", coll: c, wheres: [] }; },
+    where: function (f, op, v) { return { f: f, op: op, v: v }; }, limit: function (n) { return { limit: n }; },
+    query: function (c) { return { type: "query", coll: c.coll, wheres: Array.prototype.slice.call(arguments, 1).filter(function (x) { return x.f; }) }; },
+    serverTimestamp: function () { return { __ts: 1 }; },
+    getDoc: function (r) { var has = store.has(r.path), v = has ? JSON.parse(JSON.stringify(store.get(r.path))) : null; return Promise.resolve({ id: r.id, exists: function () { return has; }, data: function () { return v; } }); },
+    getDocFromCache: function (r) { return api.getDoc(r).then(function (s) { if (!s.exists()) throw new Error("no"); return s; }); },
+    onSnapshot: function (q) { var fn = Array.prototype.slice.call(arguments, 1).filter(function (x) { return typeof x === "function"; })[0]; var l = { q: q, next: fn }; listeners.push(l); setTimeout(function () { fn(snapOf(q)); }, 0); return function () { listeners = listeners.filter(function (x) { return x !== l; }); }; },
+    writeBatch: function () {
+      var ops = [], w = {};
+      w.set = function (r, d) { ops.push(["set", r, d]); return w; }; w.update = function (r, d) { ops.push(["update", r, d]); return w; };
+      w.commit = function () {
+        if (window.__db.failNext) { window.__db.failNext = false; var e = new Error("offline"); e.code = "unavailable"; return Promise.reject(e); }
+        if (window.__db.hang) return new Promise(function () {});
+        ops.forEach(function (o) { var d = stampV(o[2]); if (o[0] === "update") { if (!store.has(o[1].path)) throw new Error("missing " + o[1].path); store.set(o[1].path, Object.assign(store.get(o[1].path), d)); } else store.set(o[1].path, d); window.__db.writes.push(o[1].coll); });
+        notifyAll(); return Promise.resolve();
+      };
+      return w;
+    }
+  };
+  window.MC = { api: function () { return api; }, go: function () {}, home: function () {} };
+  window.mcShareText = function (t) { window.__shared = t; return Promise.resolve(); };
+  document.getElementById("f").src = "/guidelines.html" + (pageQ ? "?" + pageQ : "");
+})();
+</script></body></html>
