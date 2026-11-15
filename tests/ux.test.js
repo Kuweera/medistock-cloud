@@ -12,3 +12,8 @@ test("age and bmi", () => {
   assert.equal(U.bmi(70, 175).value, 22.9);
   assert.equal(U.bmi(0, 175), null);
 });
+test("custom permission text and offline wording", () => {
+  assert.equal(U.friendlyError({ code: "permission-denied" }, "record", "Custom."), "Custom.");
+  assert.match(U.friendlyError({ code: "firestore/unavailable" }, "visit"), /visit could not be saved/);
+  assert.match(U.savedText("pending"), /Not confirmed/);
+});
