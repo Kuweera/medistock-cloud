@@ -28,7 +28,9 @@
     no_quantity: "The prescriber did not state a quantity. Enter the quantity to supply.",
     no_drug: "Choose the medicine from your stock list before dispensing.",
     drug_missing: "This medicine is not in your stock list.",
-    drug_mismatch: "A different medicine was already dispensed on this prescription. Use the same medicine.",
+    drug_mismatch: "This is not the medicine that was prescribed (or already dispensed). To give a different one, record a substitution with a reason.",
+    sub_reason: "A substitution needs a reason and the name of the person who agreed to it (for example the prescriber).",
+    sub_after_dispense: "Medicine was already dispensed on this prescription. Reverse the unused quantity first, then substitute.",
     stock_short: "This medicine is not available in the selected stock.",
     stock_inconsistent: "The stock record for this medicine does not add up. Check Batches and Inventory, then try again.",
     batch_invalid: "The selected batch cannot be used (not found, wrong medicine, empty or expired).",
@@ -203,6 +205,8 @@
       var orderSnap = await label("read pc_treatment_orders", tx.get(orderRef)), rxSnap = await label("read prescriptions", tx.get(rxRef)), drugSnap = await label("read drugs", tx.get(drugRef));
       var batchSnaps = [];
       for (var i = 0; i < ids.length; i++) batchSnaps.push(await label("read batches", tx.get(doc(db, "batches", ids[i]))));
+      // optional extension (payment / credit): its reads must also happen before any write
+      var hookState = p.hook && p.hook.read ? await p.hook.read(tx, label) : null;
 
       // ---- the prescription
       if (!orderSnap.exists()) throw PCDError("order_missing", FRIENDLY.order_missing);
@@ -217,8 +221,18 @@
       if (!drugSnap.exists()) throw PCDError("drug_missing", FRIENDLY.drug_missing);
       var drug = drugSnap.data();
       if (drug.businessId !== p.businessId || drug.shopId !== p.facilityId) throw PCDError("drug_missing", FRIENDLY.drug_missing);
-      if (order.medicineId && order.medicineId !== p.drugId) throw PCDError("drug_mismatch", FRIENDLY.drug_mismatch);
-      if (rx && rx.drugId && rx.drugId !== p.drugId) throw PCDError("drug_mismatch", FRIENDLY.drug_mismatch);
+      // v17 substitution: a different stock item than the one prescribed, only with a reason and an authoriser, and only while
+      // nothing is dispensed on this prescription (anything already dispensed must be reversed first)
+      var subst = null;
+      var alreadyForSub = rx ? num(rx.qtyDispensed) : 0;
+      var drugChanged = (order.medicineId && order.medicineId !== p.drugId) || (rx && rx.drugId && rx.drugId !== p.drugId);
+      if (drugChanged) {
+        if (!p.substitution) throw PCDError("drug_mismatch", FRIENDLY.drug_mismatch);
+        if (alreadyForSub > 0) throw PCDError("sub_after_dispense", FRIENDLY.sub_after_dispense);
+        var sr = String(p.substitution.reason || "").trim(), sa = String(p.substitution.authorisedBy || "").trim();
+        if (sr.length < 3 || sa.length < 2) throw PCDError("sub_reason", FRIENDLY.sub_reason);
+        subst = { reason: sr, authorisedBy: sa };
+      }
 
       // ---- quantities (all in the medicine's smallest unit, e.g. tablets)
       var prescribed, qtySetBy;
@@ -280,22 +294,39 @@
         })));
       });
       tx.update(drugRef, { currentStockBase: r4(drugTotal - qty) });
+      // cost of the stock issued (same costing as sales.html: batch cost, else the drug's wholesale price when there is no batch record)
+      var per = num(drug.baseUnitsPerStock) || 1, cogs = 0;
+      plan.allocations.forEach(function (a) {
+        var b = a.batchId ? byId[a.batchId] : null;
+        var c = b ? num(b.purchasePricePerStockUnit || b.costPerStockUnit) : num(drug.wholesale);
+        cogs += (a.qty / per) * c;
+      });
+      cogs = Math.round(cogs * 100) / 100;
+      if (p.handedOver) {
+        tx.set(doc(db, "dispense_handovers", p.requestId), clean(Object.assign({}, stamp, {
+          id: p.requestId, requestId: p.requestId, prescriptionId: p.orderId, patientId: order.patientId, handedOverBy: p.uid, handedOverByName: p.userName || "",
+          handedOverAt: tools.serverTimestamp(), note: "handed over when dispensed"
+        })));
+      }
+      if (p.hook && p.hook.write) p.hook.write(tx, hookState, { order: order, drug: drug, plan: plan, qty: qty, stamp: stamp, costOfGoods: cogs, requestId: p.requestId, orderId: p.orderId, unit: unit });
 
       var rxBase = {
         qtyDispensed: newDispensed, qtyOutstanding: newOutstanding, status: status, lastDispensedAt: tools.serverTimestamp(), lastDispensedBy: p.uid, lastRequestId: p.requestId,
         updatedBy: p.uid, updatedAt: tools.serverTimestamp()
       };
+      if (subst) Object.assign(rxBase, { drugId: p.drugId, drugName: drug.name, substitutedForId: order.medicineId || (rx && rx.drugId) || null, substitutedForName: order.medicineName || (rx && rx.drugName) || null,
+        substitutionReason: subst.reason, substitutionAuthorisedBy: subst.authorisedBy, substitutedBy: p.uid });
       if (rx) tx.update(rxRef, rxBase);
       else tx.set(rxRef, clean(Object.assign({}, stamp, rxBase, {
         id: p.orderId, orderId: p.orderId, patientId: order.patientId, patientName: order.patientName, encounterId: order.encounterId, encounterNo: order.encounterNo, planId: order.planId,
         drugId: p.drugId, drugName: drug.name, prescribedName: order.medicineName, formulation: order.formulation, strength: order.strength, route: order.route,
         dose: doseText(order), instructions: order.instructions, prescriberId: order.prescriberId, prescriberName: order.prescriberName, prescribedAt: order.prescribedAt,
         qtyPrescribed: prescribed, qtyUnit: unit, qtySetBy: qtySetBy, drugLinkedBy: order.medicineId ? "prescriber" : "pharmacist",
-        orderVersion: order.version || 1, supersedes: order.supersedes || null, firstDispensedAt: tools.serverTimestamp()
+        orderVersion: order.version || 1, supersedes: order.supersedes || null, firstDispensedAt: tools.serverTimestamp(), qtyReturned: 0
       })));
       tx.set(doc(db, "pc_audit_logs", "dispense_" + p.requestId), clean({
         businessId: p.businessId, facilityId: p.facilityId, schemaVersion: SCHEMA, createdBy: p.uid, createdAt: tools.serverTimestamp(), clientCreatedAt: p.clientAt || Date.now(),
-        actorUid: p.uid, actorName: p.userName || "", action: "dispense.confirm", recordPath: "prescriptions/" + p.orderId, patientId: order.patientId, encounterId: order.encounterId || null,
+        actorUid: p.uid, actorName: p.userName || "", action: subst ? "dispense.substitute" : "dispense.confirm", substitution: subst ? { reason: subst.reason, authorisedBy: subst.authorisedBy, prescribed: order.medicineName || null } : null, handedOver: !!p.handedOver, recordPath: "prescriptions/" + p.orderId, patientId: order.patientId, encounterId: order.encounterId || null,
         orderId: p.orderId, qty: qty, qtyOutstandingAfter: newOutstanding, drugId: p.drugId, batches: plan.allocations.map(function (a) { return a.batchNumber || "(none)"; }), source: p.source || "online", at: tools.serverTimestamp()
       }));
 
@@ -366,7 +397,9 @@
       var it = items[i];
       try {
         var ids = await candidates(it);
-        var out = await runDispense(tools, Object.assign({}, it.params, { candidateBatchIds: ids, asOf: new Date(it.params.clientAt || Date.now()), source: "offline_replay" }));
+        var rp = Object.assign({}, it.params, { candidateBatchIds: ids, asOf: new Date(it.params.clientAt || Date.now()), source: "offline_replay" });
+        if (hooks.makeHook) rp.hook = hooks.makeHook(it.params);      // payment / credit details travel with the queued request as plain data
+        var out = await runDispense(tools, rp);
         queue.remove(it.requestId); res.done++;
         if (hooks.onDone) hooks.onDone(it, out);
       } catch (err) {

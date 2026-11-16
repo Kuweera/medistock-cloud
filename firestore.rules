@@ -1,6 +1,12 @@
 rules_version = '2';
 
-// MediStock Cloud — multi-shop roles & security (v16)
+// MediStock Cloud — multi-shop roles & security (v17)
+// v17 (dispensing money, reversals, substitution, consumables): ADDS rules for dispense_bills, dispense_handovers, dispense_returns,
+//   dispense_return_ledger, consumable_items, consumable_movements, consumable_bundles; lets prescriptions move DOWN only through a
+//   reversal (matching dispense_returns record in the same commit, per-record ledger capped at the quantity dispensed) and change medicine only
+//   while nothing is dispensed (substitution); RETURN entries written by reversals (id drt_*) are permanent. credit_accounts: a single read of a
+//   MISSING account is allowed for dispensers (same fix as v16); every other credit_accounts rule is UNCHANGED. Sales, receipts, credit_transactions,
+//   drugs and batches rules are UNCHANGED. New permission keys: dispense.reverse, consumables.use, consumables.manage.
 // v16 (dispensing permission fix): reading a document that does not exist yet was DENIED for everyone, owner included, on prescriptions and
 //   dispense_records (the read rules looked at resource.data, which is null for a missing document). The dispensing transaction must read the
 //   first dispense record and the prescription BEFORE they exist (duplicate check), so every dispensing failed with permission-denied.
@@ -148,9 +154,18 @@ service cloud.firestore {
     match /stock_transactions/{docId} {
       allow read: if shopScoped();
       allow update: if shopScoped()
-        && resource.data.get('type', '') != 'DISPENSE' && request.resource.data.get('type', '') != 'DISPENSE';
-      allow delete: if shopScoped() && resource.data.get('type', '') != 'DISPENSE';
+        && resource.data.get('type', '') != 'DISPENSE' && request.resource.data.get('type', '') != 'DISPENSE'
+        && !docId.matches('drt_.*');
+      allow delete: if shopScoped() && resource.data.get('type', '') != 'DISPENSE' && !docId.matches('drt_.*');
+      // v17: entries with id drt_* are written only by a dispensing reversal (they add stock back), together with their return record
       allow create: if shopScopedCreate()
+        && (!docId.matches('drt_.*')
+            || (hasPerm(request.resource.data.businessId, 'dispense.reverse')
+                && request.resource.data.get('type', '') == 'RETURN'
+                && request.resource.data.baseUnitsChange is number && request.resource.data.baseUnitsChange > 0
+                && request.resource.data.returnRequestId is string
+                && docId.matches('drt_' + request.resource.data.returnRequestId + '_[0-9]+')
+                && existsAfter(/databases/$(database)/documents/dispense_returns/$('drt_' + request.resource.data.returnRequestId))))
         && (request.resource.data.get('type', '') != 'DISPENSE'
             || (hasPerm(request.resource.data.businessId, 'dispense.perform')
                 && request.resource.data.baseUnitsChange is number && request.resource.data.baseUnitsChange < 0
@@ -177,7 +192,12 @@ service cloud.firestore {
         && request.resource.data.reason.size() >= 3;
       allow update, delete: if isOwnerOfBusiness(resource.data.businessId);
     }
-    match /credit_accounts/{docId}        { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
+    // v17: get of a MISSING account (dispensing looks for the patient's account before creating it) is allowed for dispensers only; the rest is as before
+    match /credit_accounts/{docId} {
+      allow get: if (resource == null && dispenserMayProbe()) || (resource != null && shopScoped());
+      allow list, update, delete: if shopScoped();
+      allow create: if shopScopedCreate();
+    }
     match /credit_transactions/{docId}    { allow read, update, delete: if shopScoped(); allow create: if shopScopedCreate(); }
 
     match /audit_log/{docId} {
@@ -1074,6 +1094,17 @@ service cloud.firestore {
     // =====================================================================================
     function rxPath(id) { return /databases/$(database)/documents/prescriptions/$(id); }
     function dspPath(id) { return /databases/$(database)/documents/dispense_records/$(id); }
+    function retPath(id) { return /databases/$(database)/documents/dispense_returns/$(id); }
+    function conItemPath(id) { return /databases/$(database)/documents/consumable_items/$(id); }
+    function conMovePath(id) { return /databases/$(database)/documents/consumable_movements/$(id); }
+    function consUse(biz) { return hasPerm(biz, 'consumables.use') || hasPerm(biz, 'dispense.perform') || hasPerm(biz, 'treatment.administer'); }
+    function consView(biz) { return consUse(biz) || hasPerm(biz, 'consumables.manage') || hasPerm(biz, 'dispense.view'); }
+    function consumableMayProbe() {
+      return isSignedIn() && (myProfile().role == 'owner'
+        || (myProfile().role == 'operator' && myProfile().active == true && (myProfile().get('perms', {}).get('consumables.use', false) == true
+            || myProfile().get('perms', {}).get('consumables.manage', false) == true || myProfile().get('perms', {}).get('dispense.perform', false) == true
+            || myProfile().get('perms', {}).get('treatment.administer', false) == true)));
+    }
     function qtyClose(a, b) { return math.abs(a - b) < 0.001; }
     // v16: the dispensing transaction reads documents that do not exist yet (duplicate check). resource is null for those, so the
     // normal read rules (which look at resource.data) would deny it. Only a dispenser may probe for a missing document.
@@ -1134,6 +1165,42 @@ service cloud.firestore {
         && getAfter(dspPath(request.resource.data.lastRequestId + '_0')).data.prescriptionId == rxId
         && qtyClose(getAfter(dspPath(request.resource.data.lastRequestId + '_0')).data.groupQty, request.resource.data.qtyDispensed - resource.data.qtyDispensed);
 
+      // v17 SUBSTITUTION: while NOTHING is dispensed, the medicine may change, with a written reason and the person who agreed. Same commit writes the record.
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && hasPerm(resource.data.businessId, 'dispense.perform')
+        && pcUpdateStamped()
+        && resource.data.qtyDispensed == 0
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qtyDispensed', 'qtyOutstanding', 'status', 'lastDispensedAt', 'lastDispensedBy', 'lastRequestId', 'updatedBy', 'updatedAt',
+            'drugId', 'drugName', 'substitutedForId', 'substitutedForName', 'substitutionReason', 'substitutionAuthorisedBy', 'substitutedBy'])
+        && request.resource.data.qtyDispensed > 0 && request.resource.data.qtyDispensed <= resource.data.qtyPrescribed
+        && qtyClose(request.resource.data.qtyOutstanding, resource.data.qtyPrescribed - request.resource.data.qtyDispensed)
+        && rxStatusOk(request.resource.data)
+        && request.resource.data.lastDispensedBy == request.auth.uid
+        && request.resource.data.substitutionReason is string && request.resource.data.substitutionReason.size() >= 3
+        && request.resource.data.substitutionAuthorisedBy is string && request.resource.data.substitutionAuthorisedBy.size() >= 2
+        && request.resource.data.substitutedBy == request.auth.uid
+        && request.resource.data.lastRequestId is string && request.resource.data.lastRequestId != resource.data.get('lastRequestId', '')
+        && existsAfter(dspPath(request.resource.data.lastRequestId + '_0'))
+        && getAfter(dspPath(request.resource.data.lastRequestId + '_0')).data.prescriptionId == rxId
+        && getAfter(dspPath(request.resource.data.lastRequestId + '_0')).data.drugId == request.resource.data.drugId
+        && qtyClose(getAfter(dspPath(request.resource.data.lastRequestId + '_0')).data.groupQty, request.resource.data.qtyDispensed);
+
+      // v17 REVERSAL: the quantity may go DOWN only together with a dispense_returns record for exactly that quantity (and its ledger, see below)
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && hasPerm(resource.data.businessId, 'dispense.reverse')
+        && pcUpdateStamped()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qtyDispensed', 'qtyOutstanding', 'status', 'qtyReturned', 'lastReturnRequestId', 'lastReturnedBy', 'lastReturnedAt', 'updatedBy', 'updatedAt'])
+        && request.resource.data.qtyDispensed >= 0 && request.resource.data.qtyDispensed < resource.data.qtyDispensed
+        && qtyClose(request.resource.data.qtyOutstanding, resource.data.qtyPrescribed - request.resource.data.qtyDispensed)
+        && request.resource.data.status in ['pending', 'partially_dispensed']
+        && ((request.resource.data.qtyDispensed <= 0.0001) == (request.resource.data.status == 'pending'))
+        && request.resource.data.lastReturnedBy == request.auth.uid
+        && qtyClose(request.resource.data.qtyReturned, resource.data.get('qtyReturned', 0) + (resource.data.qtyDispensed - request.resource.data.qtyDispensed))
+        && request.resource.data.lastReturnRequestId is string
+        && existsAfter(retPath('drt_' + request.resource.data.lastReturnRequestId))
+        && getAfter(retPath('drt_' + request.resource.data.lastReturnRequestId)).data.prescriptionId == rxId
+        && qtyClose(getAfter(retPath('drt_' + request.resource.data.lastReturnRequestId)).data.qty, resource.data.qtyDispensed - request.resource.data.qtyDispensed);
+
       allow delete: if false;
     }
 
@@ -1162,6 +1229,163 @@ service cloud.firestore {
         && getAfter(rxPath(request.resource.data.prescriptionId)).data.lastRequestId == request.resource.data.requestId;
 
       allow update, delete: if false;   // append-only
+    }
+
+    // =====================================================================================
+    // v17 — DISPENSING MONEY, REVERSALS, CONSUMABLES (Developer 1). Nothing here can be deleted.
+    // KNOWN LIMITS: rules cannot query, so "no dose was already given" is checked by the app just before the reversal; what the rules DO enforce is
+    // the handed-over marker, the per-record ledger (never more returned than dispensed), the matching return record, and one-time ids.
+    // =====================================================================================
+    match /dispense_bills/{billId} {
+      allow get: if (resource == null && dispenserMayProbe())
+        || (resource != null && canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'dispense.view'));
+      allow list: if canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'dispense.view');
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'dispense.perform')
+        && request.resource.data.requestId is string && billId == request.resource.data.requestId && request.resource.data.id == billId
+        && request.resource.data.qty is number && request.resource.data.qty > 0
+        && request.resource.data.unitPrice is number && request.resource.data.unitPrice >= 0
+        && request.resource.data.total is number && request.resource.data.total >= 0
+        && math.abs(request.resource.data.total - request.resource.data.qty * request.resource.data.unitPrice) < 0.02
+        && request.resource.data.amountPaid is number && request.resource.data.amountPaid >= 0
+        && request.resource.data.amountOutstanding is number && request.resource.data.amountOutstanding >= 0
+        && math.abs(request.resource.data.amountPaid + request.resource.data.amountOutstanding - request.resource.data.total) < 0.02
+        && request.resource.data.paymentStatus in ['no_charge', 'paid', 'part_paid', 'credit']
+        && request.resource.data.qtyReturned == 0 && request.resource.data.valueReturned == 0
+        && existsAfter(dspPath(billId + '_0'))
+        && getAfter(dspPath(billId + '_0')).data.prescriptionId == request.resource.data.prescriptionId
+        && qtyClose(getAfter(dspPath(billId + '_0')).data.groupQty, request.resource.data.qty);
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && hasPerm(resource.data.businessId, 'dispense.reverse')
+        && pcUpdateStamped()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qtyReturned', 'valueReturned', 'creditReturned', 'lastReturnRequestId', 'updatedBy', 'updatedAt'])
+        && request.resource.data.qtyReturned > resource.data.qtyReturned && request.resource.data.qtyReturned <= resource.data.qty + 0.0001
+        && request.resource.data.valueReturned >= resource.data.valueReturned && request.resource.data.valueReturned <= resource.data.total + 0.02
+        && request.resource.data.creditReturned >= resource.data.creditReturned && request.resource.data.creditReturned <= resource.data.amountOutstanding + 0.02
+        && request.resource.data.lastReturnRequestId is string
+        && existsAfter(retPath('drt_' + request.resource.data.lastReturnRequestId));
+      allow delete: if false;
+    }
+
+    // "this dispensing was handed over to the patient / ward": after this it can no longer be reversed. Append-only.
+    match /dispense_handovers/{hid} {
+      allow get: if (resource == null && dispenserMayProbe())
+        || (resource != null && canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'dispense.view'));
+      allow list: if canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'dispense.view');
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'dispense.perform')
+        && request.resource.data.requestId == hid && request.resource.data.id == hid
+        && request.resource.data.handedOverBy == request.auth.uid
+        && existsAfter(dspPath(hid + '_0'))
+        && getAfter(dspPath(hid + '_0')).data.prescriptionId == request.resource.data.prescriptionId
+        && getAfter(dspPath(hid + '_0')).data.businessId == request.resource.data.businessId
+        && getAfter(dspPath(hid + '_0')).data.facilityId == request.resource.data.facilityId;
+      allow update, delete: if false;
+    }
+
+    // one document per reversal (id drt_<requestId>): a repeated submission can never reverse twice. Append-only.
+    match /dispense_returns/{rid} {
+      allow get: if (resource == null && dispenserMayProbe())
+        || (resource != null && canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'dispense.view'));
+      allow list: if canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'dispense.view');
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'dispense.reverse')
+        && request.resource.data.requestId is string && rid == 'drt_' + request.resource.data.requestId && request.resource.data.id == rid
+        && request.resource.data.qty is number && request.resource.data.qty > 0
+        && request.resource.data.reason is string && request.resource.data.reason.size() >= 3
+        && request.resource.data.confirmedBack == true
+        && request.resource.data.returnedBy == request.auth.uid
+        && existsAfter(rxPath(request.resource.data.prescriptionId))
+        && getAfter(rxPath(request.resource.data.prescriptionId)).data.lastReturnRequestId == request.resource.data.requestId
+        && getAfter(rxPath(request.resource.data.prescriptionId)).data.businessId == request.resource.data.businessId
+        && getAfter(rxPath(request.resource.data.prescriptionId)).data.facilityId == request.resource.data.facilityId;
+      allow update, delete: if false;
+    }
+
+    // running total returned per dispense record; the rule itself caps it at the quantity that record dispensed
+    match /dispense_return_ledger/{recId} {
+      allow get: if (resource == null && dispenserMayProbe())
+        || (resource != null && canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'dispense.view'));
+      allow list: if canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'dispense.view');
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'dispense.reverse')
+        && request.resource.data.recordId == recId && request.resource.data.id == recId
+        && request.resource.data.qtyReturned is number && request.resource.data.qtyReturned > 0
+        && request.resource.data.qtyReturned <= get(dspPath(recId)).data.qtyDispensed + 0.0001
+        && get(dspPath(recId)).data.businessId == request.resource.data.businessId
+        && existsAfter(retPath('drt_' + request.resource.data.lastReturnRequestId));
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && hasPerm(resource.data.businessId, 'dispense.reverse')
+        && pcUpdateStamped()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qtyReturned', 'lastReturnRequestId', 'updatedBy', 'updatedAt'])
+        && request.resource.data.qtyReturned > resource.data.qtyReturned
+        && request.resource.data.qtyReturned <= get(dspPath(recId)).data.qtyDispensed + 0.0001
+        && request.resource.data.lastReturnRequestId != resource.data.lastReturnRequestId
+        && existsAfter(retPath('drt_' + request.resource.data.lastReturnRequestId));
+      allow delete: if false;
+    }
+
+    // ---- Consumables: a separate stock list. Every change to a quantity needs its own movement record in the same commit. ----
+    match /consumable_items/{cid} {
+      allow get: if (resource == null && consumableMayProbe())
+        || (resource != null && canAccessShop(resource.data.businessId, resource.data.facilityId) && consView(resource.data.businessId));
+      allow list: if canAccessShop(resource.data.businessId, resource.data.facilityId) && consView(resource.data.businessId);
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'consumables.manage')
+        && cid.matches('con_.*') && request.resource.data.id == cid
+        && request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 80
+        && request.resource.data.qtyOnHand == 0 && request.resource.data.active == true
+        && request.resource.data.reorderLevel is number && request.resource.data.reorderLevel >= 0;
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId) && pcUpdateStamped() && (
+        // details only (quantity cannot change here)
+        (hasPerm(resource.data.businessId, 'consumables.manage')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'unit', 'category', 'reorderLevel', 'active', 'updatedBy', 'updatedAt'])
+          && request.resource.data.name is string && request.resource.data.name.size() >= 2)
+        ||
+        // quantity: only with the movement that explains it
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qtyOnHand', 'lastMovementId', 'updatedBy', 'updatedAt'])
+          && request.resource.data.qtyOnHand >= 0
+          && request.resource.data.lastMovementId is string
+          && existsAfter(conMovePath(request.resource.data.lastMovementId))
+          && getAfter(conMovePath(request.resource.data.lastMovementId)).data.itemId == cid
+          && getAfter(conMovePath(request.resource.data.lastMovementId)).data.createdBy == request.auth.uid
+          && qtyClose(getAfter(conMovePath(request.resource.data.lastMovementId)).data.qtyChange, request.resource.data.qtyOnHand - resource.data.qtyOnHand))
+      );
+      allow delete: if false;
+    }
+
+    match /consumable_movements/{mid} {
+      allow get: if (resource == null && consumableMayProbe())
+        || (resource != null && canAccessShop(resource.data.businessId, resource.data.facilityId) && consView(resource.data.businessId));
+      allow list: if canAccessShop(resource.data.businessId, resource.data.facilityId) && consView(resource.data.businessId);
+      allow create: if pcCreateOk(request.resource.data)
+        && request.resource.data.requestId is string && request.resource.data.lineNo is int && request.resource.data.lineNo >= 0
+        && mid == request.resource.data.requestId + '_' + string(request.resource.data.lineNo) && request.resource.data.id == mid
+        && request.resource.data.qtyChange is number && request.resource.data.qtyChange != 0
+        && request.resource.data.itemId is string
+        && request.resource.data.type in ['use', 'receive', 'adjust', 'return']
+        && (
+          (request.resource.data.type == 'use' && request.resource.data.qtyChange < 0 && consUse(request.resource.data.businessId))
+          || (request.resource.data.type in ['receive', 'return'] && request.resource.data.qtyChange > 0 && hasPerm(request.resource.data.businessId, 'consumables.manage'))
+          || (request.resource.data.type == 'adjust' && hasPerm(request.resource.data.businessId, 'consumables.manage'))
+        )
+        && (request.resource.data.type in ['use', 'receive'] || (request.resource.data.reason is string && request.resource.data.reason.size() >= 3))
+        && existsAfter(conItemPath(request.resource.data.itemId))
+        && getAfter(conItemPath(request.resource.data.itemId)).data.lastMovementId == mid
+        && getAfter(conItemPath(request.resource.data.itemId)).data.businessId == request.resource.data.businessId
+        && getAfter(conItemPath(request.resource.data.itemId)).data.facilityId == request.resource.data.facilityId
+        && qtyClose(getAfter(conItemPath(request.resource.data.itemId)).data.qtyOnHand, request.resource.data.qtyAfter);
+      allow update, delete: if false;
+    }
+
+    // bundles are only SUGGESTIONS that pre-fill the picker
+    match /consumable_bundles/{bid} {
+      allow read: if canAccessShop(resource.data.businessId, resource.data.facilityId) && consView(resource.data.businessId);
+      allow create: if pcCreateOk(request.resource.data) && hasPerm(request.resource.data.businessId, 'consumables.manage')
+        && request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.items is list && request.resource.data.items.size() <= 30;
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'consumables.manage') && pcUpdateStamped()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'items', 'active', 'updatedBy', 'updatedAt']);
+      allow delete: if false;
     }
 
     // ---- Clinical guidelines (reviewed from Developer 2's proposal; nothing is ever deleted) ----

@@ -159,6 +159,7 @@
   <div class="pill-row" id="tabs">
     <button type="button" class="pill-btn selected" data-t="queue">Prescription queue</button>
     <button type="button" class="pill-btn" data-t="history">Dispensing history</button>
+    <button type="button" class="pill-btn" data-t="cons" id="tabCons">Consumables</button>
     <button type="button" class="pill-btn" data-t="reports" id="tabReports">Reports</button>
   </div>
 
@@ -190,6 +191,11 @@
     <div class="card hidden" id="recCard"></div>
   </div>
 
+  <div id="consTab" class="hidden">
+    <div class="card" id="consUseCard"></div>
+    <div class="card" id="consStockCard"></div>
+  </div>
+
   <div id="reportsTab" class="hidden">
     <div class="card">
       <h2>Pharmacy reports</h2>
@@ -208,6 +214,7 @@
 
 <script src="pc-sched.js"></script>
 <script src="pc-dispense.js"></script>
+<script src="pc-dispense-ext.js"></script>
 <script type="module">
   const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, getDocs, setDoc, collection, onSnapshot, serverTimestamp, query, where, limit, runTransaction, getDocFromCache } = window.top.MC.api(window);
 
@@ -226,7 +233,7 @@
   let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
   let orders = new Map(), rxPartial = new Map(), rxDone = new Map(), stoppedOrders = new Map(), allergies = [], drugs = [];
   let regNos = {}, regAsked = {}, filter = "waiting", tab = "queue", D = null, queue = null, syncing = false, doneLoaded = false, stoppedLoaded = false;
-  let hRecords = [], hMonthLoaded = "", unsubHist = null;
+  let hRecords = [], hMonthLoaded = "", unsubHist = null, creditAccounts = [], consItems = [], consBundles = [], consSel = {}, consCtx = { orderId: "", procedure: "" }, consMsg = null, consBusy = false, consReq = null;
   const can = k => role === "owner" || perms[k] === true;
   const tz = () => (facility && facility.timezone) || "Africa/Kampala";
   const localDay = () => PCS.utcToLocal(Date.now(), tz()).date;
@@ -313,9 +320,10 @@
     const r = allRows().find(x => x.id === id); if (!r) return;
     const i = info(r);
     D = { id: id, row: r, order: r.order, rx: r.rx, drugId: (r.rx && r.rx.drugId) || (r.order && r.order.medicineId) || "", drug: null, batches: [], mode: "fefo", picks: {}, qty: "", qtyOver: "", patientOk: false, medOk: false, allowUnbatched: false,
-      requestId: PCD.newRequestId(), busy: false, msg: "", msgClass: "err", earlier: [], result: null, linkedByMe: false };
+      requestId: PCD.newRequestId(), busy: false, msg: "", msgClass: "err", earlier: [], result: null, linkedByMe: false,
+      price: "", payMode: "", paid: "", method: "Cash", cust: "", phone: "", due: "", handed: !isInjectable(r.order && r.order.route), sub: { on: false, reason: "", by: "" }, rev: null };
     $("actCard").classList.remove("hidden");
-    loadDrug(); renderAct(); renderList();
+    loadDrug(); renderAct(); renderList(); loadRev();
     $("actCard").scrollIntoView({ behavior: "smooth", block: "start" });
     if (r.order && r.order.supersedes) loadEarlier(r.order.supersedes, id);
   }
@@ -329,10 +337,12 @@
     }
     if (D && D.id === forId) { D.earlier = out; renderAct(); }
   }
+  const isInjectable = route => /inject|infus|\bim\b|\biv\b|\bsc\b|intramus|intraven|subcut|drip/i.test(String(route || ""));
   function loadDrug() {
     if (!D) return;
     D.drug = D.drugId ? (drugs.find(d => d.id === D.drugId) || null) : null; D.batches = []; D.batchesLoaded = false;
     if (!D.drug) return;
+    { const lp = PCX.defaultUnitPrice(D.drug); D.price = lp > 0 ? String(lp) : ""; }
     const dr = D.drug;
     getDocs(query(collection(db, "batches"), where("businessId", "==", businessId), where("shopId", "==", facilityId), where("drugId", "==", dr.id))).then(s => {
       if (!D || D.drugId !== dr.id) return;
@@ -363,6 +373,101 @@
   }
   function expLabel(d, asOf) { if (!d) return "No expiry date"; const n = PCD.daysUntil(d, asOf); return d + (n < 0 ? " (EXPIRED)" : n <= 90 ? " (" + n + " days left)" : ""); }
 
+  // ---------------------------------------------------------------- reversal of medicine that was NOT given, and hand-over marker
+  async function loadRev() {
+    if (!D || !D.rx || num(D.rx.qtyDispensed) <= 0) return;
+    const id = D.id, base = c => query(collection(db, c), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("prescriptionId", "==", id), limit(500));
+    D.rev = { loaded: false, records: [], handed: {}, ledger: {}, bills: {}, qty: "", reason: "", back: false, busy: false, msg: "", msgClass: "err", done: null };
+    try {
+      const [r, h, l, b] = await Promise.all(["dispense_records", "dispense_handovers", "dispense_return_ledger", "dispense_bills"].map(c => getDocs(base(c))));
+      if (!D || D.id !== id) return;
+      Object.assign(D.rev, { loaded: true, records: r.docs.map(x => ({ id: x.id, ...x.data() })).sort((a, b) => (tsMs(b.dispensedAt) || num(b.clientDispensedAt)) - (tsMs(a.dispensedAt) || num(a.clientDispensedAt)) || num(b.lineNo) - num(a.lineNo)) });
+      h.docs.forEach(x => { D.rev.handed[x.id] = true; }); l.docs.forEach(x => { D.rev.ledger[x.id] = num(x.data().qtyReturned); }); b.docs.forEach(x => { D.rev.bills[x.id] = x.data(); });
+    } catch (e) { if (D && D.id === id) { D.rev.loaded = false; D.rev.msg = "Could not load what can be reversed: " + PCD.friendlyError(e); } }
+    renderAct();
+  }
+  function revView() {
+    const v = D.rev; if (!v) return null;
+    const open = v.records.map(x => ({ rec: x, left: PCD.r4(num(x.qtyDispensed) - num(v.ledger[x.id])), handed: !!v.handed[x.requestId] })).filter(x => x.left > 0);
+    const reversible = PCD.r4(open.filter(x => !x.handed).reduce((t, x) => t + x.left, 0));
+    return { open: open, reversible: reversible };
+  }
+  function revHtml() {
+    if (!D.rx || num(D.rx.qtyDispensed) <= 0) return "";
+    const v = D.rev; let h = '<div class="step"><h3><i>↩</i>Dispensed but not given? Reverse it</h3>';
+    if (!v || !v.loaded) return h + '<div class="pt-meta">' + esc(v && v.msg ? v.msg : "Checking what can be reversed…") + "</div></div>";
+    const w = revView(), u = (D.rx.qtyUnit || "unit");
+    h += '<div class="hint2">Only medicine that has <b>not</b> been handed over and has <b>not</b> been given (for example an injection still waiting) can be reversed. It goes back into the same batch, once. Anything already handed over or recorded as given is refused.</div>';
+    const reqs = {}; w.open.forEach(x => { (reqs[x.rec.requestId] = reqs[x.rec.requestId] || { handed: x.handed, qty: 0, at: x.rec.dispensedAt || x.rec.clientDispensedAt }).qty = PCD.r4(reqs[x.rec.requestId] ? reqs[x.rec.requestId].qty + x.left : x.left); });
+    h += Object.keys(reqs).map(k => '<div class="pt" style="cursor:default"><div class="pt-name">' + esc(reqs[k].qty) + " " + esc(u) + '(s) <span class="chip ' + (reqs[k].handed ? "bad" : "warn") + '">' + (reqs[k].handed ? "Handed over — cannot reverse" : "Not handed over") + '</span></div><div class="pt-meta">' + esc(fmtWhen(tsMs(reqs[k].at) || num(reqs[k].at))) + (v.bills[k] ? " · " + esc(PCX.PAY_LABEL[v.bills[k].paymentStatus] || "") + " · value " + esc(fmtMoney(v.bills[k].total)) : "") + "</div>" +
+      (!reqs[k].handed && can("dispense.perform") ? '<button type="button" class="btn-small btn-secondary" data-act="handover" data-r="' + esc(k) + '" style="margin-top:6px">Mark as handed over / given out</button>' : "") + "</div>").join("");
+    if (!w.open.length) return h + '<div class="pt-meta">Nothing left to reverse.</div></div>';
+    if (!can("dispense.reverse")) return h + '<div class="warn-box">You do not have permission to reverse a dispensing. Ask the owner to give you "Reverse dispensing" in Users.</div></div>';
+    if (w.reversible <= 0) return h + '<div class="pt-meta">Nothing here can be reversed because it was all handed over.</div></div>';
+    h += '<label>Quantity to reverse (' + esc(u) + "s, up to " + esc(w.reversible) + ')</label><input type="number" inputmode="decimal" step="any" min="0" data-rv="qty" value="' + esc(v.qty) + '">' +
+      '<label>Reason</label><input type="text" data-rv="reason" value="' + esc(v.reason) + '" placeholder="e.g. patient declined, wrong patient, prescription changed">' +
+      '<label class="chk"><input type="checkbox" id="cBack"' + (v.back ? " checked" : "") + '><span>The medicine is physically back, sealed and unused.</span></label>';
+    const ready = v.back && num(v.qty) > 0 && num(v.qty) <= w.reversible + 1e-9 && v.reason.trim().length >= 3 && !v.busy;
+    h += '<button type="button" class="btn-primary" data-act="reverse"' + (ready ? "" : " disabled") + ">" + (v.busy ? "Reversing…" : "Reverse " + esc(num(v.qty) || 0) + " " + esc(u) + "(s)") + "</button>";
+    if (v.msg) h += '<div class="msg ' + v.msgClass + '">' + esc(v.msg) + "</div>";
+    if (v.done) h += '<div class="info-box">' + esc(v.done) + "</div>";
+    return h + "</div>";
+  }
+  async function doReverse() {
+    const v = D && D.rev; if (!v || v.busy) return;
+    if (navigator.onLine === false) { v.msg = "Reversal needs an internet connection (it must be checked against the server). Nothing was changed."; v.msgClass = "err"; renderAct(); return; }
+    const w = revView(), qty = PCD.r4(num(v.qty));
+    if (!confirm("Reverse " + qty + " " + (D.rx.qtyUnit || "unit") + "(s) of " + D.rx.drugName + " for " + D.rx.patientName + "?\n\nIt goes back into stock once. Payment/credit is corrected. This cannot be repeated for the same quantity.")) return;
+    v.busy = true; v.msg = ""; v.requestId = v.requestId || PCD.newRequestId(); renderAct();
+    try {
+      const recs = w.open.filter(x => !x.handed).map(x => ({ id: x.rec.id }));
+      const out = await withTimeout(PCX.runReturn(tools, { businessId: businessId, facilityId: facilityId, uid: me.id, userName: myName, orderId: D.id, requestId: v.requestId, qty: qty, reason: v.reason, confirmedBack: v.back, records: recs, clientAt: Date.now() }), 25000);
+      const msg = (out.duplicate ? "Already reversed earlier. Nothing changed again. " : "Reversed " + out.qty + ". Stock restored. ") + (out.creditReduced > 0 ? "Credit reduced by " + fmtMoney(out.creditReduced) + ". " : "") + (out.refundDue > 0 ? "REFUND DUE to the customer: " + fmtMoney(out.refundDue) + "." : "");
+      if (!out.duplicate && D.rx) D.rx = Object.assign({}, D.rx, { qtyDispensed: out.qtyDispensedAfter });
+      const keepMsg = msg, id = D.id; D.rev = null; await loadRev(); if (D && D.id === id && D.rev) { D.rev.done = keepMsg; renderAct(); }
+      ok(msg.trim()); renderList();
+    } catch (err) { v.busy = false; v.msg = PCD.friendlyError(err); v.msgClass = "err"; renderAct(); }
+  }
+  async function doHandover(requestId) {
+    if (!confirm("Mark this dispensing as handed over / given out?\n\nAfter this it can no longer be reversed here.")) return;
+    try { await PCX.runHandover(tools, { businessId: businessId, facilityId: facilityId, uid: me.id, userName: myName, requestId: requestId }); if (D && D.rev) D.rev.handed[requestId] = true; renderAct(); }
+    catch (e) { if (D && D.rev) { D.rev.msg = PCD.friendlyError(e); D.rev.msgClass = "err"; renderAct(); } }
+  }
+
+  // ---------------------------------------------------------------- price and payment (dispensing never waits for payment; unpaid = credit)
+  function money() {
+    const q = PCD.r4(num(D.qty)), priceOk = D.price !== "" && num(D.price) >= 0, price = priceOk ? num(D.price) : 0;
+    const total = PCX.bill({ qty: q, unitPrice: price, amountPaid: 0 }).total;
+    let paid = 0, valid = priceOk;
+    if (priceOk && total > 0) {
+      if (D.payMode === "full") paid = total; else if (D.payMode === "credit") paid = 0;
+      else if (D.payMode === "part") { paid = num(D.paid); if (!(paid > 0 && paid < total)) valid = false; }
+      else valid = false;
+    }
+    return Object.assign(PCX.bill({ qty: q, unitPrice: price, amountPaid: paid }), { valid: valid });
+  }
+  const fmtMoney = n => Math.round(num(n)).toLocaleString();
+  function billHtml(q) {
+    const dr = D.drug, P = PCX.unitPrices(dr), u = dr.baseUnit || "unit", m = money(), custName = D.cust !== "" ? D.cust : info(D.row).patientName;
+    let h = '<div class="step"><h3><i>5</i>Price and payment</h3>';
+    const refs = [P.base > 0 ? fmtMoney(P.base) + " per " + (P.baseUnit || "unit") : "", P.intermediate > 0 && P.intermediateUnit ? fmtMoney(P.intermediate) + " per " + P.intermediateUnit : "", P.stock > 0 && P.stockUnit ? fmtMoney(P.stock) + " per " + P.stockUnit : ""].filter(Boolean);
+    h += '<div class="pt-meta">Selling prices (as in Sales): ' + (refs.length ? esc(refs.join(" · ")) : "<b>none set in Inventory</b>") + "</div>";
+    h += '<label for="fPrice">Price for each ' + esc(u) + ' (you can change it)</label><input type="number" inputmode="decimal" step="any" min="0" id="fPrice" data-f="price" value="' + esc(D.price) + '">';
+    if (D.price === "") h += '<div class="warn-box">No selling price is set for this medicine. Enter the price, or 0 if there is no charge.</div>';
+    else if (num(D.price) !== PCX.defaultUnitPrice(dr) && PCX.defaultUnitPrice(dr) > 0) h += '<div class="info-box">Price changed from the list price (' + esc(fmtMoney(PCX.defaultUnitPrice(dr))) + '). The change is recorded.</div>';
+    h += '<div class="qty3" style="margin-top:8px"><div><b>' + esc(fmtMoney(m.total)) + "</b><span>Total value</span></div><div><b>" + esc(fmtMoney(m.paid)) + "</b><span>Amount paid</span></div><div class=\"out\"><b>" + esc(fmtMoney(m.outstanding)) + "</b><span>Outstanding (credit)</span></div></div>";
+    if (m.total > 0) {
+      h += '<div class="pill-row" style="margin-top:8px">' + [["full", "Paid in full"], ["part", "Part paid"], ["credit", "Not paid — credit"]].map(x => '<button type="button" class="pill-btn' + (D.payMode === x[0] ? " selected" : "") + '" data-act="pay" data-m="' + x[0] + '">' + x[1] + "</button>").join("") + "</div>";
+      if (!D.payMode) h += '<div class="hint2">Choose how this was paid. The medicine can be dispensed either way: whatever is not paid is recorded as credit.</div>';
+      if (D.payMode === "part") h += '<label for="fPaid">Amount paid now</label><input type="number" inputmode="decimal" step="any" min="0" id="fPaid" data-f="paid" value="' + esc(D.paid) + '">' + (D.paid !== "" && !(num(D.paid) > 0 && num(D.paid) < m.total) ? '<div class="alert-box">Part payment must be more than 0 and less than the total.</div>' : "");
+      if (m.paid > 0) h += '<label>Payment method</label><select id="fMethod">' + PCX.METHODS.map(x => "<option" + (D.method === x ? " selected" : "") + ">" + esc(x) + "</option>").join("") + "</select>";
+      if (m.outstanding > 0) h += '<div class="warn-box">' + esc(fmtMoney(m.outstanding)) + ' will be recorded as <b>credit</b> for the customer below. It appears in Credit and can be paid there.</div><label>Customer name (credit account)</label><input type="text" data-f="cust" value="' + esc(custName) + '"><label>Phone (optional)</label><input type="text" data-f="phone" value="' + esc(D.phone) + '"><label>Expected payment date (optional)</label><input type="date" data-f="due" value="' + esc(D.due) + '">';
+    } else if (D.price !== "") h += '<div class="info-box">No charge: no receipt or credit is recorded.</div>';
+    h += '<div class="pt-meta" style="margin-top:8px">Payment status: <b>' + esc(PCX.PAY_LABEL[m.status]) + "</b>" + (m.paid > 0 ? " · Method: <b>" + esc(D.method) + "</b>" : "") + " · Dispensing status: <b>" + (q > 0 ? "ready to confirm" : "not started") + "</b></div>";
+    h += '<label class="chk" style="margin-top:8px"><input type="checkbox" id="cHand"' + (D.handed ? " checked" : "") + '><span>This medicine is handed to the patient / ward now. (Leave unticked for an injection that will be given later: it can then still be reversed if it is not given. Once ticked it cannot be reversed here.)</span></label></div>';
+    return h;
+  }
+
   function renderAct() {
     const card = $("actCard"); if (!D) { card.classList.add("hidden"); return; }
     card.classList.remove("hidden");
@@ -378,9 +483,11 @@
     const qi = queuedItems(D.id);
     if (qi.length) h += '<div class="warn-box">' + qi.length + " dispensing on this phone is waiting to sync" + (qi.some(x => x.status === "conflict") ? " and has a problem (see the box at the top)" : "") + ". Those quantities are already taken off what can be dispensed here.</div>";
     if (closed) {
+      h += revHtml();
       h += r.group === "stopped" ? '<div class="alert-box">This prescription was stopped or replaced. It cannot be dispensed.</div>' : '<div class="info-box">This prescription has been fully dispensed.</div>';
       h += '<button type="button" class="btn-primary" data-act="close">Close</button>'; card.innerHTML = h; return;
     }
+    if (!closed && D.rx && num(D.rx.qtyDispensed) > 0) h += revHtml();
     if (!can("dispense.perform")) { h += '<div class="warn-box">You can view this prescription but you do not have permission to dispense. Ask the owner to give you the Dispense permission in Users.</div><button type="button" class="btn-primary" data-act="close">Close</button>'; card.innerHTML = h; return; }
 
     // 1 patient
@@ -397,6 +504,17 @@
       h += '<label for="dPick">Medicine in your stock list</label><input type="text" id="dPick" list="drugList" placeholder="Start typing the medicine name" autocomplete="off" value="' + esc(dr ? dr.name : "") + '">';
       if (sug.length) h += '<div class="pill-row" style="margin-top:8px">' + sug.map(d => '<button type="button" class="pill-btn' + (dr && dr.id === d.id ? " selected" : "") + '" data-act="pickdrug" data-d="' + esc(d.id) + '">' + esc(d.name) + "</button>").join("") + "</div>";
     }
+    const drugChanged = !!((D.order && D.order.medicineId && D.order.medicineId !== D.drugId) || (D.rx && D.rx.drugId && D.rx.drugId !== D.drugId));
+    if (linked && num(D.rx && D.rx.qtyDispensed) <= 0) {
+      if (!D.sub.on && !drugChanged) h += '<button type="button" class="btn-small btn-secondary" data-act="subon" style="margin-top:8px">Give a different stock item (substitution)</button>';
+      else {
+        h += '<div class="warn-box"><b>Substitution.</b> You are giving a different medicine from the one prescribed. Write the reason and the name of the person who agreed (for example the prescriber). Not allowed once any of this prescription has been dispensed: reverse the unused quantity first.</div>' +
+          '<label for="dPick">Stock item to give instead</label><input type="text" id="dPick" list="drugList" placeholder="Start typing the medicine name" autocomplete="off" value="' + esc(dr ? dr.name : "") + '">' +
+          '<label>Reason</label><input type="text" data-f="sub.reason" value="' + esc(D.sub.reason) + '" placeholder="e.g. prescribed brand out of stock">' +
+          '<label>Agreed by</label><input type="text" data-f="sub.by" value="' + esc(D.sub.by) + '" placeholder="e.g. Dr Okello (prescriber)">' +
+          '<button type="button" class="btn-small btn-secondary" data-act="suboff" style="margin-top:8px">Cancel substitution</button>';
+      }
+    } else if (linked && drugChanged) h += '<div class="alert-box">Part of this prescription was already dispensed. Reverse the unused quantity below before substituting.</div>';
     if (dr) {
       h += '<div class="pt-meta" style="margin-top:6px">Stock item: <b>' + esc(dr.name) + "</b>" + (dr.dosageForm ? " · " + esc(dr.dosageForm) : "") + "</div>";
       const wantForm = String(i.formulation).trim().toLowerCase(), haveForm = String(dr.dosageForm || "").trim().toLowerCase();
@@ -443,10 +561,12 @@
       if (pl.error) h += '<div class="alert-box">' + esc(pl.error) + "</div>";
       h += "</div>";
 
-      // 5 confirm
+      h += billHtml(q);
+      // 6 confirm
       const unbOk = !st.unbatched || D.allowUnbatched;
-      const ready = D.batchesLoaded && D.patientOk && D.medOk && q > 0 && q <= st.outstanding + 1e-9 && st.outstanding > 0 && pl.short <= 0 && !pl.error && pl.allocations.length > 0 && unbOk && st.usable >= q && !D.busy;
-      h += '<div class="step"><h3><i>5</i>Confirm dispensing</h3><div class="pt-meta">' + (D.busy ? "Saving…" : "A dispensing record is created and stock is reduced together, in one step. Records cannot be edited afterwards.") + "</div>" +
+      const subOk = !drugChanged || (D.sub.on && D.sub.reason.trim().length >= 3 && D.sub.by.trim().length >= 2);
+      const ready = money().valid && subOk && D.batchesLoaded && D.patientOk && D.medOk && q > 0 && q <= st.outstanding + 1e-9 && st.outstanding > 0 && pl.short <= 0 && !pl.error && pl.allocations.length > 0 && unbOk && st.usable >= q && !D.busy;
+      h += '<div class="step"><h3><i>6</i>Confirm dispensing</h3><div class="pt-meta">' + (D.busy ? "Saving…" : "A dispensing record is created and stock is reduced together, in one step. Records cannot be edited afterwards.") + "</div>" +
         '<button type="button" class="btn-primary" data-act="confirm"' + (ready ? "" : " disabled") + ">" + (D.busy ? "Saving…" : "Confirm dispensing of " + esc(q || 0) + " " + esc(u) + "(s)") + "</button>";
       if (navigator.onLine === false) h += '<div class="warn-box">No internet. If you confirm, this is saved on this phone as <b>PENDING SYNC</b>. Stock is <b>not</b> reduced until the phone reconnects and the server confirms it.</div>';
       h += "</div>";
@@ -464,6 +584,7 @@
     L.push("Quantity dispensed: " + rec.qty + " " + rec.unit + "(s)");
     (rec.lines || []).forEach(l => L.push("  Batch " + (l.batchNumber || "none") + (l.expiryDate ? " (exp " + l.expiryDate + ")" : "") + ": " + l.qty));
     if (rec.total != null) L.push("Prescription: " + rec.total + " prescribed · " + rec.dispensedTo + " dispensed so far · " + rec.outstanding + " outstanding");
+    if (rec.bill) { L.push("Price per " + rec.unit + ": " + fmtMoney(rec.bill.unitPrice), "Total value: " + fmtMoney(rec.bill.total), "Amount paid: " + fmtMoney(rec.bill.paid) + (rec.bill.paid > 0 && rec.bill.method ? " (" + rec.bill.method + ")" : ""), "Outstanding (credit): " + fmtMoney(rec.bill.outstanding), "Payment status: " + (PCX.PAY_LABEL[rec.bill.status] || rec.bill.status)); }
     L.push("Dispensed by: " + rec.by, "", "Dispensing does not mean the medicine was given to the patient. The nurse records administration separately.");
     return L.join("\n");
   }
@@ -474,7 +595,7 @@
         : R.duplicate ? '<div class="info-box">This dispensing was already confirmed earlier. Nothing was taken off stock a second time.</div>' : '<div class="info-box">Confirmed by the server. Stock has been reduced.</div>') +
       '<div class="recordtext">' + esc(R.text) + "</div>" +
       '<div class="row" style="margin-top:10px"><button type="button" class="btn-small btn-secondary" data-act="share">Share / copy</button><button type="button" class="btn-small btn-secondary" data-act="print">Print</button></div>' +
-      '<button type="button" class="btn-primary" data-act="close">Done</button>';
+      '<button type="button" class="btn-small btn-secondary" data-act="gocons" style="margin-top:8px;width:100%">Record consumables used (optional)</button><button type="button" class="btn-primary" data-act="close">Done</button>';
   }
 
   // ---------------------------------------------------------------- confirming
@@ -482,7 +603,24 @@
     const q = PCD.r4(num(D.qty)), unbOk = st.unbatched && D.allowUnbatched;
     return { businessId: businessId, facilityId: facilityId, uid: me.id, userName: myName, orderId: D.id, drugId: D.drugId, qty: q, requestId: D.requestId,
       mode: D.mode, picks: D.mode === "manual" ? Object.keys(D.picks).map(k => ({ batchId: k, qty: num(D.picks[k]) })).filter(p => p.qty > 0) : [], allowUnbatched: !!unbOk,
-      qtyPrescribedOverride: st.known ? null : num(D.qtyOver) || null, patientConfirmed: D.patientOk, medicineConfirmed: D.medOk, localDay: localDay(), clientAt: Date.now() };
+      qtyPrescribedOverride: st.known ? null : num(D.qtyOver) || null, patientConfirmed: D.patientOk, medicineConfirmed: D.medOk, localDay: localDay(), clientAt: Date.now(),
+      handedOver: !!D.handed, substitution: D.sub.on ? { reason: D.sub.reason.trim(), authorisedBy: D.sub.by.trim() } : null, finance: financeOf(q) };
+  }
+  function financeOf(q) {
+    const m = money(), name = (D.cust !== "" ? D.cust : info(D.row).patientName).trim();
+    const acct = m.outstanding > 0 ? creditAccounts.find(a => String(a.name || "").toLowerCase() === name.toLowerCase()) : null;
+    return { qty: q, drugId: D.drugId, unitPrice: m.unitPrice, listPrice: PCX.defaultUnitPrice(D.drug), amountPaid: m.paid, method: m.paid > 0 ? D.method : null, customerName: name, customerPhone: D.phone.trim() || null,
+      customerId: acct ? acct.id : null, dueDate: D.due || null, businessId: businessId, facilityId: facilityId, uid: me.id, userName: myName, patientId: D.order ? D.order.patientId : (D.rx && D.rx.patientId) };
+  }
+  async function creditLimitOk(f, outstanding) {
+    if (!(outstanding > 0) || !f.customerId) return true;
+    const a = creditAccounts.find(x => x.id === f.customerId); if (!a || !(num(a.creditLimit) > 0)) return true;
+    try {
+      const s = await getDocs(query(collection(db, "credit_transactions"), where("businessId", "==", businessId), where("shopId", "==", facilityId), where("customerId", "==", a.id), limit(3000)));
+      const bal = s.docs.reduce((t, d) => t + num(d.data().balanceChange), 0);
+      if (bal + outstanding > num(a.creditLimit)) return confirm(a.name + " would exceed their credit limit by " + fmtMoney(bal + outstanding - a.creditLimit) + ". Continue anyway? (The medicine can still be dispensed; this only warns.)");
+    } catch (e) {}
+    return true;
   }
   function makeRecord(params, lines, extra) {
     const i = info(D.row), dr = D.drug;
@@ -491,7 +629,7 @@
   }
   function withTimeout(p, ms) { return new Promise((res, rej) => { const t = setTimeout(() => { const e = new Error("timed out"); e.code = "unavailable"; rej(e); }, ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); }); }
   function queueIt(params, st, lines) {
-    const rec = makeRecord(params, lines, { pending: true });
+    const rec = makeRecord(params, lines, { pending: true, bill: (() => { const m = money(); return m.total > 0 ? { unitPrice: m.unitPrice, total: m.total, paid: m.paid, outstanding: m.outstanding, status: m.status, method: m.paid > 0 ? D.method : "" } : null; })() });
     const okSaved = queue.add({ requestId: params.requestId, createdAt: Date.now(), summary: { patientName: rec.patientName, drugName: rec.drugName, qty: params.qty, unit: rec.unit }, params: params });
     if (!okSaved) { D.msg = "This could not be saved on the phone (storage is full or blocked). Nothing was dispensed in the system. Try again when you are online."; D.msgClass = "err"; D.busy = false; renderAct(); return; }
     D.result = { pending: true, text: recordText(rec) }; D.busy = false; ok("Saved on this phone as PENDING SYNC. The server has not confirmed it and stock has not been reduced yet."); renderAct(); renderSync(); renderList();
@@ -503,15 +641,17 @@
     const params = buildParams(st);
     const i = info(D.row), dr = D.drug;
     const summary = "Dispense " + params.qty + " " + (dr.baseUnit || "unit") + "(s) of " + dr.name + " to " + i.patientName + "?\n\n" + pl.allocations.map(a => "Batch " + (a.batchNumber || "none") + (a.expiryDate ? " (exp " + a.expiryDate + ")" : "") + ": " + a.qty).join("\n");
-    if (!confirm(summary)) return;
+    const mny = money();
+    if (!confirm(summary + "\n\nTotal " + fmtMoney(mny.total) + " · paid " + fmtMoney(mny.paid) + " · credit " + fmtMoney(mny.outstanding) + (params.handedOver ? "" : "\n(Not handed over yet: can still be reversed if not given.)"))) return;
+    if (!(await creditLimitOk(params.finance, mny.outstanding))) return;
     D.busy = true; D.msg = ""; $("doneMsg").textContent = ""; renderAct();
     if (navigator.onLine === false) {
       if (confirm("There is no internet connection.\n\nSave this as PENDING SYNC on this phone? Stock will NOT be reduced until the server confirms it when you are back online.")) return queueIt(params, st, pl.allocations);
       D.busy = false; renderAct(); return;
     }
     try {
-      const out = await withTimeout(PCD.runDispense(tools, Object.assign({}, params, { candidateBatchIds: D.batches.map(b => b.id), asOf: new Date(), source: "online" })), 25000);
-      const rec = makeRecord(params, out.lines || pl.allocations, { total: out.duplicate ? null : st.prescribed, dispensedTo: out.duplicate ? null : PCD.r4(st.dispensed + params.qty), outstanding: out.duplicate ? null : out.outstanding });
+      const out = await withTimeout(PCD.runDispense(tools, Object.assign({}, params, { hook: mny.total > 0 ? PCX.financeHook(tools, params.finance) : null, candidateBatchIds: D.batches.map(b => b.id), asOf: new Date(), source: "online" })), 25000);
+      const rec = makeRecord(params, out.lines || pl.allocations, { total: out.duplicate ? null : st.prescribed, dispensedTo: out.duplicate ? null : PCD.r4(st.dispensed + params.qty), outstanding: out.duplicate ? null : out.outstanding, bill: mny.total > 0 ? { unitPrice: mny.unitPrice, total: mny.total, paid: mny.paid, outstanding: mny.outstanding, status: mny.status, method: mny.paid > 0 ? D.method : "" } : null });
       D.result = { duplicate: !!out.duplicate, text: recordText(rec) }; D.busy = false; D.requestId = PCD.newRequestId(); renderAct(); renderList();
       ok("Dispensing confirmed by the server.");
     } catch (err) {
@@ -538,7 +678,7 @@
     if (syncing || !queue || !queue.list().some(x => x.status !== "conflict") || navigator.onLine === false) return;
     syncing = true; renderSync();
     try {
-      const res = await PCD.syncQueue(tools, queue, async it => (await getDocs(query(collection(db, "batches"), where("businessId", "==", businessId), where("shopId", "==", facilityId), where("drugId", "==", it.params.drugId)))).docs.map(d => d.id), {});
+      const res = await PCD.syncQueue(tools, queue, async it => (await getDocs(query(collection(db, "batches"), where("businessId", "==", businessId), where("shopId", "==", facilityId), where("drugId", "==", it.params.drugId)))).docs.map(d => d.id), { makeHook: prm => (prm.finance && prm.finance.unitPrice * prm.qty > 0) ? PCX.financeHook(tools, prm.finance) : null });
       if (!quiet || res.done || res.conflicts) ok(res.done + " confirmed by the server" + (res.conflicts ? ", " + res.conflicts + " with a problem" : "") + (res.waiting ? ", " + res.waiting + " still waiting" : "") + ".");
     } catch (e) { ok("Could not send waiting items: " + PCD.friendlyError(e)); }
     syncing = false; renderSync(); renderList(); if (D && !D.result) loadDrug();
@@ -551,6 +691,63 @@
       await setDoc(doc(db, "pc_audit_logs", "dispq_" + requestId), { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now(), actorUid: me.id, actorName: myName, action: "dispense.queue_discard", recordPath: "prescriptions/" + it.params.orderId, patientId: null, orderId: it.params.orderId, qty: it.params.qty, reason: reason.trim(), lastProblem: it.message || "", at: serverTimestamp() });
     } catch (e) { if (!confirm("The removal could not be logged (no connection or no permission). Remove it from this phone anyway?")) return; }
     queue.remove(requestId); renderSync(); renderList();
+  }
+
+  // ---------------------------------------------------------------- consumables (selected, never fixed)
+  const canUseCons = () => can("consumables.use") || can("consumables.manage") || can("dispense.perform") || can("treatment.administer");
+  function renderCons() {
+    const use = $("consUseCard"), stock = $("consStockCard");
+    if (!canUseCons() && !can("dispense.view")) { use.innerHTML = '<div class="empty">You do not have permission to use consumables.</div>'; stock.innerHTML = ""; return; }
+    const act = consItems.filter(i => i.active !== false), rows = allRows().filter(r => r.rx && num(r.rx.qtyDispensed) > 0 || r.group === "waiting" || r.group === "partial");
+    let h = "<h2>Consumables used</h2><div class=\"hint2\">Pick only what was <b>actually used</b> and how many. Nothing is added for you. This is separate from the medicines dispensed and takes stock from the consumables list below.</div>";
+    h += '<label>For which patient / prescription (optional)</label><select id="cxOrder"><option value="">— not linked —</option>' + rows.map(r => { const i = info(r); return '<option value="' + esc(r.id) + '"' + (consCtx.orderId === r.id ? " selected" : "") + ">" + esc(i.patientName + " · " + i.medicine) + "</option>"; }).join("") + "</select>";
+    h += '<label>Procedure / reason</label><input type="text" id="cxProc" value="' + esc(consCtx.procedure) + '" placeholder="e.g. IM injection, wound dressing">';
+    if (consBundles.length) h += '<div class="hint2" style="margin-top:8px">Suggestions (these only fill the boxes below; you can change or clear them):</div><div class="pill-row">' + consBundles.filter(b => b.active !== false).map(b => '<button type="button" class="pill-btn" data-cx="bundle" data-b="' + esc(b.id) + '">' + esc(b.name) + "</button>").join("") + "</div>";
+    h += act.length ? '<div class="tablewrap"><table><tr><th>Item</th><th class="n">In stock</th><th class="n">Used</th></tr>' + act.map(i => '<tr><td>' + esc(i.name) + (num(i.qtyOnHand) <= 0 ? ' <span class="chip bad">out</span>' : "") + '</td><td class="n">' + esc(i.qtyOnHand) + " " + esc(i.unit || "") + '</td><td class="n"><input type="number" inputmode="decimal" step="any" min="0" style="width:80px" data-cq="' + esc(i.id) + '" value="' + esc(consSel[i.id] != null ? consSel[i.id] : "") + '"></td></tr>').join("") + "</table></div>" : '<div class="empty">No consumables yet. Add them in the stock list below.</div>';
+    const chosen = Object.keys(consSel).filter(k => num(consSel[k]) > 0);
+    h += '<button type="button" class="btn-primary" data-cx="use"' + (chosen.length && !consBusy && canUseCons() ? "" : " disabled") + ">" + (consBusy ? "Saving…" : "Record " + chosen.length + " consumable(s) used") + "</button>";
+    if (can("consumables.manage") && chosen.length) h += ' <button type="button" class="btn-small btn-secondary" data-cx="savebundle" style="margin-top:8px">Save these as a suggestion</button>';
+    if (consMsg) h += '<div class="msg ' + consMsg.c + '">' + esc(consMsg.t) + "</div>";
+    use.innerHTML = h;
+    const low = PCX.lowStock(consItems);
+    let g = "<h2>Consumables stock</h2>" + (low.length ? '<div class="warn-box">Low or out of stock: ' + low.map(x => esc(x.name) + " (" + esc(x.qtyOnHand) + ")").join(", ") + "</div>" : "");
+    g += consItems.length ? '<div class="tablewrap"><table><tr><th>Item</th><th class="n">On hand</th><th class="n">Reorder at</th>' + (can("consumables.manage") ? "<th></th>" : "") + "</tr>" + consItems.map(i => "<tr><td>" + esc(i.name) + (i.active === false ? " (off)" : "") + '</td><td class="n">' + esc(i.qtyOnHand) + " " + esc(i.unit || "") + '</td><td class="n">' + esc(i.reorderLevel) + "</td>" + (can("consumables.manage") ? '<td><button type="button" class="btn-small btn-secondary" data-cx="receive" data-i="' + esc(i.id) + '">Receive</button> <button type="button" class="btn-small btn-secondary" data-cx="adjust" data-i="' + esc(i.id) + '">Adjust</button></td>' : "") + "</tr>").join("") + "</table></div>" : "";
+    if (can("consumables.manage")) g += '<div class="hint2">Every change needs a movement record, and an adjustment needs a reason. Nothing is deleted.</div><div class="row"><div><label>New item</label><input type="text" id="niName" placeholder="e.g. Syringe 5ml"></div><div><label>Unit</label><input type="text" id="niUnit" placeholder="piece"></div><div><label>Reorder at</label><input type="number" id="niLvl" min="0" value="0"></div></div><button type="button" class="btn-small btn-secondary" data-cx="newitem">Add consumable</button>';
+    stock.innerHTML = g;
+  }
+  function cxMsg(t, c) { consMsg = { t: t, c: c || "err" }; renderCons(); }
+  async function consAction(a, el) {
+    if (a === "bundle") {
+      const b = consBundles.find(x => x.id === el.dataset.b); PCX.suggestFromBundle(b, consItems).forEach(x => { consSel[x.itemId] = x.qty; }); consMsg = null; return renderCons();
+    }
+    if (a === "use") {
+      if (consBusy) return; const items = Object.keys(consSel).filter(k => num(consSel[k]) > 0).map(k => ({ itemId: k, qty: num(consSel[k]) }));
+      const row = consCtx.orderId ? allRows().find(r => r.id === consCtx.orderId) : null, i = row ? info(row) : null;
+      if (!confirm("Record these consumables as used?\n\n" + items.map(x => (consItems.find(c => c.id === x.itemId) || {}).name + " × " + x.qty).join("\n"))) return;
+      consBusy = true; consReq = consReq || PCD.newRequestId(); renderCons();
+      try {
+        const out = await withTimeout(PCX.runConsumableUse(tools, { businessId: businessId, facilityId: facilityId, uid: me.id, userName: myName, requestId: consReq, items: items, patientId: i ? i.patientId : null, patientName: i ? i.patientName : null,
+          orderId: consCtx.orderId || null, procedure: consCtx.procedure.trim() || null, clientAt: Date.now() }), 25000);
+        consSel = {}; consReq = null; consBusy = false; cxMsg(out.duplicate ? "Already recorded earlier. Stock was not reduced again." : "Recorded: " + out.lines.map(l => l.name + " × " + l.qty).join(", ") + ".", "ok");
+      } catch (e) { consBusy = false; if (PCD.isOfflineError(e)) cxMsg("No internet. Nothing was recorded. Try again when online (it is safe to retry).", "err"); else { consReq = null; cxMsg(PCD.friendlyError(e), "err"); } }
+      return;
+    }
+    if (a === "newitem") {
+      try { await PCX.createConsumable(tools, { businessId: businessId, facilityId: facilityId, uid: me.id, name: $("niName").value, unit: $("niUnit").value, reorderLevel: $("niLvl").value }); cxMsg("Added. Use Receive to put stock in.", "ok"); } catch (e) { cxMsg(PCD.friendlyError(e), "err"); }
+      return;
+    }
+    if (a === "receive" || a === "adjust") {
+      const it = consItems.find(x => x.id === el.dataset.i); if (!it) return;
+      const q = prompt((a === "receive" ? "How many " : "Change in ") + (it.unit || "units") + (a === "receive" ? " were received?" : " for " + it.name + "? (use a minus for a loss, e.g. -3)")); if (q === null || !isFinite(Number(q)) || Number(q) === 0) return;
+      let reason = ""; if (a === "adjust") { reason = prompt("Reason for this adjustment (required, e.g. breakage, expired, count correction)"); if (reason === null) return; }
+      try { await PCX.runConsumableAdjust(tools, { businessId: businessId, facilityId: facilityId, uid: me.id, userName: myName, requestId: PCD.newRequestId(), itemId: it.id, kind: a, qty: Number(q), reason: reason }); cxMsg(it.name + " updated.", "ok"); } catch (e) { cxMsg(PCD.friendlyError(e), "err"); }
+      return;
+    }
+    if (a === "savebundle") {
+      const name = prompt("Name for this suggestion (e.g. IM injection set)"); if (!name || name.trim().length < 2) return;
+      const items = Object.keys(consSel).filter(k => num(consSel[k]) > 0).map(k => ({ itemId: k, qty: num(consSel[k]) }));
+      try { await setDoc(doc(db, "consumable_bundles", "bun_" + PCD.newRequestId().slice(0, 12)), { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), name: name.trim(), items: items, active: true }); cxMsg("Saved. It only suggests quantities; you still choose each time.", "ok"); } catch (e) { cxMsg(PCD.friendlyError(e), "err"); }
+    }
   }
 
   // ---------------------------------------------------------------- history
@@ -625,6 +822,9 @@
     onSnapshot(query(collection(db, "prescriptions"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "partially_dispensed"), limit(500)), s => { rxPartial = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); renderList(); if (D && !D.result) { D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row; renderAct(); } }, () => {});
     onSnapshot(query(collection(db, "pc_allergies"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "active"), limit(1000)), s => { allergies = s.docs.map(x => ({ id: x.id, ...x.data() })); renderList(); }, () => {});
     onSnapshot(query(collection(db, "drugs"), where("businessId", "==", businessId), where("shopId", "==", facilityId)), s => { drugs = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.name && d.active !== false).sort((a, b) => String(a.name).localeCompare(String(b.name))); }, () => {});
+    onSnapshot(query(collection(db, "credit_accounts"), where("businessId", "==", businessId), where("shopId", "==", facilityId)), s => { creditAccounts = s.docs.map(d => ({ id: d.id, ...d.data() })); }, () => {});
+    onSnapshot(query(collection(db, "consumable_items"), where("businessId", "==", businessId), where("facilityId", "==", facilityId)), s => { consItems = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => String(a.name).localeCompare(String(b.name))); if (tab === "cons") renderCons(); }, () => {});
+    onSnapshot(query(collection(db, "consumable_bundles"), where("businessId", "==", businessId), where("facilityId", "==", facilityId)), s => { consBundles = s.docs.map(d => ({ id: d.id, ...d.data() })); if (tab === "cons") renderCons(); }, () => {});
     window.addEventListener("online", () => { syncNow(true); if (D && !D.result) renderAct(); });
     window.addEventListener("offline", () => { if (D && !D.result) renderAct(); });
     setInterval(() => { syncNow(true); }, 30000); setTimeout(() => syncNow(true), 3000);
@@ -650,9 +850,13 @@
   }));
   document.querySelectorAll("#tabs .pill-btn").forEach(b => b.addEventListener("click", () => {
     tab = b.dataset.t; document.querySelectorAll("#tabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b));
-    $("queueTab").classList.toggle("hidden", tab !== "queue"); $("historyTab").classList.toggle("hidden", tab !== "history"); $("reportsTab").classList.toggle("hidden", tab !== "reports");
+    $("queueTab").classList.toggle("hidden", tab !== "queue"); $("historyTab").classList.toggle("hidden", tab !== "history"); $("reportsTab").classList.toggle("hidden", tab !== "reports"); $("consTab").classList.toggle("hidden", tab !== "cons");
+    if (tab === "cons") renderCons();
     if (tab === "history") startHistory(); if (tab === "reports") { startHistory(); renderReports(); }
   }));
+  $("consTab").addEventListener("click", e => { const b = e.target.closest("[data-cx]"); if (b) consAction(b.dataset.cx, b); });
+  $("consTab").addEventListener("input", e => { const t = e.target; if (t.dataset && t.dataset.cq) { consSel[t.dataset.cq] = t.value; const btn = document.querySelector('#consTab [data-cx="use"]'); if (btn) { const n = Object.keys(consSel).filter(k => num(consSel[k]) > 0).length; btn.disabled = !n || consBusy || !canUseCons(); btn.textContent = "Record " + n + " consumable(s) used"; } } else if (t.id === "cxProc") consCtx.procedure = t.value; });
+  $("consTab").addEventListener("change", e => { if (e.target.id === "cxOrder") consCtx.orderId = e.target.value; });
   $("list").addEventListener("click", e => { const el = e.target.closest("[data-id]"); if (el) openRow(el.dataset.id); });
   $("hList").addEventListener("click", e => { const el = e.target.closest("[data-g]"); if (el) showRecord(el.dataset.g); });
   $("syncList").addEventListener("click", e => {
@@ -669,17 +873,29 @@
     if (!D) return; const t = e.target;
     if (t.id === "qDo") { D.qty = t.value; D.msg = ""; renderAct(); const n = $("qDo"); if (n) { n.focus(); const v = n.value; n.value = ""; n.value = v; } }
     else if (t.id === "qOver") { D.qtyOver = t.value; renderAct(); const n = $("qOver"); if (n) { n.focus(); const v = n.value; n.value = ""; n.value = v; } }
+    else if (t.dataset && t.dataset.f) {
+      const k = t.dataset.f; if (k.indexOf("sub.") === 0) D.sub[k.slice(4)] = t.value; else D[k] = t.value; renderAct();
+      const n = document.querySelector('#actCard [data-f="' + k + '"]'); if (n) { n.focus(); const v = n.value; if (n.type === "text" || n.type === "number") { n.value = ""; n.value = v; } }
+    }
+    else if (t.dataset && t.dataset.rv) { D.rev[t.dataset.rv] = t.value; const n = document.querySelector('#actCard [data-rv="' + t.dataset.rv + '"]'); if (t.dataset.rv !== "qty" && t.dataset.rv !== "reason") renderAct(); }
     else if (t.id === "dPick") { const d = drugs.find(x => x.name === t.value); if (d && d.id !== D.drugId) { D.drugId = d.id; D.medOk = false; D.qty = ""; D.picks = {}; loadDrug(); renderAct(); } }
     else if (t.dataset && t.dataset.pick) { D.picks[t.dataset.pick] = t.value; renderAct(); const n = document.querySelector('[data-pick="' + t.dataset.pick + '"]'); if (n) { n.focus(); const v = n.value; n.value = ""; n.value = v; } }
   });
   $("actCard").addEventListener("change", e => {
     if (!D) return; const t = e.target;
-    if (t.id === "cPat") { D.patientOk = t.checked; renderAct(); } else if (t.id === "cMed") { D.medOk = t.checked; renderAct(); } else if (t.id === "cUnb") { D.allowUnbatched = t.checked; renderAct(); }
+    if (t.id === "fMethod") { D.method = t.value; renderAct(); } else if (t.id === "cHand") { D.handed = t.checked; renderAct(); } else if (t.id === "cBack") { D.rev.back = t.checked; renderAct(); } else if (t.dataset && t.dataset.f === "due") { D.due = t.value; }
+    else if (t.id === "cPat") { D.patientOk = t.checked; renderAct(); } else if (t.id === "cMed") { D.medOk = t.checked; renderAct(); } else if (t.id === "cUnb") { D.allowUnbatched = t.checked; renderAct(); }
   });
   $("actCard").addEventListener("click", e => {
     const b = e.target.closest("[data-act]"); if (!b || !D) return; const a = b.dataset.act;
     if (a === "close") { D = null; $("actCard").classList.add("hidden"); renderList(); }
     else if (a === "confirm") doConfirm();
+    else if (a === "pay") { D.payMode = b.dataset.m; renderAct(); }
+    else if (a === "subon") { D.sub.on = true; renderAct(); }
+    else if (a === "suboff") { D.sub = { on: false, reason: "", by: "" }; const o = D.order && D.order.medicineId; if (o) { D.drugId = o; D.medOk = false; D.qty = ""; D.picks = {}; loadDrug(); } renderAct(); }
+    else if (a === "handover") doHandover(b.dataset.r);
+    else if (a === "reverse") doReverse();
+    else if (a === "gocons") { consCtx.orderId = D.id; $("tabCons").click(); }
     else if (a === "pickdrug") { D.drugId = b.dataset.d; D.medOk = false; D.qty = ""; D.picks = {}; loadDrug(); renderAct(); }
     else if (a === "manual") { const p = plan(stockState()); D.picks = {}; p.allocations.forEach(x => { D.picks[x.batchId] = x.qty; }); D.mode = "manual"; renderAct(); }
     else if (a === "auto") { D.mode = "fefo"; D.picks = {}; renderAct(); }
