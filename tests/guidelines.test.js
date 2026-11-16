@@ -3,7 +3,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const PCG = require("../pc-guidelines.js");
 
-const full = (o) => Object.assign({ title: "T topic", category: "respiratory", scope: "national", symptoms: ["test cough"], sourceTitle: "Test Guideline", sourceOrg: "Test Org", sourceEdition: "2023", sourceRef: "p. 5", jurisdiction: "Uganda", effectiveDate: "2026-01-01", reviewDate: "2027-01-01", treatment: "text" }, o || {});
+const full = (o) => Object.assign({ title: "T topic", category: "respiratory", scope: "national", symptoms: ["test cough"], sourceTitle: "Test Guideline", sourceOrg: "Test Org", sourceEdition: "2023", sourceRef: "p. 5", jurisdiction: "Uganda", effectiveDate: "2026-01-01", reviewDate: "2027-01-01", publicationDate: "2023", treatment: "text" }, o || {});
 const mk = (key, v, st, o) => Object.assign({ id: PCG.idFor(key, v), guidelineKey: key, version: v, approvalStatus: st, source: "S" }, PCG.buildDoc(PCG.toForm(full()), {}), o || {});
 
 test("contract field names are present and typed as agreed (id, title, category, symptoms, investigations, treatment, source)", () => {
