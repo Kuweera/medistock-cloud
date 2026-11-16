@@ -117,3 +117,7 @@ Known issues: menu shows Patient Care to every user (the page itself explains mi
 ## Phase 5 integration (Developer 4, 2026-11-15)
 Changed: `firestore.rules` (v15), `nav.js` (Pharmacy, Guidelines), `sw.js` (mc-v24; also added `pc-ux.js`, which pages already loaded but the offline list did not cache). New: `package.json`, `firebase.json`, `.github/workflows/ci.yml`, `tests/integration.test.js`, `tests/baseline-hashes.json`, `tests-emulator/rules.test.js`, `docs/INTEGRATION_CHECKLIST.md`, `docs/SECURITY_TEST_REPORT.md`, `docs/OFFLINE_SYNC_TEST_REPORT.md`. `mc-core.js` and all Sales/Purchases/Inventory files are byte-identical to the supplied zip (hash-checked by CI).
 Phase 5 stays unreleased until the Phase 4 and Phase 5 gates in the master plan pass. Code existing is not a pass.
+
+
+## Update: dispensing permission fix (rules v16)
+Developer 1, 2026-11-16. Every dispensing failed with "You do not have permission" for owner and operators alike: the transaction reads the first dispense record and the prescription before they exist, and the v15 read rules dereference `resource.data`, which is null for a missing document. v16 adds `get` rules for missing documents (dispensers only) and lets `dispense.view` users read medicine orders, registration numbers and allergies of their own facility. **Not yet verified in the emulator or the real project.** See PHARMACY_DISPENSING_SPEC.md section 7.
