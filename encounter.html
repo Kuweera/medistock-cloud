@@ -344,10 +344,12 @@
         <option value="examination">Physical examination</option>
         <option value="assessment">Assessment / impression</option>
         <option value="progress">Progress note</option>
+        <option value="followup">Follow-up plan</option>
         <option value="other">Other note</option>
       </select>
       <div id="nPlain"><label>Note *</label><textarea id="nText" rows="5"></textarea></div>
       <div id="nExam" class="hidden"></div>
+      <div id="nFollow" class="hidden"></div>
       <button class="btn-primary" id="nDraftBtn">Save as draft</button>
       <button class="btn-primary hidden" id="nSignBtn" style="margin-top:8px;">Sign now</button>
       <button class="btn-small btn-secondary hidden" id="nCancelBtn" style="width:100%; margin-top:8px;">Cancel</button>
@@ -454,6 +456,7 @@
     <div class="card"><h2>Visit summary</h2><div id="sumBox"></div></div>
     <div class="card hidden" id="xCard">
       <h2>Close this visit</h2>
+      <div id="xReview" class="info-box"></div>
       <label>Closing note (optional)</label><textarea id="xNote" rows="2" placeholder="e.g. Treated and sent home"></textarea>
       <button class="btn-primary" id="xCloseBtn">Close visit</button>
       <button class="btn-small btn-secondary" id="xCancelBtn" style="width:100%; margin-top:8px;">Cancel this visit (opened by mistake)</button>
@@ -737,15 +740,64 @@
   }
 
   // ---------- clinical notes ----------
+  const noteLabel = n => n.structured && n.structured.kind === "followup" ? "Follow-up plan" : (NOTE_TYPE[n.noteType] || n.noteType);
+  const FU_PROGRESS = { improving: "Improving", same: "Same as before", worse: "Getting worse" };
+  const FU_NEXT = { review: "Come back for review", continue: "Continue treatment at home", tests: "Come back with test results", refer: "Refer to another facility", admit: "Admit the patient", none: "No further action needed" };
+  function fuPending() {
+    return {
+      tests: orders.filter(o => ["requested", "collected", "processing", "resulted"].indexOf(o.status) >= 0).map(o => o.name).filter(Boolean),
+      treat: plans.filter(p => p.status === "active").map(p => p.title).filter(Boolean)
+    };
+  }
+  function renderFuPending() {
+    const el = $("nFuPending"); if (!el) return; const p = fuPending();
+    el.innerHTML = "<b>Still open on this visit</b> (added to the plan automatically):<br>Tests without a verified result: " + (p.tests.length ? esc(p.tests.join(", ")) : "none") + "<br>Treatment still active: " + (p.treat.length ? esc(p.treat.join(", ")) : "none");
+  }
+  function buildFollowForm() {
+    const H = t => '<div class="hint2">' + t + "</div>";
+    const opts = (m, first) => '<option value="">' + first + "</option>" + Object.keys(m).map(k => '<option value="' + k + '">' + esc(m[k]) + "</option>").join("");
+    $("nFollow").innerHTML =
+      '<label>Review date (optional)</label><div class="dateField"><input type="text" id="nFuDate"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div>' + H("The day the patient should come back. Leave empty if no review is needed.") +
+      '<label>What happens next?</label><select id="nFuNext">' + opts(FU_NEXT, "Choose…") + "</select>" +
+      '<label>How is the patient progressing?</label><select id="nFuProg">' + opts(FU_PROGRESS, "Not stated") + "</select>" +
+      '<label>Instructions for the patient (optional)</label><textarea id="nFuInstr" rows="3" placeholder="e.g. Rest, drink plenty of fluids, return earlier if the fever comes back"></textarea>' +
+      '<div id="nFuPending" class="info-box"></div>';
+  }
+  function clearFollowForm() { ["nFuDate", "nFuInstr", "nFuNext", "nFuProg"].forEach(id => { const e = $(id); if (e) e.value = ""; }); }
+  function fillFollowForm(st) {
+    clearFollowForm(); st = st || {};
+    if (st.reviewDate) PCF.setDate("nFuDate", st.reviewDate);
+    $("nFuNext").value = st.nextAction || ""; $("nFuProg").value = st.progress || ""; $("nFuInstr").value = st.instructions || "";
+  }
+  function followContent(st) {
+    const L = [];
+    if (st.reviewDate) L.push("Review date: " + PCF.toTyped(st.reviewDate));
+    if (st.nextAction) L.push("Next: " + (FU_NEXT[st.nextAction] || st.nextAction));
+    if (st.progress) L.push("Progress: " + (FU_PROGRESS[st.progress] || st.progress));
+    if (st.instructions) L.push("Instructions: " + st.instructions);
+    if (st.pendingTests && st.pendingTests.length) L.push("Tests still to check: " + st.pendingTests.join(", "));
+    if (st.outstandingTreatment && st.outstandingTreatment.length) L.push("Treatment still active: " + st.outstandingTreatment.join(", "));
+    return L.join("\n");
+  }
   function buildExamForm() {
     $("nExam").innerHTML = EXAM_SECTIONS.map(s => "<label>" + esc(s[1]) + '</label><textarea id="ex-' + s[0] + '" rows="2"></textarea>').join("");
   }
   function syncNoteForm() {
-    const ex = $("nType").value === "examination" && !amendOf;
-    $("nExam").classList.toggle("hidden", !ex); $("nPlain").classList.toggle("hidden", ex);
+    const v = $("nType").value, ex = v === "examination" && !amendOf, fu = v === "followup" && !amendOf;
+    $("nExam").classList.toggle("hidden", !ex); $("nFollow").classList.toggle("hidden", !fu); $("nPlain").classList.toggle("hidden", ex || fu);
+    if (fu) renderFuPending();
   }
   function readNote() {
     const type = amendOf ? "amendment" : $("nType").value;
+    if (type === "followup") {
+      const di = PCF.dateInfo("nFuDate"), p = fuPending();
+      const st = { kind: "followup", reviewDate: (di.state === "ok" || di.state === "future") ? di.iso : null, nextAction: $("nFuNext").value || null, progress: $("nFuProg").value || null, instructions: $("nFuInstr").value.trim(), pendingTests: p.tests, outstandingTreatment: p.treat };
+      let problem = "";
+      if (di.state === "bad") problem = "Type the review date as DD/MM/YYYY (for example 05/05/2026) or tap the calendar button.";
+      else if (di.state === "ok" && di.iso < PCF.todayISO()) problem = "The review date cannot be in the past.";
+      else if (!st.reviewDate && !st.nextAction && !st.instructions) problem = "Add a review date, what happens next, or instructions for the patient.";
+      return { type: "progress", content: problem ? "" : followContent(st), structured: st, problem: problem };
+    }
     if (type === "examination") {
       const structured = {}; EXAM_SECTIONS.forEach(s => { const v = $("ex-" + s[0]).value.trim(); if (v) structured[s[0]] = v; });
       return { type: type, content: examContent(structured), structured: structured };
@@ -753,7 +805,7 @@
     return { type: type, content: $("nText").value.trim(), structured: null };
   }
   function resetNoteForm() {
-    editNote = null; amendOf = null; $("nText").value = ""; EXAM_SECTIONS.forEach(s => { $("ex-" + s[0]).value = ""; });
+    editNote = null; amendOf = null; $("nText").value = ""; EXAM_SECTIONS.forEach(s => { $("ex-" + s[0]).value = ""; }); clearFollowForm();
     $("nTitle").textContent = "Write a clinical note"; $("nAmendInfo").classList.add("hidden"); $("nType").disabled = false;
     $("nDraftBtn").classList.remove("hidden"); $("nDraftBtn").textContent = "Save as draft"; $("nSignBtn").classList.toggle("hidden", !can("consult.sign")); $("nSignBtn").textContent = "Sign now"; $("nCancelBtn").classList.add("hidden");
     syncNoteForm(); if (enc) renderHeader();
@@ -761,6 +813,7 @@
   function saveNote(signNow) {
     const msg = $("nMsg"); msg.className = "msg err"; msg.textContent = "";
     const n = readNote();
+    if (n.problem) { msg.textContent = n.problem; return; }
     if (!n.content) { msg.textContent = "Write the note first."; return; }
     if (editNote) {
       updateDoc(doc(db, "pc_clinical_notes", editNote.id), { content: n.content, structured: n.structured, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
@@ -784,16 +837,18 @@
   function startEdit(id) {
     const n = notes.find(x => x.id === id); if (!n) return;
     editNote = n; amendOf = null;
-    $("nType").value = n.noteType; $("nType").disabled = true; syncNoteForm();
-    if (n.noteType === "examination") EXAM_SECTIONS.forEach(s => { $("ex-" + s[0]).value = (n.structured && n.structured[s[0]]) || ""; }); else $("nText").value = n.content || "";
+    const isFu = n.structured && n.structured.kind === "followup";
+    $("nType").value = isFu ? "followup" : n.noteType; $("nType").disabled = true; syncNoteForm();
+    if (isFu) fillFollowForm(n.structured);
+    else if (n.noteType === "examination") EXAM_SECTIONS.forEach(s => { $("ex-" + s[0]).value = (n.structured && n.structured[s[0]]) || ""; }); else $("nText").value = n.content || "";
     $("nTitle").textContent = "Edit draft note"; $("nDraftBtn").textContent = "Save changes"; $("nSignBtn").classList.toggle("hidden", !can("consult.sign")); $("nSignBtn").textContent = "Save and sign"; $("nCancelBtn").classList.remove("hidden");
     renderHeader(); $("nAddCard").scrollIntoView({ behavior: "smooth", block: "start" });
   }
   function startAmend(id) {
     const n = notes.find(x => x.id === id); if (!n) return;
     amendOf = n; editNote = null; syncNoteForm(); $("nText").value = ""; $("nType").disabled = true;
-    $("nPlain").classList.remove("hidden"); $("nExam").classList.add("hidden");
-    $("nTitle").textContent = "Amend a signed note"; $("nAmendInfo").innerHTML = "Amending the " + esc(NOTE_TYPE[n.noteType] || "note") + " signed by " + esc(n.signedByName || "") + ". The original stays on record unchanged. Write what is being corrected or added."; $("nAmendInfo").classList.remove("hidden");
+    $("nPlain").classList.remove("hidden"); $("nExam").classList.add("hidden"); $("nFollow").classList.add("hidden");
+    $("nTitle").textContent = "Amend a signed note"; $("nAmendInfo").innerHTML = "Amending the " + esc(noteLabel(n)) + " signed by " + esc(n.signedByName || "") + ". The original stays on record unchanged. Write what is being corrected or added."; $("nAmendInfo").classList.remove("hidden");
     $("nDraftBtn").classList.add("hidden"); $("nSignBtn").classList.remove("hidden"); $("nSignBtn").textContent = "Sign amendment"; $("nCancelBtn").classList.remove("hidden");
     renderHeader(); $("nAddCard").scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -804,7 +859,7 @@
       const kids = amends.filter(a => a.amends === n.id).sort((a, b) => (a.clientCreatedAt || 0) - (b.clientCreatedAt || 0));
       const st = n.status === "signed" ? '<span class="chip ok">Signed</span>' : n.status === "draft" ? '<span class="chip warn">Draft</span>' : '<span class="chip">Entered in error</span>';
       const open = isOpen();
-      return '<div class="entry' + (n.status === "entered_in_error" ? " struck" : "") + '"><div class="pt-name">' + esc(NOTE_TYPE[n.noteType] || n.noteType) + " " + st + "</div>" +
+      return '<div class="entry' + (n.status === "entered_in_error" ? " struck" : "") + '"><div class="pt-name">' + esc(noteLabel(n)) + " " + st + "</div>" +
         '<div class="pt-meta">' + esc(n.authorName || "") + " · " + esc(stampText(null, n.clientCreatedAt)) + (n.status === "signed" ? " · signed by " + esc(n.signedByName || "") + " " + esc(stampText(n.signedAt, 0)) : "") + "</div>" +
         '<div style="white-space:pre-wrap; margin-top:6px; font-size:13.5px;">' + esc(n.content) + "</div>" +
         (n.status === "entered_in_error" && n.errorReason ? '<div class="pt-meta">Entered in error: ' + esc(n.errorReason) + "</div>" : "") +
@@ -1238,6 +1293,16 @@
     $("sumBox").innerHTML = [["Triage records", triage.filter(t => t.status === "active").length], ["Complaints", complaints.filter(c => c.status === "active").length], ["Earlier medicines", meds.filter(m => m.status === "active").length],
       ["Treatment plans active", plans.filter(x => x.status === "active").length], ["Notes signed", signed], ["Notes still in draft", drafts], ["Tests requested", orders.filter(o => o.status !== "cancelled").length], ["Tests not yet verified", orders.filter(o => ["requested", "collected", "processing", "resulted"].indexOf(o.status) >= 0).length], ["Diagnoses", diagnoses.filter(d => d.status === "active").length]].map(r => '<div class="breakdown-line"><span>' + r[0] + '</span><span class="v">' + r[1] + "</span></div>").join("") +
       (drafts ? '<div class="pt-meta" style="color:var(--warn);">Some notes are still drafts. Sign them before closing if they are final.</div>' : "");
+    renderCloseReview();
+  }
+  function renderCloseReview() {
+    const el = $("xReview"); if (!el) return;
+    const fu = notes.filter(n => n.status !== "entered_in_error" && n.structured && n.structured.kind === "followup").sort((a, b) => (b.clientCreatedAt || 0) - (a.clientCreatedAt || 0))[0];
+    const p = fuPending(), rows = [];
+    rows.push(p.tests.length ? "Tests without a verified result: <b>" + esc(p.tests.join(", ")) + "</b>" : "All requested tests have a verified result.");
+    rows.push(p.treat.length ? "Treatment still active: <b>" + esc(p.treat.join(", ")) + "</b>" : "No treatment plan is still active.");
+    rows.push(fu ? "Follow-up plan: " + (fu.structured.reviewDate ? "review on <b>" + esc(PCF.toTyped(fu.structured.reviewDate)) + "</b>" : "recorded, no review date") + (fu.status === "draft" ? " (still a draft)" : "") + "." : "No follow-up plan recorded. Add one under Clinical notes if the patient needs to return.");
+    el.innerHTML = "<b>Before you close this visit</b><br>" + rows.join("<br>");
   }
   function closeVisit() {
     const drafts = notes.filter(n => n.status === "draft").length;
@@ -1404,7 +1469,8 @@
     const er = e.target.closest("[data-nerr]"); if (er) markError("pc_clinical_notes", er.dataset.nerr, "consult.sign", "note.error");
   });
   for (let i = 0; i <= 10; i++) { const o = document.createElement("option"); o.value = String(i); o.textContent = String(i); $("tPain").appendChild(o); }
-  buildExamForm(); syncNoteForm(); PCF.initDates();
+  buildExamForm(); buildFollowForm(); syncNoteForm(); PCF.initDates();
+  { const nd = $("nFuDate").closest(".dateField").querySelector('input[type="date"]'); if (nd) { nd.removeAttribute("max"); nd.min = PCF.todayISO(); } } // a review date is in the future
 
   function mark(s) {
     const badge = $("netBadge");
