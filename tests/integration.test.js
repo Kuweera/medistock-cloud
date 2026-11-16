@@ -54,7 +54,7 @@ test("service worker: every local script/page used by the new and Patient Care p
 
 test("rules: Phase 5 collections exist, nothing can be deleted, dispense records are append-only", () => {
   const r = read("firestore.rules");
-  assert.match(r, /\(v15\)/);
+  assert.match(r, /\(v16\)/);
   ["prescriptions", "dispense_records", "guidelines"].forEach(c => assert.match(r, new RegExp("match /" + c + "/\\{")));
   const block = n => { const i = r.indexOf("match /" + n + "/{"); return r.slice(i, r.indexOf("\n    }\n", i)); };
   assert.match(block("prescriptions"), /allow delete: if false/);
@@ -70,5 +70,17 @@ test("rules: DISPENSE stock entries are protected and other stock entries are no
   assert.match(b, /!= 'DISPENSE'/); assert.match(b, /existsAfter/);
 });
 test("version: docs carry the same rules version as the rules file", () => {
-  assert.match(read("docs/IMPLEMENTATION_PROGRESS.md"), /v15/);
+  assert.match(read("docs/IMPLEMENTATION_PROGRESS.md"), /v16/);
+});
+
+test("rules v16: the first-dispensing reads of a missing document are allowed for dispensers only", () => {
+  const r = read("firestore.rules");
+  const block = n => { const i = r.indexOf("match /" + n + "/{"); return r.slice(i, r.indexOf("\n    }\n", i)); };
+  ["prescriptions", "dispense_records"].forEach(n => {
+    const b = block(n);
+    assert.doesNotMatch(b, /allow read:/, n + " must not use a single read rule that dereferences resource.data");
+    assert.match(b, /allow get: if \(resource == null && dispenserMayProbe\(\)\)/); assert.match(b, /allow list:/);
+  });
+  assert.match(r, /function dispenserMayProbe\(\)/);
+  assert.match(block("pc_treatment_orders"), /dispenserOrderReadOk/);
 });
