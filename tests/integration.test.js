@@ -54,7 +54,7 @@ test("service worker: every local script/page used by the new and Patient Care p
 
 test("rules: Phase 5 collections exist, nothing can be deleted, dispense records are append-only", () => {
   const r = read("firestore.rules");
-  assert.match(r, /\(v16\)/);
+  assert.match(r, /\(v17\)/);
   ["prescriptions", "dispense_records", "guidelines"].forEach(c => assert.match(r, new RegExp("match /" + c + "/\\{")));
   const block = n => { const i = r.indexOf("match /" + n + "/{"); return r.slice(i, r.indexOf("\n    }\n", i)); };
   assert.match(block("prescriptions"), /allow delete: if false/);
@@ -70,7 +70,7 @@ test("rules: DISPENSE stock entries are protected and other stock entries are no
   assert.match(b, /!= 'DISPENSE'/); assert.match(b, /existsAfter/);
 });
 test("version: docs carry the same rules version as the rules file", () => {
-  assert.match(read("docs/IMPLEMENTATION_PROGRESS.md"), /v16/);
+  assert.match(read("docs/IMPLEMENTATION_PROGRESS.md"), /v17/);
 });
 
 test("rules v16: the first-dispensing reads of a missing document are allowed for dispensers only", () => {
@@ -83,4 +83,22 @@ test("rules v16: the first-dispensing reads of a missing document are allowed fo
   });
   assert.match(r, /function dispenserMayProbe\(\)/);
   assert.match(block("pc_treatment_orders"), /dispenserOrderReadOk/);
+});
+
+test("rules v17: new collections cannot be deleted; reversals, ledger caps and consumable movements are tied to their records", () => {
+  const r = read("firestore.rules");
+  const block = n => { const i = r.indexOf("match /" + n + "/{"); assert.ok(i >= 0, n); return r.slice(i, r.indexOf("\n    }\n", i)); };
+  ["dispense_bills", "dispense_handovers", "dispense_returns", "dispense_return_ledger", "consumable_items", "consumable_movements", "consumable_bundles"].forEach(c => {
+    assert.match(block(c), /(allow delete: if false|allow update, delete: if false)/, c);
+  });
+  assert.match(block("dispense_return_ledger"), /<= get\(dspPath\(recId\)\)\.data\.qtyDispensed/);
+  assert.match(block("dispense_returns"), /confirmedBack == true/);
+  assert.match(block("consumable_items"), /existsAfter\(conMovePath/);
+  assert.match(block("consumable_movements"), /existsAfter\(conItemPath/);
+  const rx = block("prescriptions"); assert.match(rx, /dispense\.reverse/); assert.match(rx, /resource\.data\.qtyDispensed == 0/);
+  assert.match(block("stock_transactions"), /drt_/);
+  assert.match(block("credit_accounts"), /resource == null && dispenserMayProbe\(\)/);
+});
+test("pc-dispense-ext.js is cached for offline use and does not touch mc-core.js", () => {
+  assert.ok(fs.existsSync(path.join(__dirname, "..", "pc-dispense-ext.js")));
 });

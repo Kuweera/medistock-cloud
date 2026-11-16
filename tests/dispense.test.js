@@ -270,3 +270,37 @@ test("Reports", async () => {
   assert.equal(rep.received, 1); assert.equal(rep.stockDeducted, 20); assert.equal(rep.completed, 1); assert.equal(rep.partial, 0); assert.equal(rep.byOperator.length, 2);
   assert.equal(rep.medicinesDispensed[0].qty, 20);
 });
+
+// ------------------------------------------------------------------ permission failure diagnostics (Priority 1)
+test("A refused read says exactly which step was denied, and the message stays a plain permission message", async () => {
+  const { db, tools } = setup();
+  db.denyMissingReads = ["dispense_records"];           // reproduces the pre-v16 rule behaviour for a missing document
+  let err; try { await PCD.runDispense(tools, req()); } catch (e) { err = e; }
+  assert.ok(err, "should fail"); assert.equal(err.code, "permission-denied"); assert.match(err.pcdStep, /dispense_records/);
+  assert.match(PCD.friendlyError(err), /^You do not have permission to perform this action\. \(Ref: read-dispense_records/);
+  assert.match(PCD.technicalDetail(err), /permission-denied/); assert.match(PCD.technicalDetail(err), /dispense_records/);
+  assert.equal(db.all("dispense_records").length, 0); assert.equal(db.get("drugs", "d1").currentStockBase, 12, "nothing changed");
+});
+test("Unrelated errors are never reported as permission errors", () => {
+  const net = PCD.friendlyError({ code: "unavailable", message: "offline" }), other = PCD.friendlyError(new Error("boom"));
+  assert.doesNotMatch(net, /permission/i); assert.doesNotMatch(other, /permission/i);
+  assert.doesNotMatch(PCD.friendlyError(PCD.PCDError("stock_short", "x")), /permission/i);
+  assert.doesNotMatch(PCD.friendlyError({ code: "aborted" }), /permission/i);
+});
+test("Access check is read-only and reports blocked reads", async () => {
+  const { db, tools } = setup(); db.put("users", "u1", { role: "owner", businessId: B });
+  const ctx = { uid: "u1", businessId: B, facilityId: F, role: "operator", perms: { "dispense.view": true }, facility: { businessId: B, enabledServices: ["patient_care"] } };
+  const before = db.snapshot(), writes = db.writes.length;
+  let rows = await PCD.diagnose(tools, ctx);
+  assert.equal(db.snapshot(), before); assert.equal(db.writes.length, writes);
+  assert.equal(rows.find(r => r.name === "Permission dispense.perform").ok, false);
+  assert.equal(rows.find(r => r.name === "Permission dispense.view").ok, true);
+  assert.equal(rows.find(r => r.name === "Look for a dispensing record that does not exist yet").ok, true);
+  db.denyMissingReads = ["dispense_records", "prescriptions"];
+  rows = await PCD.diagnose(tools, Object.assign({}, ctx, { role: "owner" }));
+  const bad = rows.filter(r => !r.ok).map(r => r.name);
+  assert.deepEqual(bad.sort(), ["Look for a dispensing record that does not exist yet", "Look for a prescription that does not exist yet"]);
+  assert.match(rows.find(r => !r.ok).detail, /blocked by the security rules/);
+  const other = await PCD.diagnose(tools, Object.assign({}, ctx, { facility: { businessId: "someone-else", enabledServices: [] } }));
+  assert.equal(other.find(r => r.name === "Shop belongs to your business").ok, false); assert.equal(other.find(r => r.name === "Patient Care switched on for this shop").ok, false);
+});

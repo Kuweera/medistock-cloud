@@ -9,9 +9,16 @@
   var B = "biz1", F = "shop1";
   put("shops", F, { businessId: B, name: "Test Clinic Pharmacy", enabledServices: ["patient_care"], timezone: "Africa/Kampala", facilityType: "clinic" });
   put("users", "owner1", { businessId: B, role: "owner", name: "Owner One", active: true });
-  put("drugs", "d1", { businessId: B, shopId: F, name: "Paracetamol 500mg", dosageForm: "Tablet", baseUnit: "Tablet", stockUnit: "Packet", intermediateUnit: "Strip", hasIntermediate: true, basePerIntermediate: 10, baseUnitsPerStock: 100, currentStockBase: 42 });
+  put("drugs", "d1", { businessId: B, shopId: F, name: "Paracetamol 500mg", dosageForm: "Tablet", baseUnit: "Tablet", stockUnit: "Packet", intermediateUnit: "Strip", hasIntermediate: true, basePerIntermediate: 10, baseUnitsPerStock: 100, currentStockBase: 42, wholesale: 2000, retailBase: 30, retailIntermediate: 300, retailStock: 3000 });
   put("drugs", "d2", { businessId: B, shopId: F, name: "Amoxicillin 250mg", dosageForm: "Capsule", baseUnit: "Capsule", currentStockBase: 30 });
   put("drugs", "d3", { businessId: B, shopId: F, name: "Amoxicillin 500mg", dosageForm: "Capsule", baseUnit: "Capsule", currentStockBase: 30 });
+  put("drugs", "d4", { businessId: B, shopId: F, name: "Ceftriaxone 1g injection", dosageForm: "Injection", baseUnit: "Vial", stockUnit: "Box", baseUnitsPerStock: 10, currentStockBase: 10, wholesale: 5000, retailBase: 1000 });
+  put("batches", "b5", { businessId: B, shopId: F, drugId: "d4", batchNumber: "C1", expiryDate: iso(300), quantity: 10, purchasePricePerStockUnit: 5000 });
+  put("consumable_items", "con_syr", { businessId: B, facilityId: F, name: "Syringe 5ml", unit: "piece", qtyOnHand: 20, reorderLevel: 5, active: true });
+  put("consumable_items", "con_glv", { businessId: B, facilityId: F, name: "Gloves", unit: "pair", qtyOnHand: 2, reorderLevel: 6, active: true });
+  put("consumable_bundles", "bun_im", { businessId: B, facilityId: F, name: "IM injection set", active: true, items: [{ itemId: "con_syr", qty: 1 }, { itemId: "con_glv", qty: 1 }] });
+  put("pc_patient_facility_links", "p3_" + F, { businessId: B, facilityId: F, patientId: "p3", localRegNo: "P-O-3" });
+  put("pc_treatment_orders", "o4", { businessId: B, facilityId: F, kind: "medicine", status: "active", encounterId: "e3", encounterNo: "V-13", planId: "pl3", prescriberId: "doc1", prescriberName: "Dr Test", version: 1, route: "IM", prescribedAt: Date.now() - 1800000, patientId: "p3", patientName: "Test Patient Three", medicineId: "d4", medicineName: "Ceftriaxone 1g injection", formulation: "Injection", strength: "1g", doseValue: 1, doseUnit: "vial", instructions: "Once daily", quantityPrescribed: 4 });
   put("batches", "b1", { businessId: B, shopId: F, drugId: "d1", batchNumber: "P-OLD", expiryDate: iso(-5), quantity: 10 });
   put("batches", "b2", { businessId: B, shopId: F, drugId: "d1", batchNumber: "P-SOON", expiryDate: iso(40), quantity: 12 });
   put("batches", "b3", { businessId: B, shopId: F, drugId: "d1", batchNumber: "P-LATE", expiryDate: iso(400), quantity: 20 });
