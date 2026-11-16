@@ -15,7 +15,12 @@
      PCG.suggest(list, {complaints:[], diagnoses:[], medicines:[], tests:[]}) -> entries worth reading (NOT a diagnosis)
      PCG.currentOnly(list)                -> only the approved, current version of every entry
      PCG.refOf(g)                         -> small snapshot to store on a clinical record, so the record keeps the version used
-     PCG.linkFor({q, cat, id})            -> "guidelines.html?q=..." to open the library from any screen */
+     PCG.linkFor({q, cat, id})            -> "guidelines.html?q=..." to open the library from any screen
+   Phase 5b (active guidance):
+     PCG.match(list, ctx, {stage})        -> relevant APPROVED guidance for THIS patient and visit, each with the reasons it was matched
+     PCG.sectionsFor(g, stage)            -> what to show at triage / consult / dx / tests / treat / followup (warnings kept apart from recommendations)
+     PCG.shouldShow(dismissal, item)      -> a dismissed suggestion comes back only if the reasons changed or a new version was approved
+     PCG.regimenPrefill(regimen)          -> pattern to pre-fill a treatment order from a guideline regimen (clinician still confirms) */
 (function (root) {
   var SCHEMA = 1;
 
@@ -96,6 +101,82 @@
     return [head, str(g.sourceOrg), str(g.sourceRef), str(g.jurisdiction)].filter(Boolean).join(" — ");
   }
 
+
+  // ---------------------------------------------------------------- who an entry applies to, and what makes it relevant (all typed in from the source)
+  var STAGES = ["triage", "consult", "dx", "tests", "treat", "followup"];
+  var VITALS = { temperature: "temperatureC", temp: "temperatureC", pulse: "pulse", hr: "pulse", heartrate: "pulse", resp: "respRate", rr: "respRate", respiratoryrate: "respRate", resprate: "respRate",
+    spo2: "spo2", oxygen: "spo2", sbp: "bpSys", bpsys: "bpSys", systolic: "bpSys", dbp: "bpDia", bpdia: "bpDia", diastolic: "bpDia", glucose: "glucose", weight: "weightKg", pain: "painScore", muac: "muacCm" };
+  var VITAL_LABEL = { temperatureC: "Temperature", pulse: "Pulse", respRate: "Breathing rate", spo2: "Oxygen saturation", bpSys: "Blood pressure (upper)", bpDia: "Blood pressure (lower)", glucose: "Glucose", weightKg: "Weight", painScore: "Pain score", muacCm: "MUAC" };
+  function numOrNull(v) { if (v === "" || v == null) return null; var n = Number(v); return isFinite(n) && n >= 0 ? n : null; }
+  // one trigger per line:  symptom: cough | diagnosis: malaria | test: malaria rdt = positive | medicine: name | vital: spo2 < 94
+  function parseTrigger(line) {
+    var m = /^\s*(symptom|complaint|diagnosis|test|medicine|vital)\s*[:\-]\s*(.+?)\s*$/i.exec(String(line || ""));
+    if (!m) return null;
+    var kind = m[1].toLowerCase(), body = m[2]; if (kind === "complaint") kind = "symptom";
+    if (kind === "vital") {
+      var v = /^([a-z0-9 ]+?)\s*(<=|>=|<|>|=)\s*(-?\d+(?:\.\d+)?)\s*$/i.exec(body); if (!v) return null;
+      var f = VITALS[v[1].toLowerCase().replace(/[^a-z0-9]/g, "")]; if (!f) return null;
+      return { kind: "vital", field: f, op: v[2], value: Number(v[3]), text: line.replace(/^\s*vital\s*[:\-]\s*/i, "").trim() };
+    }
+    if (kind === "test") { var t = /^(.+?)\s*=\s*(.+)$/.exec(body); return t ? { kind: kind, text: t[1].trim(), result: t[2].trim() } : { kind: kind, text: body }; }
+    return { kind: kind, text: body };
+  }
+  function triggerProblems(lines_) {
+    var p = []; arr(lines_).forEach(function (l) { if (!parseTrigger(l)) p.push("“" + l + "” could not be read. Write it like: symptom: cough, diagnosis: name, test: name = positive, medicine: name, or vital: spo2 < 94."); });
+    return p;
+  }
+  function applicabilityOf(f) {
+    function months(v, unit) { var n = numOrNull(v); return n == null ? null : Math.round(n * (unit === "years" ? 12 : 1)); }
+    return { minAgeMonths: months(f.ageMin, f.ageMinUnit), maxAgeMonths: months(f.ageMax, f.ageMaxUnit), sex: f.sex === "female" || f.sex === "male" ? f.sex : "any", pregnancy: f.pregnancy === "pregnant" ? "pregnant" : "any", minWeightKg: numOrNull(f.wMin), maxWeightKg: numOrNull(f.wMax) };
+  }
+  function applicabilityForm(a) {
+    a = a || {}; function split(m) { return m == null ? ["", "months"] : (m % 12 === 0 && m >= 24 ? [String(m / 12), "years"] : [String(m), "months"]); }
+    var lo = split(a.minAgeMonths), hi = split(a.maxAgeMonths);
+    return { ageMin: lo[0], ageMinUnit: lo[1], ageMax: hi[0], ageMaxUnit: hi[1], sex: a.sex || "any", pregnancy: a.pregnancy || "any", wMin: a.minWeightKg == null ? "" : String(a.minWeightKg), wMax: a.maxWeightKg == null ? "" : String(a.maxWeightKg) };
+  }
+  // regimens a guideline lists (entered from the source). frequency types: once | interval | daily | elapsed | prn
+  var FREQ = { once: "Once", interval: "Every N hours", daily: "Times a day for a number of days", elapsed: "At exact hours after the start", prn: "Only when needed" };
+  function cleanRegimen(r) {
+    r = r || {}; var f = r.frequency || {}, type = FREQ[f.type] ? f.type : "once", fr = { type: type };
+    if (type === "interval") { fr.everyHours = numOrNull(f.everyHours); fr.count = numOrNull(f.count); }
+    if (type === "daily") { fr.timesPerDay = numOrNull(f.timesPerDay); fr.days = numOrNull(f.days); }
+    if (type === "elapsed") fr.hours = (Array.isArray(f.hours) ? f.hours : String(f.hours == null ? "" : f.hours).split(/[,;\s]+/)).filter(function (x) { return String(x).trim() !== ""; }).map(Number).filter(function (n) { return isFinite(n) && n >= 0; });
+    if (type === "prn") { fr.indication = str(f.indication); fr.minIntervalHours = numOrNull(f.minIntervalHours); fr.maxPerDay = numOrNull(f.maxPerDay); }
+    return { label: str(r.label), medicine: str(r.medicine), formulation: str(r.formulation), strength: str(r.strength), doseValue: numOrNull(r.doseValue), doseUnit: str(r.doseUnit), route: str(r.route), frequency: fr,
+      minAgeMonths: numOrNull(r.minAgeMonths), maxAgeMonths: numOrNull(r.maxAgeMonths), minWeightKg: numOrNull(r.minWeightKg), maxWeightKg: numOrNull(r.maxWeightKg), instructions: str(r.instructions), page: str(r.page) };
+  }
+  function isBlankRegimen(r) { return !str(r.label) && !str(r.medicine) && r.doseValue == null && !str(r.doseUnit) && !str(r.route); }
+  function regimenProblems(rs) {
+    var p = [];
+    (rs || []).forEach(function (r, i) {
+      var n = "Regimen " + (i + 1) + (r.label ? " (" + r.label + ")" : ""), f = r.frequency || {};
+      if (!r.medicine) p.push(n + ": enter the medicine.");
+      if (!(r.doseValue > 0)) p.push(n + ": enter the dose exactly as the source states it.");
+      if (!r.doseUnit) p.push(n + ": enter the unit of the dose.");
+      if (!r.route) p.push(n + ": enter the route.");
+      if (f.type === "interval" && !(f.everyHours > 0 && f.count >= 1)) p.push(n + ": enter the hours between doses and the number of doses.");
+      if (f.type === "daily" && !(f.timesPerDay >= 1 && f.timesPerDay <= 6 && f.days >= 1)) p.push(n + ": enter how many times a day (1 to 6) and for how many days.");
+      if (f.type === "elapsed" && !(f.hours && f.hours.length)) p.push(n + ": enter the hours after the start, for example 0, 12, 24.");
+      if (f.type === "prn" && (!f.indication || !(f.maxPerDay >= 1))) p.push(n + ": say what it is for and the most doses in a day.");
+    });
+    return p;
+  }
+  // a pattern for the treatment form. Times of day come from `timePresets` (clock times are the clinic's choice, not the guideline's).
+  function regimenPrefill(r, timePresets) {
+    var f = r.frequency || {}, out = { medicineName: r.medicine, formulation: r.formulation || "", strength: r.strength || "", doseValue: r.doseValue, doseUnit: r.doseUnit, route: r.route, instructions: r.instructions || "" };
+    if (f.type === "interval") { out.scheduleType = "interval"; out.sched = { everyHours: f.everyHours, count: f.count }; }
+    else if (f.type === "daily") { out.scheduleType = "daily"; var tp = timePresets || {}; out.sched = { times: String(tp[f.timesPerDay] || "").split(/[,\s]+/).filter(Boolean), days: f.days, timesPerDay: f.timesPerDay }; }
+    else if (f.type === "elapsed") { out.scheduleType = "elapsed"; out.sched = { hours: (f.hours || []).slice() }; }
+    else if (f.type === "prn") { out.scheduleType = "prn"; out.sched = { indication: f.indication || "", minIntervalHours: f.minIntervalHours == null ? 0 : f.minIntervalHours, maxPerDay: f.maxPerDay }; }
+    else { out.scheduleType = "once"; out.sched = {}; }
+    return out;
+  }
+  function regimenText(r) {
+    var f = r.frequency || {}, when = f.type === "interval" ? "every " + f.everyHours + " h × " + f.count : f.type === "daily" ? f.timesPerDay + " time" + (f.timesPerDay === 1 ? "" : "s") + " a day for " + f.days + " day" + (f.days === 1 ? "" : "s")
+      : f.type === "elapsed" ? "at hour " + (f.hours || []).join(", ") : f.type === "prn" ? "only when needed (" + (f.indication || "") + ")" : "once";
+    return [r.medicine, r.strength, r.formulation].filter(Boolean).join(" ") + " — " + r.doseValue + " " + r.doseUnit + ", " + r.route + ", " + when;
+  }
+
   // ---------------------------------------------------------------- building and checking an entry
   var CONTENT_KEYS = ["symptoms", "investigations", "treatment", "assessment", "warningSigns", "investigationNotes", "precautions", "followUp", "referralAdvice"];
 
@@ -112,7 +193,10 @@
       sectionRefs: { assessment: str(f.refAssessment), warnings: str(f.refWarnings), investigations: str(f.refInvestigations), management: str(f.refManagement) },
       sourceTitle: str(f.sourceTitle), sourceOrg: str(f.sourceOrg), sourceEdition: str(f.sourceEdition), sourceRef: str(f.sourceRef), jurisdiction: str(f.jurisdiction),
       effectiveDate: str(f.effectiveDate), reviewDate: str(f.reviewDate),
-      basedOnKey: f.scope === "facility" && str(f.basedOnKey) ? str(f.basedOnKey) : null
+      basedOnKey: f.scope === "facility" && str(f.basedOnKey) ? str(f.basedOnKey) : null,
+      publicationDate: str(f.publicationDate), supportingDoc: str(f.supportingDoc),
+      applicability: applicabilityOf(f), triggers: lines(f.triggers),
+      regimens: (Array.isArray(f.regimens) ? f.regimens : []).map(cleanRegimen).filter(function (r) { return !isBlankRegimen(r); })
     };
     d.source = composeSource(d);
     if (c.key) { d.guidelineKey = c.key; d.version = c.version || 1; d.id = c.id || idFor(c.key, d.version); }
@@ -122,20 +206,21 @@
   // doc -> the text for each form field (to edit a draft)
   function toForm(g) {
     var a = g.assessment || {}, w = g.warningSigns || {}, r = g.sectionRefs || {}, j = function (x) { return arr(x).join("\n"); };
-    return { title: g.title || "", category: g.category || "", scope: g.scope || "national", symptoms: arr(g.symptoms).join(", "), aliases: arr(g.aliases).join(", "), basedOnKey: g.basedOnKey || "",
+    return Object.assign({ title: g.title || "", category: g.category || "", scope: g.scope || "national", symptoms: arr(g.symptoms).join(", "), aliases: arr(g.aliases).join(", "), basedOnKey: g.basedOnKey || "",
       investigations: j(g.investigations), treatment: g.treatment || "",
       aQuestions: j(a.questions), aHistory: j(a.history), aDocument: j(a.document), aExam: j(a.examination),
       wDanger: j(w.danger), wUrgent: j(w.urgent), wReferral: j(w.referral),
       investigationNotes: j(g.investigationNotes), precautions: j(g.precautions), followUp: j(g.followUp), referralAdvice: j(g.referralAdvice),
       refAssessment: r.assessment || "", refWarnings: r.warnings || "", refInvestigations: r.investigations || "", refManagement: r.management || "",
       sourceTitle: g.sourceTitle || "", sourceOrg: g.sourceOrg || "", sourceEdition: g.sourceEdition || "", sourceRef: g.sourceRef || "", jurisdiction: g.jurisdiction || "",
-      effectiveDate: g.effectiveDate || "", reviewDate: g.reviewDate || "" };
+      effectiveDate: g.effectiveDate || "", reviewDate: g.reviewDate || "", publicationDate: g.publicationDate || "", supportingDoc: g.supportingDoc || "",
+      triggers: j(g.triggers), regimens: JSON.parse(JSON.stringify(g.regimens || [])) }, applicabilityForm(g.applicability));
   }
 
   function hasContent(g) {
     var a = g.assessment || {}, w = g.warningSigns || {};
     return [g.symptoms, g.investigations, a.questions, a.history, a.document, a.examination, w.danger, w.urgent, w.referral, g.investigationNotes, g.precautions, g.followUp, g.referralAdvice]
-      .some(function (x) { return arr(x).length > 0; }) || !!str(g.treatment);
+      .some(function (x) { return arr(x).length > 0; }) || !!str(g.treatment) || (g.regimens || []).length > 0;
   }
 
   // minimum needed to save a DRAFT
@@ -143,6 +228,10 @@
     var p = [];
     if (!str(d.title)) p.push("Enter the title (the name of the condition or topic).");
     if (!CAT_LABEL[d.category]) p.push("Choose a category.");
+    triggerProblems(d.triggers).forEach(function (x) { p.push(x); });
+    var a = d.applicability || {};
+    if (a.minAgeMonths != null && a.maxAgeMonths != null && a.minAgeMonths > a.maxAgeMonths) p.push("The youngest age is above the oldest age.");
+    if (a.minWeightKg != null && a.maxWeightKg != null && a.minWeightKg > a.maxWeightKg) p.push("The lowest weight is above the highest weight.");
     return p;
   }
   // everything needed before an entry can be approved and shown to ordinary staff
@@ -153,10 +242,12 @@
     if (!str(g.sourceEdition)) p.push("Enter the edition or year.");
     if (!str(g.sourceRef)) p.push("Enter the chapter, section or page number.");
     if (!str(g.jurisdiction)) p.push("Enter the country or area it applies to.");
+    if (!/^\d{4}(-\d{2}(-\d{2})?)?$/.test(str(g.publicationDate))) p.push("Enter when the source was published (a year, or year-month-day).");
     if (!validISO(g.effectiveDate)) p.push("Enter the date from which it applies (effective date).");
     if (!validISO(g.reviewDate)) p.push("Enter the date it must be reviewed again.");
     else if (validISO(g.effectiveDate) && g.reviewDate < g.effectiveDate) p.push("The review date cannot be before the effective date.");
     if (!hasContent(g)) p.push("Add at least some clinical information from the source.");
+    regimenProblems(g.regimens).forEach(function (x) { p.push(x); });
     return p;
   }
 
@@ -284,7 +375,11 @@
     assessment: { questions: [], history: [], document: [], examination: [] },
     warningSigns: { danger: [], urgent: [], referral: [] },
     investigations: [], investigationNotes: [], treatment: "", precautions: [], followUp: [], referralAdvice: [],
-    sectionRefs: { assessment: "", warnings: "", investigations: "", management: "" }
+    sectionRefs: { assessment: "", warnings: "", investigations: "", management: "" },
+    publicationDate: "YYYY or YYYY-MM-DD", supportingDoc: "",
+    applicability: { minAgeMonths: null, maxAgeMonths: null, sex: "any", pregnancy: "any", minWeightKg: null, maxWeightKg: null },
+    triggers: [],
+    regimens: []
   };
   function templateJSON() {
     return JSON.stringify({ _readme: "Fill ONLY from an approved source (e.g. Uganda Clinical Guidelines, MoH, WHO, or your facility's approved protocol). Do not invent doses or thresholds. Every entry is imported as a DRAFT and must be approved by an authorised person. category must be one of: " + CATEGORIES.map(function (c) { return c[0]; }).join(", ") + ". Dates are YYYY-MM-DD.", entries: [TEMPLATE_ITEM] }, null, 2);
@@ -307,13 +402,126 @@
         investigationNotes: pickLines(r.investigationNotes), precautions: pickLines(r.precautions), followUp: pickLines(r.followUp), referralAdvice: pickLines(r.referralAdvice),
         refAssessment: s.assessment, refWarnings: s.warnings, refInvestigations: s.investigations, refManagement: s.management,
         sourceTitle: r.sourceTitle, sourceOrg: r.sourceOrg, sourceEdition: r.sourceEdition, sourceRef: r.sourceRef, jurisdiction: r.jurisdiction,
-        effectiveDate: validISO(r.effectiveDate) ? r.effectiveDate : "", reviewDate: validISO(r.reviewDate) ? r.reviewDate : "" };
+        effectiveDate: validISO(r.effectiveDate) ? r.effectiveDate : "", reviewDate: validISO(r.reviewDate) ? r.reviewDate : "",
+        publicationDate: /^\d{4}(-\d{2}(-\d{2})?)?$/.test(str(r.publicationDate)) ? str(r.publicationDate) : "", supportingDoc: r.supportingDoc, triggers: pickLines(r.triggers), regimens: Array.isArray(r.regimens) ? r.regimens : [] };
+      var ap = r.applicability || {}; Object.assign(form, { ageMin: ap.minAgeMonths == null ? "" : ap.minAgeMonths, ageMinUnit: "months", ageMax: ap.maxAgeMonths == null ? "" : ap.maxAgeMonths, ageMaxUnit: "months", sex: ap.sex, pregnancy: ap.pregnancy, wMin: ap.minWeightKg, wMax: ap.maxWeightKg });
       var d = buildDoc(form), p = draftProblems(d);
       if (p.length) { out.errors.push(n + ": " + p.join(" ")); return; }
       d._notReady = approvalProblems(d).length;
       out.items.push(d);
     });
     return out;
+  }
+
+
+  // ---------------------------------------------------------------- the matching engine (retrieval only: it never diagnoses and never prescribes)
+  // ctx: { ageMonths, sex:"male"|"female"|null, pregnancy:true|false|null, weightKg, complaints:[], findings:[], vitals:{temperatureC,pulse,respRate,spo2,bpSys,bpDia,glucose,weightKg,painScore,muacCm},
+  //        diagnoses:[], tests:[{name,result}|"name"], medicines:[] }
+  function phraseHit(phrase, cands) {
+    var p = norm(phrase); if (p.length < 3) return null; var pt = tokens(p, 3);
+    for (var i = 0; i < cands.length; i++) {
+      var k = norm(cands[i]); if (!k) continue; var kt = tokens(k, 3);
+      if (k === p) return cands[i];
+      if (k.length >= 4 && (" " + p + " ").indexOf(" " + k + " ") >= 0) return cands[i];
+      if (pt.length && pt.every(function (t) { return kt.indexOf(t) >= 0; })) return cands[i];
+    }
+    return null;
+  }
+  function fitCheck(a, ctx, restrictedWord) {
+    var notes = [], ok = true; a = a || {};
+    if (a.minAgeMonths != null || a.maxAgeMonths != null) {
+      if (ctx.ageMonths == null) notes.push("Age is not recorded. This guidance is limited by age, so check it applies.");
+      else if ((a.minAgeMonths != null && ctx.ageMonths < a.minAgeMonths) || (a.maxAgeMonths != null && ctx.ageMonths > a.maxAgeMonths)) ok = false;
+    }
+    if (a.sex && a.sex !== "any") { if (!ctx.sex) notes.push("Sex is not recorded. This guidance is for " + a.sex + " patients."); else if (ctx.sex !== a.sex) ok = false; }
+    if (a.pregnancy === "pregnant") {
+      if (ctx.pregnancy === true) { /* applies */ } else if (ctx.pregnancy === false || ctx.sex === "male") ok = false; else notes.push("This guidance is for pregnancy. Pregnancy is not recorded for this patient.");
+    }
+    if (a.minWeightKg != null || a.maxWeightKg != null) {
+      if (!(ctx.weightKg > 0)) notes.push("Weight is not recorded. This guidance is limited by weight, so check it applies.");
+      else if ((a.minWeightKg != null && ctx.weightKg < a.minWeightKg) || (a.maxWeightKg != null && ctx.weightKg > a.maxWeightKg)) ok = false;
+    }
+    return { ok: ok, notes: notes };
+  }
+  function compare(v, op, x) { return op === "<" ? v < x : op === "<=" ? v <= x : op === ">" ? v > x : op === ">=" ? v >= x : v === x; }
+  function sectionRef(g, group) { var r = g.sectionRefs || {}; return r[group] || ""; }
+  var SECTION_DEFS = [
+    // key, title, kind, group (for the page reference), getter
+    ["danger", "Danger signs", "warning", "warnings", function (g) { return arr((g.warningSigns || {}).danger); }],
+    ["urgent", "Findings needing urgent assessment", "warning", "warnings", function (g) { return arr((g.warningSigns || {}).urgent); }],
+    ["referralSigns", "Referral considerations", "warning", "warnings", function (g) { return arr((g.warningSigns || {}).referral); }],
+    ["questions", "Questions to ask", "info", "assessment", function (g) { return arr((g.assessment || {}).questions); }],
+    ["history", "History to take", "info", "assessment", function (g) { return arr((g.assessment || {}).history); }],
+    ["document", "Symptoms to document", "info", "assessment", function (g) { return arr((g.assessment || {}).document); }],
+    ["exam", "Examination findings to look for", "info", "assessment", function (g) { return arr((g.assessment || {}).examination); }],
+    ["tests", "Tests mentioned in the source", "recommend", "investigations", function (g) { return arr(g.investigations); }],
+    ["testNotes", "What the tests are for and how to read them", "info", "investigations", function (g) { return arr(g.investigationNotes); }],
+    ["treatment", "Treatment information in the source", "recommend", "management", function (g) { return str(g.treatment) ? [str(g.treatment)] : []; }],
+    ["precautions", "Precautions", "warning", "management", function (g) { return arr(g.precautions); }],
+    ["followUp", "Follow-up", "recommend", "management", function (g) { return arr(g.followUp); }],
+    ["referral", "Referral", "recommend", "management", function (g) { return arr(g.referralAdvice); }]
+  ];
+  var STAGE_SECTIONS = {
+    triage: ["danger", "urgent", "document"],
+    consult: ["danger", "urgent", "questions", "history", "document", "exam"],
+    dx: ["danger", "urgent", "referralSigns", "tests", "testNotes"],
+    tests: ["tests", "testNotes"],
+    treat: ["precautions", "danger", "treatment"],
+    followup: ["followUp", "referral", "referralSigns"]
+  };
+  function sectionsFor(g, stage) {
+    var keys = STAGE_SECTIONS[stage] || [], out = [];
+    SECTION_DEFS.forEach(function (d) { if (keys.indexOf(d[0]) < 0) return; var items = d[4](g); if (items.length) out.push({ key: d[0], title: d[1], kind: d[2], items: items, page: sectionRef(g, d[3]) }); });
+    return out;
+  }
+  function regimenFit(r, ctx) {
+    var notes = [], ok = true;
+    if (r.minAgeMonths != null || r.maxAgeMonths != null) { if (ctx.ageMonths == null) notes.push("Age is not recorded; this regimen has an age range."); else if ((r.minAgeMonths != null && ctx.ageMonths < r.minAgeMonths) || (r.maxAgeMonths != null && ctx.ageMonths > r.maxAgeMonths)) ok = false; }
+    if (r.minWeightKg != null || r.maxWeightKg != null) { if (!(ctx.weightKg > 0)) notes.push("Weight is not recorded; this regimen has a weight range."); else if ((r.minWeightKg != null && ctx.weightKg < r.minWeightKg) || (r.maxWeightKg != null && ctx.weightKg > r.maxWeightKg)) ok = false; }
+    return { ok: ok, notes: notes };
+  }
+
+  function match(list, ctx, opts) {
+    ctx = ctx || {}; opts = opts || {}; var stage = opts.stage || "consult", today = opts.today || todayISO(), out = [];
+    var complaints = arr(ctx.complaints), findings = arr(ctx.findings), dxs = arr(ctx.diagnoses), meds = arr(ctx.medicines), vitals = ctx.vitals || {};
+    var tests = (ctx.tests || []).map(function (t) { return typeof t === "string" ? { name: t, result: "" } : { name: str(t.name), result: str(t.result) }; });
+    currentOnly(list).forEach(function (g) {
+      if (notYetEffective(g, today)) return;
+      var fit = fitCheck(g.applicability, ctx); if (!fit.ok) return;
+      var reasons = [], seen = {};
+      function add(kind, key, text, w) { if (seen[key]) return; seen[key] = 1; reasons.push({ kind: kind, key: key, text: text, w: w }); }
+      // title / other names against the diagnosis and the complaint; symptoms against complaints and findings
+      var names = [g.title].concat(arr(g.aliases));
+      dxs.forEach(function (d) { var h = phraseHit(d, names); if (h) add("diagnosis", "dx:" + norm(d) + ">" + norm(h), "Diagnosis recorded: “" + d + "”", 10); });
+      complaints.forEach(function (c) { var h = phraseHit(c, names.concat(arr(g.symptoms))); if (h) add("symptom", "sy:" + norm(c) + ">" + norm(h), "Complaint recorded: “" + c + "”", 6); });
+      findings.forEach(function (c) { var h = phraseHit(c, arr(g.symptoms)); if (h) add("symptom", "fi:" + norm(c) + ">" + norm(h), "Finding recorded: “" + c + "”", 5); });
+      arr(g.triggers).forEach(function (line) {
+        var t = parseTrigger(line); if (!t) return;
+        if (t.kind === "symptom") complaints.concat(findings).forEach(function (c) { if (phraseHit(c, [t.text])) add("symptom", "ts:" + norm(c) + ">" + norm(t.text), "Complaint or finding recorded: “" + c + "”", 6); });
+        else if (t.kind === "diagnosis") dxs.forEach(function (d) { if (phraseHit(d, [t.text])) add("diagnosis", "td:" + norm(d) + ">" + norm(t.text), "Diagnosis recorded: “" + d + "”", 10); });
+        else if (t.kind === "medicine") meds.forEach(function (m) { if (phraseHit(m, [t.text])) add("medicine", "tm:" + norm(m) + ">" + norm(t.text), "Medicine recorded: “" + m + "”", 3); });
+        else if (t.kind === "test") tests.forEach(function (x) { if (!phraseHit(x.name, [t.text])) return; if (t.result && !(norm(x.result).indexOf(norm(t.result)) >= 0)) return; add("test", "tt:" + norm(x.name) + (t.result ? "=" + norm(t.result) : ""), "Test " + (x.result ? "result" : "requested") + ": " + x.name + (x.result ? " — " + x.result : ""), 6); });
+        else if (t.kind === "vital") { var v = vitals[t.field]; if (v != null && v !== "" && isFinite(Number(v)) && compare(Number(v), t.op, t.value)) add("vital", "tv:" + t.field + t.op + t.value, VITAL_LABEL[t.field] + " recorded as " + v + " (the guideline flags " + t.op + " " + t.value + ")", 8); }
+      });
+      if (!reasons.length) return;
+      var sections = sectionsFor(g, stage), regs = [], hidden = 0;
+      if (stage === "treat") (g.regimens || []).forEach(function (r, i) { var f = regimenFit(r, ctx); if (f.ok) regs.push({ index: i, r: r, notes: f.notes }); else hidden++; });
+      if (!sections.length && !regs.length) return;
+      out.push({ id: g.id, key: g.guidelineKey || g.id, g: g, stage: stage, score: reasons.reduce(function (a, r) { return a + r.w; }, 0), reasons: reasons, notes: fit.notes, sections: sections, regimens: regs, regimensHidden: hidden,
+        hasWarning: sections.some(function (x) { return x.kind === "warning"; }), overdue: reviewOverdue(g, today) });
+    });
+    out.sort(function (a, b) { return b.score - a.score || String(a.g.title).localeCompare(String(b.g.title)); });
+    return out.slice(0, opts.limit || 6);
+  }
+
+  // ---------------------------------------------------------------- dismissing a suggestion
+  // A dismissed suggestion stays hidden until something meaningful changes: a NEW reason appears, or a newer version of the guideline is approved.
+  function dismissRecord(item) { return { key: item.key, version: item.g.version || 1, reasons: item.reasons.map(function (r) { return r.key; }), at: Date.now() }; }
+  function shouldShow(d, item) {
+    if (!d) return true;
+    if ((item.g.version || 1) !== d.version) return true;
+    var had = d.reasons || [];
+    return item.reasons.some(function (r) { return had.indexOf(r.key) < 0; });
   }
 
   var api = {
@@ -323,6 +531,8 @@
     composeSource: composeSource, buildDoc: buildDoc, toForm: toForm, hasContent: hasContent, draftProblems: draftProblems, approvalProblems: approvalProblems,
     byKey: byKey, currentVersion: currentVersion, openDraft: openDraft, nextVersion: nextVersion, currentOnly: currentOnly, planApprove: planApprove,
     reviewOverdue: reviewOverdue, reviewSoon: reviewSoon, notYetEffective: notYetEffective,
+    STAGES: STAGES, FREQ: FREQ, VITAL_LABEL: VITAL_LABEL, parseTrigger: parseTrigger, triggerProblems: triggerProblems, applicabilityOf: applicabilityOf, applicabilityForm: applicabilityForm,
+    cleanRegimen: cleanRegimen, regimenProblems: regimenProblems, regimenPrefill: regimenPrefill, regimenText: regimenText, sectionsFor: sectionsFor, match: match, dismissRecord: dismissRecord, shouldShow: shouldShow,
     search: search, suggest: suggest, refOf: refOf, refText: refText, linkFor: linkFor, templateJSON: templateJSON, parseImport: parseImport
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.PCG = api;

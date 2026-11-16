@@ -967,7 +967,7 @@ service cloud.firestore {
         && request.resource.data.status == 'active'
         && request.resource.data.prescriberId == request.auth.uid
         && request.resource.data.kind in ['medicine', 'procedure']
-        && request.resource.data.scheduleType in ['once', 'interval', 'daily', 'fixed', 'weight', 'prn', 'taper', 'custom']
+        && request.resource.data.scheduleType in ['once', 'interval', 'daily', 'fixed', 'weight', 'prn', 'taper', 'elapsed', 'custom']
         && request.resource.data.version is int
         && (
           (request.resource.data.kind == 'procedure'

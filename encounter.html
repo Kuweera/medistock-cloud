@@ -273,6 +273,7 @@
   </div>
 
   <div id="tab-triage">
+    <div class="gstrip" data-gstage="triage"></div>
     <div class="card hidden" id="tAddCard">
       <h2>Record triage / vital signs</h2>
       <div class="hint2" style="margin-top:0;">Fill in only what you measured. Each save is a new record, so you can repeat observations during the visit.</div>
@@ -296,6 +297,7 @@
   </div>
 
   <div id="tab-consult" class="hidden">
+    <div class="gstrip" data-gstage="consult"></div>
     <div class="card hidden" id="cAddCard">
       <h2>Add a presenting complaint</h2>
       <label>Complaint *</label><input type="text" id="cName" list="complaintList" placeholder="Type or choose" autocomplete="off">
@@ -356,6 +358,7 @@
   </div>
 
   <div id="tab-tests" class="hidden">
+    <div class="gstrip" data-gstage="tests"></div>
     <div class="card hidden" id="oAddCard">
       <h2>Request tests</h2>
       <input type="search" id="oQ" placeholder="Search tests" autocomplete="off">
@@ -372,6 +375,7 @@
   </div>
 
   <div id="tab-dx" class="hidden">
+    <div class="gstrip" data-gstage="dx"></div>
     <div class="card hidden" id="dAddCard">
       <h2 id="dTitle">Add a diagnosis</h2>
       <div class="hint2" style="margin-top:0;">You decide the diagnosis. The app never suggests one and never prescribes from it. Changing a diagnosis keeps the earlier version on record.</div>
@@ -390,6 +394,7 @@
   </div>
 
   <div id="tab-treat" class="hidden">
+    <div class="gstrip" data-gstage="treat"></div>
     <div class="card hidden" id="pAddCard">
       <h2>Start a treatment plan</h2>
       <div class="hint2" style="margin-top:0;">A plan holds the medicines and procedures for one problem. A patient can have several plans, and a plan can continue over later visits.</div>
@@ -421,7 +426,10 @@
         <div class="row"><div><label>Materials used</label><input type="text" id="obMat" autocomplete="off"></div><div><label>Who does it</label><input type="text" id="obWho" list="whoList" autocomplete="off"></div></div>
         <label>How long (minutes)</label><input type="number" inputmode="numeric" id="obMinutes">
       </div>
-      <label>Instructions for the patient or nurse (optional)</label><textarea id="obInstr" rows="2" placeholder="e.g. Take after food"></textarea>
+      <label>Instructions for the patient or nurse (optional)</label><textarea id="obInstr" rows="2" placeholder="e.g. Take after food"></textarea><div id="obExpand" class="fhelp" style="font-size:12.5px;margin:2px 0 8px;line-height:1.4"></div>
+      <div id="obAbbrBox"><label>Know the shorthand? (optional)</label><div class="fhelp" style="font-size:12px;color:#5b6b7a;margin:2px 0 8px;line-height:1.35">Type a code such as BD, TDS or q8h. Its meaning is shown. It only fills in the pattern below. It never sets the dose.</div>
+        <div class="row"><div><input type="text" id="obAbbr" list="abbrList" placeholder="e.g. BD" autocomplete="off"></div><div style="flex:0 0 auto"><button type="button" class="btn-small btn-secondary" id="obAbbrGo">Fill in the pattern</button></div></div>
+        <datalist id="abbrList"></datalist><div id="obAbbrHelp" class="fhelp" style="font-size:12.5px;margin:4px 0 8px;line-height:1.4"></div></div>
       <label>When should it be given? *</label><div class="fhelp" style="font-size:12px;color:#5b6b7a;margin:2px 0 8px;line-height:1.35">Choose the pattern. A short explanation and an example appear below.</div>
       <select id="obType"></select>
       <div class="row"><div><label>First dose on</label><div class="dateField"><input type="text" id="obStartDate"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div></div>
@@ -442,6 +450,7 @@
   </div>
 
   <div id="tab-close" class="hidden">
+    <div class="gstrip" data-gstage="followup"></div>
     <div class="card"><h2>Visit summary</h2><div id="sumBox"></div></div>
     <div class="card hidden" id="xCard">
       <h2>Close this visit</h2>
@@ -471,6 +480,9 @@
 <script src="pc-ux.js"></script>
 <script src="pc-fields.js"></script>
 <script src="pc-sched.js"></script>
+<script src="pc-guidelines.js"></script>
+<script src="pc-abbrev.js"></script>
+<script src="pc-guidance-ui.js"></script>
 <script type="module">
   const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, writeBatch, getDocFromCache } = window.top.MC.api(window);
 
@@ -942,8 +954,9 @@
     const active = o.status === "active", canRx = can("treatment.prescribe");
     const st = { active: "Active", stopped: "Stopped", completed: "Completed", superseded: "Replaced by a newer version", cancelled: "Cancelled" }[o.status] || o.status;
     let h = '<div class="cand" style="' + (active ? "" : "opacity:.7;") + '"><div class="pt-name">' + orderTitle(o) + ' <span class="chip ' + (active ? "ok" : "") + '">' + esc(st) + "</span>" + (o.version > 1 ? ' <span class="chip">Version ' + esc(o.version) + "</span>" : "") +
-      (o.scheduleType === "weight" ? ' <span class="chip warn">Weight-based</span>' : "") + "</div>" +
-      '<div class="pt-meta">' + esc(PCS.describe(o)) + "<br>" + (o.instructions ? esc(o.instructions) + "<br>" : "") + (o.kind === "procedure" && (o.materials || o.responsible) ? "Materials: " + esc(o.materials || "-") + " · By: " + esc(o.responsible || "-") + "<br>" : "") +
+      (o.scheduleType === "weight" ? ' <span class="chip warn">Weight-based</span>' : "") + (o.dosingCheck === "not_checked" ? ' <span class="chip warn">Dose not automatically checked</span>' : (o.dosingCheck === "rule" ? ' <span class="chip ok">Checked against dosing rule' + (o.checkedRuleVersion ? " v" + esc(o.checkedRuleVersion) : "") + "</span>" : "")) +
+      (o.guidelineRef ? ' <span class="chip">From guideline: ' + esc(o.guidelineRef.guidelineTitle) + " v" + esc(o.guidelineRef.guidelineVersion) + "</span>" : "") + (o.abbreviation ? ' <span class="chip">' + esc(o.abbreviation.code) + " = " + esc(o.abbreviation.meaning) + "</span>" : "") + "</div>" +
+      '<div class="pt-meta">' + esc(PCS.describe(o)) + "<br>" + (o.instructions ? esc(PCAB.expandText(o.instructions)) + "<br>" : "") + (o.kind === "procedure" && (o.materials || o.responsible) ? "Materials: " + esc(o.materials || "-") + " · By: " + esc(o.responsible || "-") + "<br>" : "") +
       (o.scheduleType === "prn" ? "As needed: given " + esc(evsOf(o.id).length) + " planned entries; PRN doses are recorded on the Treatment screen." : "Planned " + esc(o.totalEvents || evs.length) + " · written " + evs.length + " · given " + cnt("administered") + " · pending " + cnt("pending") + (cnt("held") ? " · held " + cnt("held") : "") + ((cnt("missed") + cnt("refused") + cnt("not_given")) ? " · not given " + (cnt("missed") + cnt("refused") + cnt("not_given")) : "")) +
       "<br>Prescribed by " + esc(o.prescriberName || "") + " · " + esc(stampText(null, o.prescribedAt)) + (o.endReason ? "<br>Ended: " + esc(o.endReason) : "") +
       (o.warnings && o.warnings.length ? '<br><span style="color:var(--warn);">Prescribed with warnings: ' + o.warnings.map(esc).join(" · ") + (o.overrideReason ? " — Reason: " + esc(o.overrideReason) : "") + "</span>" : "") + "</div>";
@@ -956,6 +969,7 @@
     return h + (acts.length ? '<div class="op-actions">' + acts.join("") + "</div>" : "") + "</div>";
   }
   function renderTreat() {
+    scheduleGuidance();
     const list = plans.slice().sort((a, b) => ((a.status === "active" ? 0 : 1) - (b.status === "active" ? 0 : 1)) || (b.clientCreatedAt || 0) - (a.clientCreatedAt || 0));
     $("planList").innerHTML = list.length ? list.map(p => {
       const os = tOrders.filter(o => o.planId === p.id).sort((a, b) => (a.prescribedAt || 0) - (b.prescribedAt || 0));
@@ -988,8 +1002,8 @@
   }
 
   // ----- order builder -----
-  const SCHED_MED = [["once", "Give once"], ["interval", "Give at regular intervals"], ["daily", "Give at selected times every day"], ["fixed", "Give on selected weekdays"], ["weight", "Give a dose worked out from the patient's weight"], ["prn", "Give only when needed"], ["taper", "Reduce the dose in stages"], ["custom", "Select individual dates and times"]];
-  const SCHED_PROC = [["once", "Do once"], ["interval", "Do at regular intervals"], ["daily", "Do at selected times every day"], ["fixed", "Do on selected weekdays"], ["custom", "Select individual dates and times"]];
+  const SCHED_MED = [["once", "Give once"], ["interval", "Give at regular intervals"], ["daily", "Give at selected times every day"], ["fixed", "Give on selected weekdays"], ["weight", "Give a dose worked out from the patient's weight"], ["prn", "Give only when needed"], ["taper", "Reduce the dose in stages"], ["elapsed", "Give at exact hours after the start (for example 0, 12 and 24 hours)"], ["custom", "Select individual dates and times"]];
+  const SCHED_PROC = [["once", "Do once"], ["interval", "Do at regular intervals"], ["daily", "Do at selected times every day"], ["fixed", "Do on selected weekdays"], ["elapsed", "Do at exact hours after the start"], ["custom", "Select individual dates and times"]];
   const SCHED_HELP = {
     once: ["One dose at the start date and time.", "Example: a single injection today at 10:00."],
     interval: ["Repeats after the same number of hours. Enter the hours between doses and how many doses in total.", "Example: every 8 hours, 6 doses."],
@@ -998,6 +1012,7 @@
     weight: ["The dose is calculated from the patient's recorded weight using an approved dosing rule. You must check and confirm the result.", "Example: a rule gives the dose for each kilogram; the weight comes from triage."],
     prn: ["Only given when the patient needs it. Say what it is for, the shortest time between doses and the most doses in a day.", "Example: for pain, at least 6 hours apart, at most 4 times a day."],
     taper: ["The dose changes over time. Add a stage for each dose: how many days, and the dose for those days.", "Example: 3 days at 4 tablets, then 3 days at 2 tablets."],
+    elapsed: ["Each dose is due a set number of hours after the first dose. Use it when the gaps are not all the same. Type the hours counted from the start, 0 being the first dose.", "Example: 0, 12, 24 gives a dose at the start, 12 hours later and 24 hours later. 0, 6, 24, 48 is also fine."],
     custom: ["You choose every date and time yourself. Use this when no other pattern fits.", "Example: Tuesday 09:00, Friday 14:30."]
   };
   function timesField() { return '<label>Times of day * (24-hour, separated by commas)</label><input type="text" id="obTimes" placeholder="08:00, 20:00" autocomplete="off">'; }
@@ -1005,6 +1020,7 @@
   function patternHtml(p) {
     if (p === "interval") return '<div class="row"><div><label>Every (hours) *</label><input type="number" inputmode="decimal" step="any" id="obEvery"></div><div><label>Number of doses *</label><input type="number" inputmode="numeric" id="obCount"></div></div>';
     if (p === "daily") return freqPreset() + timesField() + '<label>For how many days *</label><input type="number" inputmode="numeric" id="obDays">';
+    if (p === "elapsed") return '<label>Hours after the start when each dose is due *</label><input type="text" id="obHours" placeholder="0, 12, 24" autocomplete="off"><div class="fhelp" style="font-size:12px;color:#5b6b7a;margin:2px 0 8px;line-height:1.35">Separate the hours with commas. 0 means the start time you choose below.</div>';
     if (p === "fixed") return timesField() + '<label>On these days (none ticked = every day)</label><div>' + ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d, i) => '<label class="chk" style="display:inline-flex; margin-right:10px;"><input type="checkbox" data-wd="' + i + '"><span>' + d + "</span></label>").join("") + '</div><label>For how many days *</label><input type="number" inputmode="numeric" id="obDays">';
     return "";
   }
@@ -1012,7 +1028,7 @@
   function itemRow(d, t, x) { return '<div class="cand itm"><label>Date</label><div class="dateField"><input type="text" class="itm-date" value="' + esc(d ? PCF.toTyped(d) : "") + '"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div><div class="row"><div><label>Time</label><input type="time" class="itm-time" value="' + esc(t || "") + '"></div><div><label>Dose (optional)</label><input type="number" inputmode="decimal" step="any" class="itm-dose" value="' + esc(x || "") + '"></div></div><button type="button" class="btn-small btn-secondary itm-rm" style="margin-top:6px;">Remove</button></div>'; }
   function renderSchedFields() {
     const t = $("obType").value; let h = "";
-    if (t === "interval" || t === "daily" || t === "fixed") h = patternHtml(t);
+    if (t === "interval" || t === "daily" || t === "fixed" || t === "elapsed") h = patternHtml(t);
     else if (t === "weight") h = '<label>Pattern</label><select id="obPattern"><option value="interval">Regular intervals</option><option value="daily">Times of day</option></select><div id="obPatFields">' + patternHtml("interval") + "</div>";
     else if (t === "prn") h = '<label>What is it for? *</label><input type="text" id="obInd" list="indList" placeholder="e.g. Pain" autocomplete="off"><div class="row"><div><label>Shortest time between doses (hours) *</label><input type="number" inputmode="decimal" step="any" id="obMinInt"></div><div><label>Most doses in a day *</label><input type="number" inputmode="numeric" id="obMaxDay"></div></div><label>Most total in a day (optional)</label><input type="number" inputmode="decimal" step="any" id="obMaxDaily"><label>Allowed for how many days</label><input type="number" inputmode="numeric" id="obPrnDays">';
     else if (t === "taper") h = '<label>Stages (each stage has its own dose)</label><div id="obStages">' + stageRow("", "", "") + '</div><button type="button" class="btn-small btn-secondary" id="obAddStage" style="width:100%; margin-top:6px;">Add a stage</button>';
@@ -1031,6 +1047,7 @@
     if (pat === "interval") { s.everyHours = nv("obEvery"); s.count = nv("obCount"); }
     if (pat === "daily") { s.times = times(g("obTimes") && g("obTimes").value); s.days = nv("obDays"); }
     if (pat === "fixed") { s.times = times(g("obTimes") && g("obTimes").value); s.days = nv("obDays"); s.weekdays = []; document.querySelectorAll("#obSched [data-wd]").forEach(c => { if (c.checked) s.weekdays.push(parseInt(c.dataset.wd, 10)); }); }
+    if (pat === "elapsed") s.hours = String(g("obHours") ? g("obHours").value : "").split(/[,;\s]+|\band\b/i).filter(Boolean).map(Number);
     if (t === "weight") s.pattern = pat;
     if (t === "prn") { s.indication = (g("obInd") && g("obInd").value.trim()) || ""; s.minIntervalHours = nv("obMinInt"); s.maxPerDay = nv("obMaxDay"); s.maxDailyDose = nv("obMaxDaily"); s.periodDays = nv("obPrnDays"); }
     if (t === "taper") { s.stages = []; document.querySelectorAll("#obStages .stg").forEach(r => { s.stages.push({ days: Number(r.querySelector(".stg-days").value) || 0, times: times(r.querySelector(".stg-times").value), doseValue: Number(r.querySelector(".stg-dose").value) || 0 }); }); }
@@ -1063,6 +1080,7 @@
     if (b.scheduleType === "weight" && $("obPattern")) { $("obPattern").value = pat || "interval"; $("obPatFields").innerHTML = patternHtml(pat || "interval"); }
     if (pat === "interval") { set("obEvery", s.everyHours); set("obCount", s.count); }
     if (pat === "daily" || pat === "fixed") { set("obTimes", (s.times || []).join(", ")); set("obDays", s.days); (s.weekdays || []).forEach(w => { const c = document.querySelector('#obSched [data-wd="' + w + '"]'); if (c) c.checked = true; }); }
+    if (pat === "elapsed") set("obHours", (s.hours || []).join(", "));
     if (b.scheduleType === "prn") { set("obInd", s.indication); set("obMinInt", s.minIntervalHours); set("obMaxDay", s.maxPerDay); set("obMaxDaily", s.maxDailyDose); set("obPrnDays", s.periodDays); }
     if (b.scheduleType === "taper") $("obStages").innerHTML = (s.stages || []).map(x => stageRow(x.days, (x.times || []).join(", "), x.doseValue)).join("") || stageRow("", "", "");
     if (b.scheduleType === "custom") { $("obItems").innerHTML = (s.items || []).map(x => itemRow(x.date, x.time, x.doseValue)).join("") || itemRow("", "", ""); PCF.initDates(); }
@@ -1076,7 +1094,7 @@
       const wi = weightInfo();
       if (!$("obWeight")) buildWeightBox();
       if (!wi.rule || !(wi.rule.dosePerKg > 0)) {
-        hard = true; $("wInfo").innerHTML = '<div class="alert-box">Weight-based doses need an approved dosing rule with a dose per kg for this medicine. There is none on file. Add one in Dosing rules, or choose another way of giving the dose.</div>'; $("wRes").innerHTML = ""; $("wConfirmWrap").classList.add("hidden"); obCtx.lastDose = null;
+        hard = true; $("wInfo").innerHTML = '<div class="alert-box">Weight-based doses need an approved dosing rule with a dose per kg for this medicine. There is none on file. Add one in Dosing rules, or choose another way of giving the dose.</div><button type="button" class="btn-small btn-secondary" id="wManual" style="width:100%;margin-top:6px;">Enter the dose myself instead</button>'; $("wRes").innerHTML = ""; $("wConfirmWrap").classList.add("hidden"); obCtx.lastDose = null;
       } else {
         const res = wi.res, good = res && res.dose != null && !res.errors.length;
         $("wInfo").innerHTML = '<div class="info-box">Rule: ' + esc(wi.rule.medicineName) + " version " + esc(wi.rule.version) + " · " + esc(wi.rule.dosePerKg) + " " + esc(wi.rule.doseUnit || "") + " per kg · source: " + esc(wi.rule.source) + "</div>";
@@ -1097,7 +1115,7 @@
       const perDay = o.scheduleType === "prn" ? (o.sched.maxPerDay || 0) : PCS.maxPerDay(evs);
       if (o.doseValue != null) {
         const chk = PCS.checkDose(rule, o, perDay);
-        if (chk.status === "norule") info.push('<div class="pt-meta">' + esc(chk.messages[0]) + "</div>");
+        if (chk.status === "norule") info.push('<div class="pt-meta" style="color:var(--warn);"><b>The dose has not been automatically checked.</b> There is no approved dosing rule for this medicine. You can still prescribe it: check the dose yourself and confirm the order.</div>');
         else if (chk.status === "warn") { block = true; msgs.push('<div class="alert-box"><b>Dose warning</b> (rule: ' + esc(rule.medicineName) + " v" + esc(rule.version) + ", " + esc(rule.source) + "):<br>" + chk.messages.map(esc).join("<br>") + "</div>"); }
         else info.push('<div class="pt-meta" style="color:var(--accent);">Within the approved rule (' + esc(rule.medicineName) + " version " + esc(rule.version) + ").</div>");
       }
@@ -1109,6 +1127,7 @@
         if (rule.reviewDate && rule.reviewDate < todayIso()) info.push('<div class="pt-meta" style="color:var(--warn);">This dosing rule is past its review date.</div>');
       }
     }
+    renderExpand();
     $("obSafety").innerHTML = msgs.join("") + info.join("");
     $("obOverrideBox").classList.toggle("hidden", !block);
     obCtx.block = block; obCtx.hard = hard;
@@ -1119,14 +1138,14 @@
     else if (o.scheduleType === "prn") $("obPreview").textContent = PCS.describe(o) + ". No planned times: each dose is recorded when it is given.";
     else { const ev = PCS.generate(o); $("obPreview").innerHTML = "<b>" + ev.length + " administration" + (ev.length === 1 ? "" : "s") + " planned.</b> First: " + ev.slice(0, 4).map(e => esc(e.plannedLocal)).join(", ") + (ev.length > 4 ? "…" : "") + "<br>" + esc(PCS.describe(o)); }
   }
-  function openOrder(planId, kind, base) {
+  function openOrder(planId, kind, base, pre) {
     const plan = plans.find(p => p.id === planId); if (!plan) return;
-    obCtx = { planId: planId, kind: kind, base: base || null, block: false, hard: false };
+    obCtx = { planId: planId, kind: kind, base: base || null, pre: pre || null, block: false, hard: false };
     $("obCard").classList.remove("hidden"); $("obTitle").textContent = base ? "Change this order (saved as a new version)" : (kind === "medicine" ? "Add a medicine" : "Add a procedure");
     $("obPlanLine").textContent = "Plan: " + plan.title;
     $("obMedBox").classList.toggle("hidden", kind !== "medicine"); $("obProcBox").classList.toggle("hidden", kind !== "procedure"); $("obQtyBox").classList.toggle("hidden", kind !== "medicine");
     const types = kind === "medicine" ? SCHED_MED : SCHED_PROC; $("obType").innerHTML = types.map(t => '<option value="' + t[0] + '">' + t[1] + "</option>").join("");
-    const b = base || {};
+    const b = base || pre || {}; $("obAbbr").value = ""; $("obAbbrHelp").innerHTML = "";
     $("obMed").value = b.medicineName || ""; $("obForm").value = b.formulation || ""; $("obStrength").value = b.strength || ""; $("obDose").value = b.doseValue != null ? b.doseValue : ""; $("obUnit").value = b.doseUnit || ""; $("obRoute").value = b.route || "";
     $("obProc").value = b.procedureName || ""; $("obCat").value = b.category || "dressing"; $("obMat").value = b.materials || ""; $("obWho").value = b.responsible || ""; $("obMinutes").value = b.durationMinutes != null ? b.durationMinutes : "";
     $("obInstr").value = b.instructions || ""; $("obQty").value = b.quantityPrescribed != null ? b.quantityPrescribed : ""; $("obOverride").value = ""; $("obMsg").textContent = "";
@@ -1134,7 +1153,9 @@
     const now = new Date(); now.setMinutes(Math.ceil(now.getMinutes() / 15) * 15, 0, 0);
     PCF.setDate("obStartDate", isoDate(now)); $("obStartTime").value = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
     $("obChangeBox").classList.toggle("hidden", !base); $("obChangeReason").value = "";
-    renderSchedFields(); if (base) { fillSched(base); schedulePreview(); } $("obCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    renderSchedFields(); if (base || pre) { fillSched(base || pre); schedulePreview(); }
+    if (pre) $("obPlanLine").textContent = "Plan: " + plan.title + " · Filled in from the guideline “" + pre.guideline.guidelineTitle + "” (" + pre.guideline.guidelineSource + "). Check the patient, the dose and the schedule, then save. Nothing is prescribed until you save.";
+    $("obCard").scrollIntoView({ behavior: "smooth", block: "start" });
   }
   function closeOrder() { obCtx = null; $("obCard").classList.add("hidden"); }
   function saveOrder() {
@@ -1166,6 +1187,9 @@
       prescriberId: me.id, prescriberName: myName, prescribedAt: Date.now(), scheduleType: o.scheduleType, sched: o.sched, startAt: o.startAt, tz: o.tz, totalEvents: full.length, instructions: $("obInstr").value.trim(), warnings: warnings, overrideReason: override || null });
     if (kind === "medicine") Object.assign(order, { medicineId: d ? d.id : null, medicineName: name, generic: (d && d.generic) || "", formulation: $("obForm").value.trim() || (d && d.dosageForm) || "", strength: $("obStrength").value.trim(), doseValue: dose, doseUnit: o.doseUnit, route: o.route, quantityPrescribed: $("obQty").value.trim() === "" ? null : Number($("obQty").value) });
     else Object.assign(order, { procedureName: name, category: $("obCat").value, materials: $("obMat").value.trim(), responsible: $("obWho").value.trim(), durationMinutes: $("obMinutes").value.trim() === "" ? null : Number($("obMinutes").value), doseValue: null });
+    { const rl = kind === "medicine" ? PCS.ruleFor(medNames(), dRules, todayIso()) : null, ab = ($("obAbbr").value || "").trim(), pe = PCAB.explain(ab);
+      Object.assign(order, { prescribingLevel: obCtx.pre ? "guideline" : (rl ? "rule_checked" : "clinician"), dosingCheck: kind === "medicine" ? (rl ? "rule" : "not_checked") : null, checkedRuleId: rl ? rl.id : null, checkedRuleVersion: rl ? rl.version : null,
+        guidelineRef: obCtx.pre ? obCtx.pre.guideline : null, regimenLabel: obCtx.pre ? obCtx.pre.regimenLabel : null, abbreviation: pe.ok ? { code: ab, meaning: pe.entry.m } : null }); }
     if (wi && wi.rule) Object.assign(order, { ruleId: wi.rule.id, ruleVersion: wi.rule.version, ruleSource: wi.rule.source, weightKg: wi.weight, doseConfirmedBy: me.id, doseConfirmedAt: Date.now() });
     const ops = [["s", oref, order], auditOp(base ? "order.change" : "order.add", "pc_treatment_orders/" + oref.id, { name: name, scheduleType: o.scheduleType, warnings: warnings.length, override: override || null, supersedes: base ? base.id : null })];
     if (base) {
@@ -1233,8 +1257,92 @@
     ok("Visit cancelled on this phone.");
   }
 
+  // ---------- DEVELOPER 2: abbreviations in the order form ----------
+  const TIME_PRESETS = { 1: "08:00", 2: "08:00, 20:00", 3: "08:00, 14:00, 20:00", 4: "06:00, 12:00, 18:00, 22:00" };
+  function applyAbbrev() {
+    const x = PCAB.explain($("obAbbr").value), h = $("obAbbrHelp");
+    if (!x.ok) { h.innerHTML = x.text ? '<span style="color:var(--warn)">' + esc(x.text) + "</span>" : ""; return; }
+    const p = x.pattern, types = Array.from($("obType").options).map(o => o.value); if (types.indexOf(p.scheduleType) < 0) { h.innerHTML = '<span style="color:var(--warn)">This kind of order cannot use that pattern.</span>'; return; }
+    $("obType").value = p.scheduleType; renderSchedFields();
+    if (p.scheduleType === "daily") { if ($("obTimes")) $("obTimes").value = TIME_PRESETS[p.timesPerDay] || ""; }
+    if (p.scheduleType === "interval") { if ($("obEvery")) $("obEvery").value = p.everyHours; }
+    schedulePreview();
+    h.innerHTML = '<span style="color:var(--accent)">' + esc(x.text) + " Pattern filled in: now enter " + (p.scheduleType === "prn" ? "what it is for" : p.scheduleType === "once" ? "the start time" : p.scheduleType === "interval" ? "how many doses" : "the number of days") + " and check the times.</span>";
+  }
+  function renderExpand() {
+    const el = $("obExpand"); if (!el) return;
+    const found = PCAB.find(($("obInstr").value || "") + " " + ($("obRoute").value || "") + " " + ($("obUnit").value || "")), shown = found.filter(f => f.entry.k !== "form");
+    el.innerHTML = shown.map(f => f.entry.k === "unsafe" ? '<div class="alert-box" style="margin-top:4px">' + esc(f.entry.a + ": " + f.entry.m + ". " + (f.entry.say || "")) + "</div>" : '<div style="color:var(--muted)">' + esc(f.abbr + " means " + f.entry.m + ".") + (f.entry.note ? " " + esc(f.entry.note) : "") + "</div>").join("");
+  }
+
+  // ---------- DEVELOPER 2: guideline support in the visit ----------
+  // Shows approved guidance that matches what has been recorded for THIS patient and visit. It never diagnoses or prescribes;
+  // the clinician accepts, dismisses or reviews each suggestion. Dismissals are kept on this device; acceptances are saved as a visit note.
+  let glNational = [], glLocal = [], gHist = [], gTimer = null, gOpen = {}, gDis = {};
+  const gDisKey = () => "mcGdis:" + (me ? me.id : "") + ":" + encId;
+  function gLoadDis() { try { gDis = JSON.parse(localStorage.getItem(gDisKey()) || "{}") || {}; } catch (e) { gDis = {}; } }
+  function gSaveDis() { try { localStorage.setItem(gDisKey(), JSON.stringify(gDis)); } catch (e) {} }
+  function scheduleGuidance() { clearTimeout(gTimer); gTimer = setTimeout(renderGuidance, 60); }
+  function guideCtx() {
+    const act = x => x.status === "active";
+    const t = triage.filter(act).sort((a, b) => (b.recordedAt || 0) - (a.recordedAt || 0)), vit = {};
+    ["temperatureC", "pulse", "respRate", "spo2", "bpSys", "bpDia", "glucose", "painScore", "muacCm"].forEach(k => { const r = t.find(x => x[k] != null && x[k] !== ""); if (r) vit[k] = r[k]; });
+    const w = latestWeight(); if (w != null) vit.weightKg = w;
+    const comps = complaints.filter(act), findings = [];
+    comps.forEach(c => String(c.associated || "").split(/[,;]+/).forEach(x => { if (x.trim()) findings.push(x.trim()); }));
+    const tests = orders.filter(o => o.status !== "cancelled").map(o => { const r = oResults.filter(x => x.orderId === o.id && x.status !== "entered_in_error").sort((a, b) => (b.resultAt || 0) - (a.resultAt || 0))[0]; return { name: o.name, result: r ? [r.value, r.flag].filter(v => v != null && v !== "").join(" ") : "" }; });
+    return { ageMonths: ageMonths(), sex: enc.patientSex === "male" || enc.patientSex === "female" ? enc.patientSex : null, pregnancy: gHist.some(h => h.status === "active" && h.type === "pregnancy_breastfeeding") ? true : null, weightKg: w, vitals: vit,
+      complaints: comps.map(c => c.name), findings: findings, diagnoses: diagnoses.filter(act).map(d => d.name), tests: tests,
+      medicines: tOrders.filter(o => o.status === "active" && o.kind === "medicine").map(o => o.medicineName).concat(meds.filter(act).map(m => m.medicineName)) };
+  }
+  function gAccepted() { const m = {}; notes.forEach(n => { if (n.status !== "entered_in_error" && n.structured && n.structured.guidelineRef && n.structured.action === "accepted") m[n.structured.guidelineRef.guidelineKey] = n.authorName || true; }); return m; }
+  function renderGuidance() {
+    if (!enc || typeof PCG === "undefined") return;
+    const list = glNational.concat(glLocal), ctx = guideCtx(), acc = gAccepted(), hasPlan = plans.some(p => p.status === "active");
+    document.querySelectorAll("[data-gstage]").forEach(el => {
+      const stage = el.dataset.gstage, raw = PCG.match(list, ctx, { stage: stage, limit: 5 }), shown = raw.filter(it => PCG.shouldShow(gDis[stage + ":" + it.key], it));
+      el.__items = raw; el.innerHTML = PCGU.render(shown, { stage: stage, open: gOpen, accepted: acc, dismissedCount: raw.length - shown.length, canPrescribe: can("treatment.prescribe"), hasPlan: hasPlan });
+    });
+  }
+  function acceptGuidance(it, stage) {
+    if (!isOpen()) { ok("This visit is closed, so nothing can be added to it."); return; }
+    if (!can("consult.record")) { const el = $("doneMsg"); el.className = "msg err"; el.textContent = "You do not have permission to add visit notes."; return; }
+    const g = it.g, ref = doc(collection(db, "pc_clinical_notes"));
+    const content = "Guideline reviewed: " + g.title + " (" + (g.scope === "facility" ? "local facility protocol" : "national/published guideline") + ", version " + (g.version || 1) + ").\nSource: " + (g.source || "") + "\nShown because: " + it.reasons.map(r => r.text).join("; ") + ".\nAccepted by the clinician as reference for this visit. This is not a diagnosis or an order.";
+    const d = child({ noteType: "other", content: content, structured: { action: "accepted", stage: stage, guidelineRef: PCG.refOf(g), reasons: it.reasons.map(r => r.text) }, authorId: me.id, authorName: myName, amends: null });
+    delete d.recordedBy; delete d.recordedByName; delete d.recordedAt; delete d.status;
+    if (can("consult.sign")) Object.assign(d, { status: "signed", signedBy: me.id, signedByName: myName, signedAt: serverTimestamp() }); else d.status = "draft";
+    setDoc(ref, d).catch(saveFailed); logAudit("guideline.accept", "pc_clinical_notes/" + ref.id, { guidelineId: g.id, guidelineVersion: g.version || 1, stage: stage });
+    ok("Recorded in the visit notes on this phone: you reviewed “" + g.title + "”.");
+  }
+  function dismissGuidance(it, stage) {
+    gDis[stage + ":" + it.key] = PCG.dismissRecord(it); gSaveDis();
+    logAudit("guideline.dismiss", "guidelines/" + it.g.id, { guidelineId: it.g.id, guidelineVersion: it.g.version || 1, stage: stage });
+    renderGuidance();
+  }
+  function useRegimen(it, idx) {
+    if (!can("treatment.prescribe")) return; if (!isOpen()) { ok("This visit is closed, so nothing can be added to it."); return; }
+    const x = it.regimens.find(r => r.index === idx); if (!x) return;
+    const act = plans.filter(p => p.status === "active"); if (!act.length) { ok("Start a treatment plan first, then choose the regimen."); return; }
+    let plan = act[0];
+    if (act.length > 1) { const n = parseInt(window.prompt("Which treatment plan is this for? Type the number.\n" + act.map((p, i) => (i + 1) + ". " + p.title).join("\n"), "1"), 10); if (!(n >= 1 && n <= act.length)) return; plan = act[n - 1]; }
+    const pre = Object.assign(PCG.regimenPrefill(x.r, TIME_PRESETS), { guideline: PCG.refOf(it.g), regimenLabel: x.r.label || PCG.regimenText(x.r) });
+    openOrder(plan.id, "medicine", null, pre);
+  }
+  document.addEventListener("click", e => {
+    const b = e.target.closest("[data-gact]"); if (!b || !enc) return;
+    const strip = b.closest("[data-gstage]"), stage = strip && strip.dataset.gstage, act = b.dataset.gact, it = strip && (strip.__items || []).find(i => i.key === b.dataset.gkey);
+    if (act === "undismiss") { Object.keys(gDis).forEach(k => { if (k.indexOf(stage + ":") === 0) delete gDis[k]; }); gSaveDis(); renderGuidance(); return; }
+    if (!it) return;
+    if (act === "review") { gOpen[it.key] = !gOpen[it.key]; renderGuidance(); }
+    else if (act === "accept") acceptGuidance(it, stage);
+    else if (act === "dismiss") dismissGuidance(it, stage);
+    else if (act === "open") window.mcGo(PCG.linkFor({ id: it.g.id }));
+    else if (act === "use") useRegimen(it, Number(b.dataset.gidx));
+  });
+
   // ---------- wiring ----------
-  const rAll = () => { if (!enc) return; renderHeader(); renderTriage(); renderComplaints(); renderMeds(); renderNotes(); renderOrders(); renderDx(); renderTreat(); renderPlanDx(); renderSummary(); };
+  const rAll = () => { if (!enc) return; scheduleGuidance(); renderHeader(); renderTriage(); renderComplaints(); renderMeds(); renderNotes(); renderOrders(); renderDx(); renderTreat(); renderPlanDx(); renderSummary(); };
   document.querySelectorAll("#tabs .pill-btn").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll("#tabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b));
     ["triage", "consult", "notes", "tests", "dx", "treat", "close"].forEach(t => { $("tab-" + t).classList.toggle("hidden", t !== b.dataset.t); });
@@ -1255,6 +1363,9 @@
   Object.keys(CAT_LABEL).forEach(k => { const o = document.createElement("option"); o.value = k; o.textContent = CAT_LABEL[k]; $("oCat").appendChild(o); });
   $("pSaveBtn").onclick = savePlan; $("obSaveBtn").onclick = saveOrder; $("obCancelBtn").onclick = closeOrder;
   $("obType").addEventListener("change", renderSchedFields);
+  $("obAbbr").addEventListener("input", () => { const x = PCAB.explain($("obAbbr").value); $("obAbbrHelp").innerHTML = x.text ? '<span style="color:' + (x.ok ? "var(--accent)" : "var(--warn)") + '">' + esc(x.text) + "</span>" : ""; });
+  $("obAbbr").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); applyAbbrev(); } });
+  $("abbrList").innerHTML = PCAB.all().filter(a => a.kind === "frequency" || a.kind === "timing").map(a => '<option value="' + esc(a.abbr) + '">' + esc(a.meaning) + "</option>").join("");
   $("obCard").addEventListener("input", schedulePreview); $("obCard").addEventListener("change", e => {
     if (e.target.id === "obFreq") { const t = { 1: "08:00", 2: "08:00, 20:00", 3: "08:00, 14:00, 20:00", 4: "06:00, 12:00, 18:00, 22:00" }[e.target.value]; if (t && $("obTimes")) $("obTimes").value = t; }
     if (e.target.id === "obPattern") { $("obPatFields").innerHTML = patternHtml(e.target.value); PCF.initDates(); }
@@ -1262,6 +1373,8 @@
     schedulePreview();
   });
   $("obCard").addEventListener("click", e => {
+    if (e.target.id === "obAbbrGo") { applyAbbrev(); return; }
+    if (e.target.id === "wManual") { const pat = $("obPattern") ? $("obPattern").value : "interval"; $("obType").value = pat; $("obDose").value = ""; renderSchedFields(); return; }
     if (e.target.id === "obAddStage") { $("obStages").insertAdjacentHTML("beforeend", stageRow("", "", "")); return; }
     if (e.target.id === "obAddItem") { $("obItems").insertAdjacentHTML("beforeend", itemRow("", "", "")); PCF.initDates(); return; }
     if (e.target.classList.contains("stg-rm")) { const r = e.target.closest(".stg"); if (document.querySelectorAll("#obStages .stg").length > 1) r.remove(); schedulePreview(); return; }
@@ -1315,6 +1428,10 @@
     onSnapshot(query(collection(db, "pc_dosing_rules"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), limit(1000)), s => { dRules = s.docs.map(d => ({ id: d.id, ...d.data() })); schedulePreview(); }, () => {});
     onSnapshot(query(collection(db, "pc_inv_catalogue"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), limit(1000)), s => { catalogue = s.docs.map(d => ({ id: d.id, ...d.data() })); renderOrderPick(); }, () => {});
     onSnapshot(query(collection(db, "pc_allergies"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", enc.patientId), limit(100)), s => { allergies = s.docs.map(d => ({ id: d.id, ...d.data() })); renderBanner(); }, () => {});
+    gLoadDis();
+    onSnapshot(query(collection(db, "guidelines"), where("businessId", "==", businessId), where("scope", "==", "national"), limit(3000)), s => { glNational = s.docs.map(d => ({ id: d.id, ...d.data() })); scheduleGuidance(); }, () => {});
+    onSnapshot(query(collection(db, "guidelines"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("scope", "==", "facility"), limit(3000)), s => { glLocal = s.docs.map(d => ({ id: d.id, ...d.data() })); scheduleGuidance(); }, () => {});
+    onSnapshot(query(collection(db, "pc_medical_history"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", enc.patientId), limit(300)), s => { gHist = s.docs.map(d => ({ id: d.id, ...d.data() })); scheduleGuidance(); }, () => {});
     getDoc(doc(db, "pc_obs_rules", facilityId)).then(s => { if (s.exists()) { obsRules = s.data(); renderTriage(); } }).catch(() => {});
     try { onSnapshot(query(collection(db, "drugs"), where("businessId", "==", businessId), where("shopId", "==", facilityId)), s => {
       drugs = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.name && d.active !== false);

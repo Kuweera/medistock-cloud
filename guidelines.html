@@ -321,7 +321,7 @@
     if (PCG.reviewOverdue(g, today())) h += '<div class="alert-box">The review date (' + esc(dmy(g.reviewDate)) + ") has passed. This information may be out of date. Check the source before relying on it.</div>";
     h += '<div class="srcbox"><div><b>' + (g.scope === "facility" ? "Local facility protocol" : "National or published guideline") + "</b> · version " + esc(g.version || 1) + "</div>" +
       '<table class="meta"><tr><th>Guideline</th><td>' + esc(g.sourceTitle || "") + "</td></tr><tr><th>Published by</th><td>" + esc(g.sourceOrg || "") + "</td></tr><tr><th>Edition / year</th><td>" + esc(g.sourceEdition || "") + "</td></tr><tr><th>Chapter / page</th><td>" + esc(g.sourceRef || "") + "</td></tr><tr><th>Country / area</th><td>" + esc(g.jurisdiction || "") + "</td></tr>" +
-      "<tr><th>Date entered</th><td>" + esc(dmy(g.enteredDate)) + "</td></tr><tr><th>Effective from</th><td>" + esc(dmy(g.effectiveDate)) + "</td></tr><tr><th>Review by</th><td>" + esc(dmy(g.reviewDate)) + "</td></tr>" +
+      "<tr><th>Published</th><td>" + esc(g.publicationDate || "") + "</td></tr>" + (g.supportingDoc ? "<tr><th>Supporting document</th><td>" + esc(g.supportingDoc) + "</td></tr>" : "") + "<tr><th>Date entered</th><td>" + esc(dmy(g.enteredDate)) + "</td></tr><tr><th>Effective from</th><td>" + esc(dmy(g.effectiveDate)) + "</td></tr><tr><th>Review by</th><td>" + esc(dmy(g.reviewDate)) + "</td></tr>" +
       "<tr><th>Approval</th><td>" + esc(PCG.STATUS_LABEL[g.approvalStatus] || g.approvalStatus) + (g.approvedByName ? " by " + esc(g.approvedByName) + (g.approvedAt ? " on " + esc(whenText(g.approvedAt)) : "") : "") + (g.selfApproved ? ' <span class="chip warn">approved by the person who entered it</span>' : "") + "</td></tr></table></div>";
     if (g.scope === "facility") {
       const nat = g.basedOnKey ? PCG.currentOnly(national).find(x => x.guidelineKey === g.basedOnKey) : null;
@@ -333,7 +333,7 @@
     const A = sub("Important questions to ask", a.questions) + sub("Relevant history", a.history) + sub("Symptoms to document", a.document) + sub("Examination findings to look for", a.examination);
     const B = sub("Danger signs", w.danger) + sub("Findings needing urgent assessment", w.urgent) + sub("Referral considerations", w.referral);
     let C = (g.investigations && g.investigations.length ? sub("Tests mentioned in the source", g.investigations) : "") + sub("What the tests are for and how to read them", g.investigationNotes);
-    let D = (g.treatment ? '<div class="sublab">Treatment information in the source</div><div class="ptext">' + esc(g.treatment) + "</div>" : "") + sub("Precautions", g.precautions) + sub("Follow-up", g.followUp) + sub("Referral", g.referralAdvice);
+    let D = (g.treatment ? '<div class="sublab">Treatment information in the source</div><div class="ptext">' + esc(g.treatment) + "</div>" : "") + sub("Precautions", g.precautions) + sub("Follow-up", g.followUp) + sub("Referral", g.referralAdvice) + regimensCard(g);
     h += sec("A", "Patient assessment", "", { src: src, page: r.assessment }, A) + sec("B", "Warning signs", "danger", { src: src, page: r.warnings }, B) + sec("C", "Investigations", "", { src: src, page: r.investigations }, C) + sec("D", "Management references", "", { src: src, page: r.management }, D);
     if (g.symptoms && g.symptoms.length) h += '<div class="hint2">Complaints this page is linked to (used for finding it): ' + esc(g.symptoms.join(", ")) + (g.aliases && g.aliases.length ? ". Also known as: " + esc(g.aliases.join(", ")) : "") + "</div>";
     h += '<div class="hint2">Reference only. Doses and treatment must be decided by a qualified health worker using the source document and the patient\'s own situation.</div>';
@@ -341,6 +341,10 @@
     if (canManage() || canApprove()) h += mgrButtons(g, vs, cur);
     h += '<div id="histBox"></div>';
     return h;
+  }
+  function regimensCard(g) {
+    const rs = g.regimens || []; if (!rs.length) return "";
+    return '<div class="sublab">Regimens listed in the source</div><ul>' + rs.map(r => "<li>" + esc(PCG.regimenText(r)) + (r.minAgeMonths != null || r.maxAgeMonths != null || r.minWeightKg != null || r.maxWeightKg != null ? " <i>(" + [r.minAgeMonths != null ? "from " + r.minAgeMonths + " months" : "", r.maxAgeMonths != null ? "up to " + r.maxAgeMonths + " months" : "", r.minWeightKg != null ? "from " + r.minWeightKg + " kg" : "", r.maxWeightKg != null ? "up to " + r.maxWeightKg + " kg" : ""].filter(Boolean).join(", ") + ")</i>" : "") + (r.page ? " · " + esc(r.page) : "") + "</li>").join("") + "</ul>";
   }
   function mgrButtons(g, vs, cur) {
     let b = "";
@@ -432,6 +436,29 @@
     else ed = { id: g.id, key: g.guidelineKey, version: g.version || 1, supersedes: g.supersedes || null, form: PCG.toForm(g), step: 0, locked: true, origin: g };
     setTab("editor"); renderEditor();
   }
+
+  // ---- regimens listed in the source (these become selectable suggestions when prescribing; the clinician still confirms every order)
+  function regimensHtml() {
+    const rs = ed.form.regimens || [];
+    return '<div class="sublab" style="margin-top:12px">Regimens listed in the source (optional)</div><div class="hint2" style="margin-top:2px">Add a regimen only if the source states the medicine, dose, route and how often. Copy it exactly. Doctors will see it as a suggestion they can choose, check and confirm. It is never prescribed automatically.</div><div id="regList">' +
+      rs.map((r, i) => regRow(r, i)).join("") + '</div><button type="button" class="btn-small btn-secondary" style="margin-top:6px" data-act="addreg">+ Add a regimen</button>';
+  }
+  function regRow(r, i) {
+    const f = r.frequency || { type: "once" }, inp = (k, label, ph, type) => '<div><label>' + label + '</label><input type="' + (type || "text") + '" ' + (type === "number" ? 'step="any" min="0" ' : "") + 'data-r="' + i + '" data-rf="' + k + '" value="' + esc(r[k] == null ? "" : r[k]) + '" placeholder="' + esc(ph || "") + '" autocomplete="off"></div>';
+    const fi = (k, label, ph, type) => '<div><label>' + label + '</label><input type="' + (type || "number") + '" ' + ((type || "number") === "number" ? 'step="any" min="0" ' : "") + 'data-r="' + i + '" data-ff="' + k + '" value="' + esc(Array.isArray(f[k]) ? f[k].join(", ") : (f[k] == null ? "" : f[k])) + '" placeholder="' + esc(ph || "") + '" autocomplete="off"></div>';
+    let fr = "";
+    if (f.type === "interval") fr = '<div class="row">' + fi("everyHours", "Every (hours)") + fi("count", "Number of doses") + "</div>";
+    else if (f.type === "daily") fr = '<div class="row">' + fi("timesPerDay", "Times a day") + fi("days", "For (days)") + "</div>";
+    else if (f.type === "elapsed") fr = fi("hours", "Hours after the start (for example 0, 12, 24)", "0, 12, 24", "text");
+    else if (f.type === "prn") fr = fi("indication", "What it is for", "", "text") + '<div class="row">' + fi("minIntervalHours", "Shortest time between doses (hours)") + fi("maxPerDay", "Most doses in a day") + "</div>";
+    return '<div class="step" data-regrow="' + i + '"><h3>Regimen ' + (i + 1) + ' <button type="button" class="btn-small btn-danger-outline" style="float:right;min-height:32px;padding:4px 10px" data-act="rmreg" data-i="' + i + '">Remove</button></h3>' +
+      inp("label", "Name for this regimen", "e.g. as written in the source") + inp("medicine", "Medicine", "") +
+      '<div class="row">' + inp("strength", "Strength", "") + inp("formulation", "Formulation", "") + "</div>" +
+      '<div class="row">' + inp("doseValue", "Dose for each time", "", "number") + inp("doseUnit", "Unit of the dose", "e.g. tablet") + "</div>" + inp("route", "How it is given", "e.g. by mouth") +
+      '<label>How often</label><select data-r="' + i + '" data-ff="type">' + Object.keys(PCG.FREQ).map(k => '<option value="' + k + '"' + (f.type === k ? " selected" : "") + ">" + esc(PCG.FREQ[k]) + "</option>").join("") + "</select>" + fr +
+      '<div class="row">' + inp("minAgeMonths", "Youngest age (months)", "", "number") + inp("maxAgeMonths", "Oldest age (months)", "", "number") + '</div><div class="row">' + inp("minWeightKg", "Lowest weight (kg)", "", "number") + inp("maxWeightKg", "Highest weight (kg)", "", "number") + "</div>" +
+      inp("instructions", "Instructions in the source", "") + inp("page", "Page", "e.g. page 124") + "</div>";
+  }
   function renderEditor() {
     const s = ed.step, f = ed.form;
     let h = '<h2>' + (ed.id ? "Edit draft (version " + ed.version + ")" : "Add a new entry") + "</h2>";
@@ -446,6 +473,12 @@
         const nat = PCG.currentOnly(national).sort((a, b) => a.title.localeCompare(b.title));
         h += fld("basedOnKey", "Related national guideline", "If this local protocol relates to a national guideline already in the library, choose it so staff see both together. Leave blank if there is none.", { type: "select", options: [["", "None"]].concat(nat.map(x => [x.guidelineKey, x.title])) });
       }
+      h += '<div class="step"><h3>Who does it apply to? <span class="opt">optional</span></h3><div class="hint2" style="margin-top:0">Only fill this in if the source limits the guidance to certain patients. The app uses it to hide guidance that does not fit the patient. Leave blank if it applies to everyone.</div>' +
+        '<div class="row"><div><label for="f_ageMin">Youngest age</label><input type="number" min="0" step="any" id="f_ageMin" data-f="ageMin" value="' + esc(f.ageMin || "") + '"></div><div><label for="f_ageMinUnit">Unit</label><select id="f_ageMinUnit" data-f="ageMinUnit"><option value="months"' + (f.ageMinUnit !== "years" ? " selected" : "") + '>months</option><option value="years"' + (f.ageMinUnit === "years" ? " selected" : "") + '>years</option></select></div></div>' +
+        '<div class="row"><div><label for="f_ageMax">Oldest age</label><input type="number" min="0" step="any" id="f_ageMax" data-f="ageMax" value="' + esc(f.ageMax || "") + '"></div><div><label for="f_ageMaxUnit">Unit</label><select id="f_ageMaxUnit" data-f="ageMaxUnit"><option value="months"' + (f.ageMaxUnit !== "years" ? " selected" : "") + '>months</option><option value="years"' + (f.ageMaxUnit === "years" ? " selected" : "") + '>years</option></select></div></div>' +
+        '<div class="row"><div><label for="f_wMin">Lowest weight (kg)</label><input type="number" min="0" step="any" id="f_wMin" data-f="wMin" value="' + esc(f.wMin || "") + '"></div><div><label for="f_wMax">Highest weight (kg)</label><input type="number" min="0" step="any" id="f_wMax" data-f="wMax" value="' + esc(f.wMax || "") + '"></div></div>' +
+        '<div class="row"><div><label for="f_sex">Sex</label><select id="f_sex" data-f="sex"><option value="any"' + (f.sex === "any" || !f.sex ? " selected" : "") + '>Any</option><option value="female"' + (f.sex === "female" ? " selected" : "") + '>Female only</option><option value="male"' + (f.sex === "male" ? " selected" : "") + '>Male only</option></select></div><div><label for="f_pregnancy">Pregnancy</label><select id="f_pregnancy" data-f="pregnancy"><option value="any"' + (f.pregnancy !== "pregnant" ? " selected" : "") + '>Not specific</option><option value="pregnant"' + (f.pregnancy === "pregnant" ? " selected" : "") + '>For pregnancy only</option></select></div></div></div>';
+      h += fld("triggers", "What should make this guidance appear? (one per line)", "Write what the source says should bring this guidance to mind. Formats: <b>symptom: cough</b> · <b>diagnosis: name</b> · <b>test: name = positive</b> · <b>medicine: name</b> · <b>vital: spo2 &lt; 94</b> (temperature, pulse, resp, spo2, sbp, dbp, glucose, weight). The complaints listed above also trigger it. Use numbers only from the source. Leave blank to use the complaints only.", { type: "textarea", rows: 3, nolabelflag: true });
     } else if (s === 1) {
       h += '<div class="hint2" style="margin-top:0">Every entry must say exactly where its information comes from. For a local protocol, give the protocol document and your facility as the publisher.</div>';
       h += fld("sourceTitle", "Name of the guideline or document", "The title printed on the document.", { req: 1, ph: "e.g. Uganda Clinical Guidelines" });
@@ -453,6 +486,8 @@
       h += fld("sourceEdition", "Edition or year", "As printed on the document, for example the year.", { req: 1, ph: "e.g. 2023" });
       h += fld("sourceRef", "Chapter or page", "Where in the document this information is found, so staff can check it.", { req: 1, ph: "e.g. Chapter 3, page 120" });
       h += fld("jurisdiction", "Country or area it applies to", "Type or choose.", { req: 1, list: "dlJur", ph: "Country" });
+      h += fld("publicationDate", "When was the source published?", "A year (2023) or a full date (2023-05-30). Required to approve.", { req: 1, ph: "e.g. 2023" });
+      h += fld("supportingDoc", "Supporting document or link", "Where the full document can be found (a file name, shelf location or web address). Leave blank if none.", { ph: "optional" });
       h += '<div class="row"><div>' + fld("effectiveDate", "Applies from", "The date the guideline or protocol came into use.", { type: "date", req: 1 }) + "</div><div>" + fld("reviewDate", "Review again by", "The date someone must check whether it is still correct.", { type: "date", req: 1 }) + "</div></div>";
       h += '<div class="hint2">Date entered: ' + esc(dmy(ed.origin && ed.origin.enteredDate ? ed.origin.enteredDate : today())) + " (filled in automatically).</div>";
       h += '<datalist id="dlOrg">' + OPTS.org.slice(0, 2).concat([facility && facility.name ? facility.name : "This facility"]).map(x => '<option value="' + esc(x) + '">').join("") + '</datalist><datalist id="dlJur">' + OPTS.jur.map(x => '<option value="' + esc(x) + '">').join("") + "</datalist>";
@@ -461,7 +496,7 @@
       h += '<div class="step"><h3><i>A</i>Patient assessment</h3>' + fld("aQuestions", "Important questions to ask", "One question per line.", { type: "textarea" }) + fld("aHistory", "Relevant history", "One item per line.", { type: "textarea" }) + fld("aDocument", "Symptoms to document", "One item per line.", { type: "textarea" }) + fld("aExam", "Examination findings to look for", "One item per line.", { type: "textarea" }) + fld("refAssessment", "Page for this section", "Where in the source this section comes from (if different from the main reference).", { ph: "e.g. page 121" }) + "</div>";
       h += '<div class="step"><h3><i>B</i>Warning signs</h3>' + fld("wDanger", "Danger signs", "One per line.", { type: "textarea" }) + fld("wUrgent", "Findings needing urgent assessment", "One per line.", { type: "textarea" }) + fld("wReferral", "Referral considerations", "One per line.", { type: "textarea" }) + fld("refWarnings", "Page for this section", "Optional.", { ph: "e.g. page 122" }) + "</div>";
       h += '<div class="step"><h3><i>C</i>Investigations</h3>' + fld("investigations", "Tests mentioned in the source", "One test per line. Used for searching and listing.", { type: "textarea" }) + fld("investigationNotes", "What each test is for and how the source says to read it", "One point per line, as written in the source.", { type: "textarea", rows: 4 }) + fld("refInvestigations", "Page for this section", "Optional.", { ph: "e.g. page 123" }) + "</div>";
-      h += '<div class="step"><h3><i>D</i>Management references</h3>' + fld("treatment", "Treatment information in the source", "Copy the treatment information as the source states it, including the page. Staff will see it as a reference, not as an order.", { type: "textarea", rows: 5 }) + fld("precautions", "Precautions", "One per line.", { type: "textarea" }) + fld("followUp", "Follow-up", "One per line.", { type: "textarea" }) + fld("referralAdvice", "Referral", "One per line.", { type: "textarea" }) + fld("refManagement", "Page for this section", "Optional.", { ph: "e.g. page 124" }) + "</div>";
+      h += '<div class="step"><h3><i>D</i>Management references</h3>' + fld("treatment", "Treatment information in the source", "Copy the treatment information as the source states it, including the page. Staff will see it as a reference, not as an order.", { type: "textarea", rows: 5 }) + fld("precautions", "Precautions", "One per line.", { type: "textarea" }) + fld("followUp", "Follow-up", "One per line.", { type: "textarea" }) + fld("referralAdvice", "Referral", "One per line.", { type: "textarea" }) + fld("refManagement", "Page for this section", "Optional.", { ph: "e.g. page 124" }) + regimensHtml() + "</div>";
     } else {
       const d = PCG.buildDoc(f, {}), dp = PCG.draftProblems(d), ap = PCG.approvalProblems(d);
       h += '<div class="srcbox"><b>' + esc(d.title || "(no title)") + "</b><br>" + esc(PCG.categoryLabel(d.category)) + " · " + esc(PCG.SCOPES[d.scope]) + "<br>Source: " + esc(d.source || "(not entered)") + "<br>Applies from " + esc(dmy(d.effectiveDate) || "—") + " · review by " + esc(dmy(d.reviewDate) || "—") +
@@ -589,10 +624,17 @@
     else if (a === "newver") doNewVersion(g);
     else if (a === "opendraft") { const d = PCG.openDraft(PCG.byKey(all())[g.guidelineKey] || []); if (d) showCard(d.id); }
   });
-  $("edCard").addEventListener("input", e => { const n = e.target.dataset && e.target.dataset.f; if (n && ed) ed.form[n] = e.target.value; });
-  $("edCard").addEventListener("change", e => { const n = e.target.dataset && e.target.dataset.f; if (n && ed) { ed.form[n] = e.target.value; if (n === "scope") renderEditor(); } });
+  function regInput(e) {
+    const t = e.target, d = t.dataset || {}; if (!ed || d.r == null) return false; const r = ed.form.regimens[Number(d.r)]; if (!r) return true;
+    if (d.rf) r[d.rf] = t.value; else if (d.ff) { r.frequency = r.frequency || { type: "once" }; if (d.ff === "type") { r.frequency = { type: t.value }; if (e.type === "change") { const i = Number(d.r); document.querySelector('[data-regrow="' + i + '"]').outerHTML = regRow(r, i); } } else r.frequency[d.ff] = d.ff === "hours" ? t.value.split(/[,;\s]+/).filter(Boolean) : t.value; }
+    return true;
+  }
+  $("edCard").addEventListener("input", e => { if (regInput(e)) return; const n = e.target.dataset && e.target.dataset.f; if (n && ed) ed.form[n] = e.target.value; });
+  $("edCard").addEventListener("change", e => { if (regInput(e)) return; const n = e.target.dataset && e.target.dataset.f; if (n && ed) { ed.form[n] = e.target.value; if (n === "scope") renderEditor(); } });
   $("edCard").addEventListener("click", e => {
     const b = e.target.closest("[data-act]"); if (!b || !ed) return; const a = b.dataset.act;
+    if (a === "addreg") { ed.form.regimens = ed.form.regimens || []; ed.form.regimens.push({ frequency: { type: "once" } }); renderEditor(); return; }
+    if (a === "rmreg") { ed.form.regimens.splice(Number(b.dataset.i), 1); renderEditor(); return; }
     if (a === "next") { ed.step = Math.min(3, ed.step + 1); renderEditor(); window.scrollTo(0, 0); }
     else if (a === "back") { ed.step = Math.max(0, ed.step - 1); renderEditor(); window.scrollTo(0, 0); }
     else if (a === "cancel") { ed = null; setTab("library"); }

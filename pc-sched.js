@@ -27,6 +27,18 @@
   function weekday(dateStr) { var d = dateStr.split("-").map(Number); return new Date(Date.UTC(d[0], d[1] - 1, d[2])).getUTCDay(); }
   function cleanTimes(times) { var out = []; (times || []).forEach(function (t) { if (/^\d{1,2}:\d{2}$/.test(t)) { var p = t.split(":"); var v = pad(+p[0]) + ":" + p[1]; if (+p[0] < 24 && +p[1] < 60 && out.indexOf(v) < 0) out.push(v); } }); return out.sort(); }
 
+  // hours after the start: numbers >= 0, no repeats, ascending, at most 30 days
+  function cleanHours(h) {
+    var out = []; (Array.isArray(h) ? h : []).forEach(function (x) { var n = Number(x); if (x !== "" && x != null && isFinite(n) && n >= 0 && n <= 720 && out.indexOf(n) < 0) out.push(n); });
+    return out.sort(function (a, b) { return a - b; });
+  }
+  // "0, 12 and 24" typed by a person -> [0,12,24]; returns { hours, bad } where bad lists what could not be read
+  function parseHours(text) {
+    var parts = String(text == null ? "" : text).split(/[,;\s]+|\band\b/i).filter(Boolean), hours = [], bad = [];
+    parts.forEach(function (p) { var n = Number(String(p).replace(/h(ours?|rs?)?$/i, "")); if (String(p).trim() !== "" && isFinite(n) && n >= 0 && n <= 720) hours.push(n); else bad.push(p); });
+    return { hours: cleanHours(hours), bad: bad, duplicates: hours.length - cleanHours(hours).length };
+  }
+
   // Builds the FULL list of planned administrations for an order, always in the same order with the same numbers,
   // so writing it again can never create duplicates (event id = order id + number).
   function generate(o) {
@@ -55,6 +67,11 @@
         for (var i = 0; i < dd; i++) dayTimes(cursor + i, tms, st.doseValue, null);
         cursor += dd;
       });
+    } else if (type === "elapsed") {
+      // exact hours after the start (0 = the start itself). Non-uniform gaps allowed, e.g. 0, 6, 24, 48.
+      var pairs = [], seenH = {};
+      (Array.isArray(s.hours) ? s.hours : []).forEach(function (x, i) { var n = Number(x); if (x !== "" && x != null && isFinite(n) && n >= 0 && n <= 720 && !seenH[n]) { seenH[n] = 1; var dv = s.doses && s.doses[i] != null && s.doses[i] !== "" ? Number(s.doses[i]) : null; pairs.push([n, dv > 0 ? dv : null]); } });
+      pairs.sort(function (a, b) { return a[0] - b[0]; }).forEach(function (pr) { ev.push({ plannedAt: start + Math.round(pr[0] * 3600000), doseValue: pr[1] }); });
     } else if (type === "custom") {
       (s.items || []).forEach(function (it) { if (it.date && /^\d{1,2}:\d{2}$/.test(it.time || "")) ev.push({ plannedAt: localToUtc(it.date, cleanTimes([it.time])[0], tz), doseValue: it.doseValue != null ? it.doseValue : null }); });
     }
@@ -80,6 +97,12 @@
       if (!(s.stages || []).length) return "Add at least one stage.";
       for (var i = 0; i < s.stages.length; i++) { var st = s.stages[i]; if (!(st.days >= 1) || !cleanTimes(st.times).length || !(st.doseValue > 0)) return "Stage " + (i + 1) + " needs days, times of day and a dose."; }
     }
+    if (inner === "elapsed") {
+      var hh = cleanHours(s.hours), raw = Array.isArray(s.hours) ? s.hours.length : 0;
+      if (!hh.length) return "Enter the hours after the start when each dose is due, for example 0, 12, 24.";
+      if (hh.length !== raw) return "Each hour must be a different number from 0 to 720.";
+      if (s.doses && s.doses.some(function (d, i) { return i < hh.length && d != null && d !== "" && !(Number(d) > 0); })) return "A dose written for one of the times is not a valid number.";
+    }
     if (inner === "custom" && !(s.items || []).length) return "Add at least one date and time.";
     var n = generate(o).length;
     if (!n) return "This schedule gives no administrations. Check the start time and the days.";
@@ -94,6 +117,7 @@
     else if (inner === "daily") base = cleanTimes(s.times).length + " time" + (cleanTimes(s.times).length === 1 ? "" : "s") + " a day (" + cleanTimes(s.times).join(", ") + ") for " + s.days + " day" + (s.days === 1 ? "" : "s");
     else if (inner === "fixed") { var wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]; base = "At " + cleanTimes(s.times).join(", ") + (s.weekdays && s.weekdays.length ? " on " + s.weekdays.map(function (x) { return wd[x]; }).join(", ") : " every day") + " for " + s.days + " day" + (s.days === 1 ? "" : "s"); }
     else if (inner === "taper") base = "Tapering: " + (s.stages || []).map(function (x) { return x.doseValue + " " + (o.doseUnit || "") + " × " + cleanTimes(x.times).length + "/day for " + x.days + "d"; }).join(" then ");
+    else if (inner === "elapsed") { var hs = cleanHours(s.hours); base = "At hour " + hs.join(", ") + " after the start (" + hs.length + " dose" + (hs.length === 1 ? "" : "s") + ")"; }
     else if (inner === "custom") base = "At " + (s.items || []).length + " chosen time" + ((s.items || []).length === 1 ? "" : "s");
     return (t === "weight" ? "Weight-based dose · " : "") + base;
   }
@@ -164,7 +188,7 @@
     if (diff <= (soonMin || 30)) return "due";
     return "pending";
   }
-  var api = { MAX_EVENTS: MAX_EVENTS, tzOffsetMs: tzOffsetMs, localToUtc: localToUtc, utcToLocal: utcToLocal, addDays: addDays, weekday: weekday, cleanTimes: cleanTimes, generate: generate, validate: validate, describe: describe,
+  var api = { MAX_EVENTS: MAX_EVENTS, tzOffsetMs: tzOffsetMs, localToUtc: localToUtc, utcToLocal: utcToLocal, addDays: addDays, weekday: weekday, cleanTimes: cleanTimes, cleanHours: cleanHours, parseHours: parseHours, generate: generate, validate: validate, describe: describe,
     weightDose: weightDose, checkDose: checkDose, maxPerDay: maxPerDay, allergyMatches: allergyMatches, duplicateOrders: duplicateOrders, ruleFor: ruleFor, dueState: dueState };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.PCS = api;
 })(typeof window !== "undefined" ? window : this);
