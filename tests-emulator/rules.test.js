@@ -7,6 +7,7 @@ const fs = require("fs"), path = require("path");
 const { initializeTestEnvironment, assertSucceeds, assertFails } = require("@firebase/rules-unit-testing");
 const { doc, getDoc, getDocs, collection, query, where, limit, setDoc, updateDoc, deleteDoc, writeBatch, runTransaction, serverTimestamp } = require("firebase/firestore");
 const PCD = require("../pc-dispense.js");
+const PCX = require("../pc-dispense-ext.js");
 
 const B = "biz1", A = "shopA", S = "shopB", B2 = "biz2", C = "shopC";
 let env;
@@ -22,6 +23,9 @@ const users = {
   stranger: { role: "operator", businessId: B2, shopId: C, active: true, perms: { "dispense.view": true, "dispense.perform": true, "guidelines.manage": true, "guidelines.approve": true, "patient.view": true } },
   author: { role: "operator", businessId: B, shopId: A, active: true, perms: { "guidelines.manage": true } },
   approver: { role: "operator", businessId: B, shopId: A, active: true, perms: { "guidelines.approve": true } },
+  rev: { role: "operator", businessId: B, shopId: A, active: true, perms: { "dispense.view": true, "dispense.perform": true, "dispense.reverse": true } },
+  cman: { role: "operator", businessId: B, shopId: A, active: true, perms: { "consumables.manage": true, "consumables.use": true } },
+  cuse: { role: "operator", businessId: B, shopId: A, active: true, perms: { "consumables.use": true } },
   rules0: { role: "operator", businessId: B, shopId: A, active: true, perms: { "treatment.prescribe": true } }
 };
 const db = uid => env.authenticatedContext(uid).firestore();
@@ -283,4 +287,54 @@ test("v16 access check: the read-only diagnostic finds nothing blocked for a pha
   assert.deepEqual(okRows.filter(r => !r.ok), []);
   const badRows = await PCD.diagnose(tools("nurse"), { uid: "nurse", businessId: B, facilityId: A, role: "operator", perms: users.nurse.perms, facility: { businessId: B, enabledServices: ["patient_care"] } });
   assert.ok(badRows.some(r => !r.ok && /blocked by the security rules/.test(r.detail)));
+});
+
+// ---------------------------------------------------------------- v17 (NOT RUN in the build environment: needs the Firebase emulator)
+const fin = (uid, o) => Object.assign({ qty: 4, drugId: "d1", unitPrice: 100, amountPaid: 0, businessId: B, facilityId: A, uid, userName: uid, patientId: "p1" }, o || {});
+async function dispenseWithBill(uid, o, f) { const p = params(uid, Object.assign({ qty: 4 }, o)); p.hook = PCX.financeHook(tools(uid), fin(uid, f)); await PCD.runDispense(tools(uid), p); return p; }
+const retParams = (uid, qty, extra) => Object.assign({ businessId: B, facilityId: A, uid, userName: uid, orderId: "e1", requestId: "x" + Math.random().toString(16).slice(2, 10), qty, reason: "declined", confirmedBack: true }, extra || {});
+async function recs() { let out = []; await env.withSecurityRulesDisabled(async c => { const s = await getDocs(query(collection(c.firestore(), "dispense_records"), where("prescriptionId", "==", "e1"))); out = s.docs.map(d => ({ id: d.id })); }); return out; }
+
+test("v17: a pharmacist can dispense with a bill (credit), through the real rules, and a retry changes nothing", async () => {
+  await seedEngine(); const p = await dispenseWithBill("dispOnly");
+  const again = PCD.runDispense(tools("dispOnly"), Object.assign({}, p, { hook: PCX.financeHook(tools("dispOnly"), fin("dispOnly")) })); assert.equal((await again).duplicate, true);
+  await env.withSecurityRulesDisabled(async c => { const s = await getDocs(collection(c.firestore(), "credit_transactions")); assert.equal(s.size, 1); });
+});
+test("v17: only someone with dispense.reverse can reverse; a reversal restores stock once; the ledger caps it", async () => {
+  await seedEngine(); await dispenseWithBill("rev");
+  await assert.rejects(PCX.runReturn(tools("dispOnly"), Object.assign(retParams("dispOnly", 2), { records: await recs() })));
+  await PCX.runReturn(tools("rev"), Object.assign(retParams("rev", 3), { records: await recs() }));
+  await assert.rejects(PCX.runReturn(tools("rev"), Object.assign(retParams("rev", 2), { records: await recs() })), "only 1 left");
+  await env.withSecurityRulesDisabled(async c => { assert.equal((await getDoc(doc(c.firestore(), "drugs", "d1"))).data().currentStockBase, 49); });
+});
+test("v17: a handed-over dispensing cannot be reversed; return records, ledger and RETURN stock entries cannot be edited or deleted", async () => {
+  await seedEngine(); await dispenseWithBill("rev", { handedOver: true });
+  await assert.rejects(PCX.runReturn(tools("rev"), Object.assign(retParams("rev", 1), { records: await recs() })));
+  await seedEngine(); await dispenseWithBill("rev", {}, {});
+  const r = retParams("rev", 1); await PCX.runReturn(tools("rev"), Object.assign(r, { records: await recs() }));
+  for (const [c, id] of [["dispense_returns", "drt_" + r.requestId], ["dispense_return_ledger", (await recs())[0].id], ["stock_transactions", "drt_" + r.requestId + "_0"]]) {
+    await assertFails(deleteDoc(doc(db("owner"), c, id))); await assertFails(updateDoc(doc(db("owner"), c, id), { qty: 99, qtyReturned: 99 }));
+  }
+});
+test("v17: a prescription quantity cannot be lowered by hand; the ledger cannot exceed what was dispensed", async () => {
+  await seedEngine(); await dispenseWithBill("rev");
+  await assertFails(updateDoc(doc(db("rev"), "prescriptions", "e1"), { qtyDispensed: 0, qtyOutstanding: 20, status: "pending", updatedBy: "rev", updatedAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(db("rev"), "dispense_return_ledger", (await recs())[0].id), Object.assign(stamp("rev"), { id: (await recs())[0].id, recordId: (await recs())[0].id, qtyReturned: 999, lastReturnRequestId: "zz" })));
+});
+test("v17: substitution is refused by the engine once something is dispensed and needs a reason", async () => {
+  await seedEngine(); await env.withSecurityRulesDisabled(async c => setDoc(doc(c.firestore(), "drugs", "d2"), { businessId: B, shopId: A, name: "Other", baseUnit: "Tablet", currentStockBase: 10 }));
+  await assert.rejects(PCD.runDispense(tools("dispOnly"), params("dispOnly", { drugId: "d2", qty: 1 })));
+  await assert.rejects(PCD.runDispense(tools("dispOnly"), params("dispOnly", { drugId: "d2", qty: 1, substitution: { reason: "", authorisedBy: "" } })));
+});
+test("v17 consumables: use needs a movement; negative stock, other shops and non-permitted users are refused; manage is separate from use", async () => {
+  await seedEngine();
+  const mg = tools("cman");
+  const c = await PCX.createConsumable(mg, { businessId: B, facilityId: A, uid: "cman", name: "Syringe", unit: "piece", reorderLevel: 2 });
+  await PCX.runConsumableAdjust(mg, { businessId: B, facilityId: A, uid: "cman", requestId: "rc1", itemId: c.id, kind: "receive", qty: 5 });
+  await PCX.runConsumableUse(tools("cuse"), { businessId: B, facilityId: A, uid: "cuse", requestId: "u1", items: [{ itemId: c.id, qty: 2 }] });
+  await assert.rejects(PCX.runConsumableUse(tools("cuse"), { businessId: B, facilityId: A, uid: "cuse", requestId: "u2", items: [{ itemId: c.id, qty: 9 }] }));
+  await assert.rejects(PCX.runConsumableAdjust(tools("cuse"), { businessId: B, facilityId: A, uid: "cuse", requestId: "a1", itemId: c.id, kind: "adjust", qty: -1, reason: "lost" }), "use is not manage");
+  await assert.rejects(PCX.runConsumableUse(tools("pharmB"), { businessId: B, facilityId: A, uid: "pharmB", requestId: "u3", items: [{ itemId: c.id, qty: 1 }] }));
+  await assertFails(updateDoc(doc(db("cman"), "consumable_items", c.id), { qtyOnHand: 999, updatedBy: "cman", updatedAt: serverTimestamp() }));
+  await assertFails(deleteDoc(doc(db("owner"), "consumable_items", c.id)));
 });
