@@ -45,11 +45,22 @@
     return err.code === "unavailable" || /offline|network|failed to fetch|timed out|deadline/i.test(m) || err.code === "deadline-exceeded";
   }
 
+  // short reference code for a denied step, safe to show to anyone ("read dispense_records" -> "read-dispense_records")
+  function stepRef(step) { return String(step || "").replace(/[^A-Za-z0-9_]+/g, "-").replace(/^-|-$/g, "").slice(0, 40); }
+  // For the owner / support only: which operation was refused
+  function technicalDetail(err) {
+    if (!err) return "";
+    var bits = [];
+    if (err.code) bits.push("code: " + err.code);
+    if (err.pcdStep) bits.push("step: " + err.pcdStep);
+    return bits.join(" · ");
+  }
+
   // plain-language message for any error, including Firebase ones
   function friendlyError(err) {
     if (!err) return "Something went wrong. Please try again.";
     if (err.pcd) return FRIENDLY[err.code] ? (err.code === "stock_short" && err.extra && err.extra.available != null ? FRIENDLY[err.code] + " Available: " + err.extra.available + "." : FRIENDLY[err.code]) : err.message;
-    if (err.code === "permission-denied") return "You do not have permission to perform this action.";
+    if (err.code === "permission-denied") return "You do not have permission to perform this action." + (err.pcdStep ? " (Ref: " + stepRef(err.pcdStep) + ")" : "");
     if (isOfflineError(err)) return "There is no internet connection, so this could not be confirmed with the server.";
     if (err.code === "aborted" || err.code === "failed-precondition" || /retries|contention/i.test(String(err.message || ""))) return "Stock was changing on another device. Please try again.";
     if (err.code === "invalid-argument") return "Some of the information entered is not valid. Check it and try again.";
@@ -179,16 +190,19 @@
     var drugRef = doc(db, "drugs", p.drugId);
     var firstRecRef = doc(db, "dispense_records", lineId(p.requestId, 0));
 
-    return tools.runTransaction(db, async function (tx) {
-      // ---- all reads first
-      var firstRec = await tx.get(firstRecRef);
+    var label = function (step, promise) { return promise.catch(function (e) { if (e && !e.pcdStep && !e.pcd) e.pcdStep = step; throw e; }); };
+    var run;
+    try {
+    run = await tools.runTransaction(db, async function (tx) {
+      // ---- all reads first (each one is labelled so a refusal says exactly which document was denied)
+      var firstRec = await label("read dispense_records (duplicate check)", tx.get(firstRecRef));
       if (firstRec.exists()) {
         var fr = firstRec.data();
         return { duplicate: true, rxId: p.orderId, group: p.requestId, qty: fr.groupQty != null ? fr.groupQty : fr.qtyDispensed };
       }
-      var orderSnap = await tx.get(orderRef), rxSnap = await tx.get(rxRef), drugSnap = await tx.get(drugRef);
+      var orderSnap = await label("read pc_treatment_orders", tx.get(orderRef)), rxSnap = await label("read prescriptions", tx.get(rxRef)), drugSnap = await label("read drugs", tx.get(drugRef));
       var batchSnaps = [];
-      for (var i = 0; i < ids.length; i++) batchSnaps.push(await tx.get(doc(db, "batches", ids[i])));
+      for (var i = 0; i < ids.length; i++) batchSnaps.push(await label("read batches", tx.get(doc(db, "batches", ids[i]))));
 
       // ---- the prescription
       if (!orderSnap.exists()) throw PCDError("order_missing", FRIENDLY.order_missing);
@@ -287,6 +301,44 @@
 
       return { duplicate: false, rxId: p.orderId, group: p.requestId, qty: qty, lines: plan.allocations, status: status, outstanding: newOutstanding, stockTxnIds: txnIds };
     });
+    } catch (e) {
+      // a refusal with no read label happened when the records were written together (one of the writes was refused)
+      if (e && e.code === "permission-denied" && !e.pcdStep) e.pcdStep = "commit (writing stock, record, prescription or audit entry)";
+      throw e;
+    }
+    return run;
+  }
+
+  /* Read-only access check (writes nothing). Tells the person which parts of the pharmacy they can and cannot reach.
+     ctx: { uid, businessId, facilityId, role, perms, facility }.  Returns [{ name, ok, detail }]. */
+  async function diagnose(tools, ctx) {
+    var out = [], db = tools.db;
+    function add(name, ok, detail) { out.push({ name: name, ok: ok, detail: detail || "" }); }
+    var perms = ctx.perms || {}, owner = ctx.role === "owner";
+    add("Your role", true, owner ? "Owner" : (ctx.role || "unknown"));
+    ["dispense.view", "dispense.perform", "dispense.report"].forEach(function (k) { add("Permission " + k, owner || perms[k] === true, owner ? "owner has every permission" : (perms[k] === true ? "granted" : "not granted on your account")); });
+    var fac = ctx.facility || null;
+    add("Shop belongs to your business", !!fac && fac.businessId === ctx.businessId, fac ? "" : "shop record not loaded");
+    add("Patient Care switched on for this shop", !!fac && Array.isArray(fac.enabledServices) && fac.enabledServices.indexOf("patient_care") >= 0, "");
+    async function probe(name, fn, expectMissing) {
+      try { var r = await fn(); add(name, true, expectMissing ? (r && r.exists && r.exists() ? "found" : "not there yet (normal)") : "allowed"); }
+      catch (e) { add(name, false, e && e.code === "permission-denied" ? "blocked by the security rules" : PCDErrorText(e)); }
+    }
+    function PCDErrorText(e) { return isOfflineError(e) ? "no internet" : String((e && (e.code || e.message)) || e); }
+    var q = tools.query, where = tools.where, lim = tools.limit, getDocs = tools.getDocs, getDoc = tools.getDoc;
+    if (getDoc) {
+      await probe("Read your account", function () { return getDoc(tools.doc(db, "users", ctx.uid)); });
+      await probe("Look for a dispensing record that does not exist yet", function () { return getDoc(tools.doc(db, "dispense_records", "diag_" + ctx.uid + "_0")); }, true);
+      await probe("Look for a prescription that does not exist yet", function () { return getDoc(tools.doc(db, "prescriptions", "diag_" + ctx.uid)); }, true);
+    }
+    if (q && getDocs) {
+      var base = function (c, f) { return q(tools.collection(db, c), where("businessId", "==", ctx.businessId), where(f, "==", ctx.facilityId), lim(1)); };
+      await probe("Read medicine orders", function () { return getDocs(q(tools.collection(db, "pc_treatment_orders"), where("businessId", "==", ctx.businessId), where("facilityId", "==", ctx.facilityId), where("kind", "==", "medicine"), where("status", "==", "active"), lim(1))); });
+      await probe("Read prescriptions", function () { return getDocs(base("prescriptions", "facilityId")); });
+      await probe("Read dispensing records", function () { return getDocs(base("dispense_records", "facilityId")); });
+      await probe("Read medicines and batches", function () { return getDocs(base("drugs", "shopId")).then(function () { return getDocs(base("batches", "shopId")); }); });
+    }
+    return out;
   }
 
   // ---------------------------------------------------------------- phone-side queue for dispensing started offline
@@ -356,7 +408,7 @@
     };
   }
 
-  var api = { SCHEMA: SCHEMA, PCDError: PCDError, FRIENDLY: FRIENDLY, friendlyError: friendlyError, isOfflineError: isOfflineError,
+  var api = { SCHEMA: SCHEMA, PCDError: PCDError, FRIENDLY: FRIENDLY, friendlyError: friendlyError, technicalDetail: technicalDetail, stepRef: stepRef, diagnose: diagnose, isOfflineError: isOfflineError,
     daysUntil: daysUntil, expiryMs: expiryMs, isExpired: isExpired, sellable: sellable, fefoSort: fefoSort, summarise: summarise, planFefo: planFefo, planManual: planManual,
     statusFor: statusFor, doseText: doseText, qtyState: qtyState, queueGroup: queueGroup, newRequestId: newRequestId, lineId: lineId, localDay: localDay, r4: r4,
     runDispense: runDispense, Queue: Queue, syncQueue: syncQueue, buildReport: buildReport };

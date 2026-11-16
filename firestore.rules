@@ -1,6 +1,12 @@
 rules_version = '2';
 
-// MediStock Cloud — multi-shop roles & security (v15)
+// MediStock Cloud — multi-shop roles & security (v16)
+// v16 (dispensing permission fix): reading a document that does not exist yet was DENIED for everyone, owner included, on prescriptions and
+//   dispense_records (the read rules looked at resource.data, which is null for a missing document). The dispensing transaction must read the
+//   first dispense record and the prescription BEFORE they exist (duplicate check), so every dispensing failed with permission-denied.
+//   Fix: single-document reads of a MISSING document are allowed for the owner or an operator with dispense.perform; reads of existing
+//   documents and all list queries are unchanged. Also: users with dispense.view can read MEDICINE orders, patient registration numbers
+//   and allergies of their own facility (they needed patient.view before). Everything else is UNCHANGED from v15.
 // v15 (Phase 5): adds prescriptions, dispense_records (append-only) and guidelines rules at the end; stock_transactions entries of type
 //   DISPENSE can no longer be changed or deleted, and can only be created together with their dispense record. Everything else is UNCHANGED from v14.
 // v14: adds Phase 4 (treatment plans, orders, planned administrations, medication record) rules at the end.
@@ -300,7 +306,7 @@ service cloud.firestore {
 
     // ---- Which facility has registered the patient (id = patientId_facilityId, so no duplicates) ----
     match /pc_patient_facility_links/{linkId} {
-      allow read: if hasPerm(resource.data.businessId, 'patient.view')
+      allow read: if (hasPerm(resource.data.businessId, 'patient.view') || hasPerm(resource.data.businessId, 'dispense.view'))
         && canAccessShop(resource.data.businessId, resource.data.facilityId);
       allow create: if pcCreateOk(request.resource.data)
         && hasPerm(request.resource.data.businessId, 'patient.register')
@@ -416,7 +422,7 @@ service cloud.firestore {
     // ---- Allergies (facility-scoped; shared only through a live consent) ----
     match /pc_allergies/{docId} {
       allow read: if (canAccessShop(resource.data.businessId, resource.data.facilityId)
-                      && hasPerm(resource.data.businessId, 'patient.view'))
+                      && (hasPerm(resource.data.businessId, 'patient.view') || hasPerm(resource.data.businessId, 'dispense.view')))
         || shareOkForMe(resource.data.patientId, resource.data.facilityId);
       allow create: if pcCreateOk(request.resource.data)
         && hasPerm(request.resource.data.businessId, 'allergy.record')
@@ -933,7 +939,7 @@ service cloud.firestore {
     }
 
     match /pc_treatment_orders/{orderId} {
-      allow read: if childReadOk(resource.data);
+      allow read: if childReadOk(resource.data) || dispenserOrderReadOk(resource.data);
       allow create: if pcCreateOk(request.resource.data)
         && hasPerm(request.resource.data.businessId, 'treatment.prescribe')
         && encounterOpenOk(request.resource.data)
@@ -1069,13 +1075,24 @@ service cloud.firestore {
     function rxPath(id) { return /databases/$(database)/documents/prescriptions/$(id); }
     function dspPath(id) { return /databases/$(database)/documents/dispense_records/$(id); }
     function qtyClose(a, b) { return math.abs(a - b) < 0.001; }
+    // v16: the dispensing transaction reads documents that do not exist yet (duplicate check). resource is null for those, so the
+    // normal read rules (which look at resource.data) would deny it. Only a dispenser may probe for a missing document.
+    function dispenserMayProbe() {
+      return isSignedIn() && (myProfile().role == 'owner'
+        || (myProfile().role == 'operator' && myProfile().active == true && myProfile().get('perms', {}).get('dispense.perform', false) == true));
+    }
+    function dispenserOrderReadOk(d) {
+      return d.kind == 'medicine' && canAccessShop(d.businessId, d.facilityId) && hasPerm(d.businessId, 'dispense.view');
+    }
     function rxStatusOk(d) {
       return d.status in ['partially_dispensed', 'completed']
         && ((d.qtyOutstanding <= 0.0001) == (d.status == 'completed'));
     }
 
     match /prescriptions/{rxId} {
-      allow read: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+      allow get: if (resource == null && dispenserMayProbe())
+        || (resource != null && canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'dispense.view'));
+      allow list: if canAccessShop(resource.data.businessId, resource.data.facilityId)
         && hasPerm(resource.data.businessId, 'dispense.view');
 
       // created by the first dispensing: id = the medicine order's id, the order must be an active medicine order of this
@@ -1121,7 +1138,9 @@ service cloud.firestore {
     }
 
     match /dispense_records/{dspId} {
-      allow read: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+      allow get: if (resource == null && dispenserMayProbe())
+        || (resource != null && canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'dispense.view'));
+      allow list: if canAccessShop(resource.data.businessId, resource.data.facilityId)
         && hasPerm(resource.data.businessId, 'dispense.view');
 
       // one record per batch used; id = requestId_lineNo, so a repeated submission can never create a second record

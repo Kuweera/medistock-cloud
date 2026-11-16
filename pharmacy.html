@@ -198,6 +198,12 @@
     </div>
   </div>
   <div class="msg ok" id="doneMsg"></div>
+  <details class="card" id="diagCard">
+    <summary style="cursor:pointer;font-weight:700;color:var(--accent)">Problem with permission? Check my pharmacy access</summary>
+    <div class="hint2">This only reads. It changes nothing. It shows which parts of the pharmacy your account can reach, so the owner or support can see what is blocked.</div>
+    <button type="button" class="btn-small btn-secondary" id="diagBtn" style="margin-top:8px">Run the check</button>
+    <div id="diagOut"></div>
+  </details>
 </div>
 
 <script src="pc-sched.js"></script>
@@ -212,7 +218,7 @@
   const app = initializeApp({});
   const auth = getAuth(app);
   const db = getFirestore(app);
-  const tools = { db, doc, collection, runTransaction, serverTimestamp };
+  const tools = { db, doc, collection, runTransaction, serverTimestamp, query, where, limit, getDocs, getDoc: _getDoc };
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const num = v => { const n = Number(v); return isFinite(n) ? n : 0; };
@@ -513,7 +519,7 @@
       if (PCD.isOfflineError(err)) {
         if (confirm("The server could not be reached, so this could not be confirmed.\n\nSave it as PENDING SYNC on this phone? It will be sent when the connection returns. It is safe to send twice: stock can only be taken off once.")) return queueIt(params, st, pl.allocations);
         D.msg = "Not confirmed. Nothing is saved on this phone. If you gave the medicine out, save it as pending or try again when the connection returns."; D.msgClass = "err";
-      } else { D.msg = PCD.friendlyError(err); D.msgClass = "err"; loadDrug(); }
+      } else { D.msg = PCD.friendlyError(err) + (role === "owner" && err && err.code === "permission-denied" ? "  [For the owner: " + PCD.technicalDetail(err) + ". Open 'Check my pharmacy access' below.]" : ""); D.msgClass = "err"; loadDrug(); }
       renderAct();
     }
   }
@@ -629,6 +635,15 @@
   $("hMonth").addEventListener("change", () => { startHistory(); });
   $("rMonth").addEventListener("change", renderReports);
   $("syncBtn").addEventListener("click", () => syncNow(false));
+  $("diagBtn").addEventListener("click", async () => {
+    const out = $("diagOut"); out.innerHTML = '<div class="hint2">Checking…</div>'; $("diagBtn").disabled = true;
+    try {
+      const rows = await PCD.diagnose(tools, { uid: me.id, businessId: businessId, facilityId: facilityId, role: role, perms: perms, facility: facility });
+      out.innerHTML = '<div class="tablewrap"><table><tr><th>Check</th><th>Result</th></tr>' + rows.map(r => "<tr><td>" + esc(r.name) + '</td><td style="color:var(--' + (r.ok ? "accent2" : "danger") + ')">' + (r.ok ? "OK" : "BLOCKED") + (r.detail ? " — " + esc(r.detail) : "") + "</td></tr>").join("") + "</table></div>" +
+        (rows.some(r => !r.ok) ? '<div class="warn-box">Something is blocked. Tell the owner which line says BLOCKED. If a permission line says "not granted", the owner can switch it on in Users.</div>' : '<div class="info-box">Everything this check can read is reachable. Writing is checked when you confirm a dispensing.</div>');
+    } catch (e) { out.innerHTML = '<div class="msg err">' + esc(PCD.friendlyError(e)) + "</div>"; }
+    $("diagBtn").disabled = false;
+  });
   document.querySelectorAll("#filters .pill-btn").forEach(b => b.addEventListener("click", () => {
     filter = b.dataset.f; document.querySelectorAll("#filters .pill-btn").forEach(x => x.classList.toggle("selected", x === b));
     if (filter === "done") ensureDone(); if (filter === "stopped") ensureStopped(); renderList();
