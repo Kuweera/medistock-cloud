@@ -121,3 +121,6 @@ Phase 5 stays unreleased until the Phase 4 and Phase 5 gates in the master plan 
 
 ## Update: dispensing permission fix (rules v16)
 Developer 1, 2026-11-16. Every dispensing failed with "You do not have permission" for owner and operators alike: the transaction reads the first dispense record and the prescription before they exist, and the v15 read rules dereference `resource.data`, which is null for a missing document. v16 adds `get` rules for missing documents (dispensers only) and lets `dispense.view` users read medicine orders, registration numbers and allergies of their own facility. **Not yet verified in the emulator or the real project.** See PHARMACY_DISPENSING_SPEC.md section 7.
+
+## Update: price/payment/credit, reversals, substitution, consumables (rules v17)
+Developer 1, 2026-11-16. Added `pc-dispense-ext.js` (billing hook, reversals, hand-over marker, consumables), the matching screens in `pharmacy.html`, substitution and hand-over support in `pc-dispense.js`, rules v17, tests (offline: 84 passing; browser check passing; emulator tests written, **not run**). Nothing was tested on real Firebase, offline on a real phone, or with several people at once. See PHARMACY_DISPENSING_SPEC.md section 8.
