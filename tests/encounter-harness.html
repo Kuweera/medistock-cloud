@@ -12,7 +12,7 @@
   put("users", "owner1", { businessId: B, role: "owner", name: "Dr Owner", active: true });
   put("users", "nop1", { businessId: B, role: "operator", shopId: F, name: "Nurse NoPrescribe", active: true, perms: { "patient.view": true, "consult.record": true, "consult.sign": true } });
   var uid = as === "nopres" ? "nop1" : "owner1";
-  put("pc_encounters", "enc1", { businessId: B, facilityId: F, encId: "e1", encounterNo: "V-1", patientId: "p1", patientName: "Test Patient", patientSex: "female", patientDob: dob, patientDobPrecision: "exact", status: "open", stage: "triaged", type: "outpatient", arrivalAt: Date.now() - 3600000 });
+  put("pc_encounters", "e1", { businessId: B, facilityId: F, encId: "e1", encounterNo: "V-1", patientId: "p1", patientName: "Test Patient", patientSex: "female", patientDob: dob, patientDobPrecision: "exact", status: "open", stage: "triaged", type: "outpatient", arrivalAt: Date.now() - 3600000 });
   var st = { businessId: B, facilityId: F, encounterId: "e1", patientId: "p1", status: "active", recordedBy: "owner1", recordedByName: "Dr Owner", recordedAt: Date.now() - 600000 };
   if (!qs.get("nodata")) {
     put("pc_complaints", "c1", Object.assign({ name: "TESTCOUGH", associated: "test fever" }, st));
