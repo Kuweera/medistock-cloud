@@ -5,7 +5,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs"), path = require("path");
 const { initializeTestEnvironment, assertSucceeds, assertFails } = require("@firebase/rules-unit-testing");
-const { doc, getDoc, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp } = require("firebase/firestore");
+const { doc, getDoc, getDocs, collection, query, where, limit, setDoc, updateDoc, deleteDoc, writeBatch, runTransaction, serverTimestamp } = require("firebase/firestore");
+const PCD = require("../pc-dispense.js");
 
 const B = "biz1", A = "shopA", S = "shopB", B2 = "biz2", C = "shopC";
 let env;
@@ -15,6 +16,8 @@ const users = {
   pharm: { role: "operator", businessId: B, shopId: A, active: true, perms: Object.assign({ "dispense.view": true, "dispense.perform": true }, P) },
   viewer: { role: "operator", businessId: B, shopId: A, active: true, perms: { "dispense.view": true } },
   nurse: { role: "operator", businessId: B, shopId: A, active: true, perms: Object.assign({ "treatment.administer": true }, P) },
+  dispOnly: { role: "operator", businessId: B, shopId: A, active: true, perms: { "dispense.view": true, "dispense.perform": true } },
+  inactive: { role: "operator", businessId: B, shopId: A, active: false, perms: { "dispense.view": true, "dispense.perform": true } },
   pharmB: { role: "operator", businessId: B, shopId: S, active: true, perms: Object.assign({ "dispense.view": true, "dispense.perform": true }, P) },
   stranger: { role: "operator", businessId: B2, shopId: C, active: true, perms: { "dispense.view": true, "dispense.perform": true, "guidelines.manage": true, "guidelines.approve": true, "patient.view": true } },
   author: { role: "operator", businessId: B, shopId: A, active: true, perms: { "guidelines.manage": true } },
@@ -196,4 +199,88 @@ test("v14: a signed clinical note cannot be edited or deleted", async () => {
 });
 test("v14: facility isolation — another business cannot read a patient", async () => {
   await assertFails(getDoc(doc(db("stranger"), "pc_patients", "p1")));
+});
+
+
+// =====================================================================================================================
+// v16 — the dispensing permission failure. These run the REAL engine (pc-dispense.js runDispense, a real runTransaction)
+// against the real rules, because the v15 tests only built write batches and never read a document that does not exist.
+// =====================================================================================================================
+async function seedEngine() {
+  await env.withSecurityRulesDisabled(async ctx => {
+    const f = ctx.firestore();
+    await setDoc(doc(f, "drugs", "d1"), { businessId: B, shopId: A, name: "Paracetamol 500mg", dosageForm: "Tablet", baseUnit: "Tablet", currentStockBase: 50 });
+    await setDoc(doc(f, "batches", "bA"), { businessId: B, shopId: A, drugId: "d1", batchNumber: "A1", expiryDate: "2099-01-01", quantity: 50 });
+    await setDoc(doc(f, "pc_treatment_orders", "e1"), { businessId: B, facilityId: A, kind: "medicine", status: "active", patientId: "p1", patientName: "Test Patient", encounterId: "enc1", medicineId: "d1", medicineName: "Paracetamol 500mg", formulation: "Tablet", strength: "500mg", doseValue: 1, doseUnit: "tablet", quantityPrescribed: 20, prescriberId: "doc1", prescriberName: "Dr T", prescribedAt: Date.now(), version: 1 });
+  });
+}
+const tools = uid => { const f = db(uid); return { db: f, doc, collection, runTransaction, serverTimestamp, query, where, limit, getDocs, getDoc }; };
+const params = (uid, o) => Object.assign({ businessId: B, facilityId: A, uid, userName: uid, orderId: "e1", drugId: "d1", qty: 12, requestId: "r" + Math.random().toString(16).slice(2, 12), mode: "fefo", candidateBatchIds: ["bA"],
+  asOf: new Date(), patientConfirmed: true, medicineConfirmed: true, localDay: new Date().toISOString().slice(0, 10) }, o || {});
+
+test("v16 engine: the owner can dispense (first dispensing reads a prescription and record that do not exist yet)", async () => {
+  await seedEngine();
+  const r = await PCD.runDispense(tools("owner"), params("owner"));
+  assert.equal(r.duplicate, false);
+  await env.withSecurityRulesDisabled(async c => { const rx = (await getDoc(doc(c.firestore(), "prescriptions", "e1"))).data(); assert.equal(rx.qtyDispensed, 12); assert.equal(rx.qtyOutstanding, 8);
+    assert.equal((await getDoc(doc(c.firestore(), "drugs", "d1"))).data().currentStockBase, 38); });
+});
+test("v16 engine: an operator with dispense permission (and NOT patient.view) can dispense, twice, and a retry is a no-op", async () => {
+  await seedEngine();
+  const p1 = params("dispOnly");
+  await PCD.runDispense(tools("dispOnly"), p1);
+  const again = await PCD.runDispense(tools("dispOnly"), p1);
+  assert.equal(again.duplicate, true);
+  const r2 = await PCD.runDispense(tools("dispOnly"), params("dispOnly", { qty: 8 }));
+  assert.equal(r2.status, "completed");
+  await env.withSecurityRulesDisabled(async c => { assert.equal((await getDoc(doc(c.firestore(), "drugs", "d1"))).data().currentStockBase, 30); });
+});
+test("v16 engine: operators without dispense.perform, inactive operators, other shop and other business are refused (with a labelled step)", async () => {
+  await seedEngine();
+  for (const u of ["nurse", "viewer", "inactive", "pharmB", "stranger"]) {
+    let err; try { await PCD.runDispense(tools(u), params(u)); } catch (e) { err = e; }
+    assert.ok(err, u + " should be refused"); assert.equal(err.code, "permission-denied", u + ": " + (err && err.message));
+    assert.ok(err.pcdStep, u + " should carry a step label");
+    assert.match(PCD.friendlyError(err), /^You do not have permission to perform this action\./);
+  }
+  await env.withSecurityRulesDisabled(async c => { assert.equal((await getDoc(doc(c.firestore(), "drugs", "d1"))).data().currentStockBase, 50, "no stock changed"); });
+});
+test("v16 reads: a missing prescription or record can be probed only by dispensers; existing ones still need dispense.view and the right shop", async () => {
+  await seedEngine();
+  for (const u of ["owner", "pharm", "dispOnly"]) { await assertSucceeds(getDoc(doc(db(u), "prescriptions", "nothing"))); await assertSucceeds(getDoc(doc(db(u), "dispense_records", "nothing_0"))); }
+  for (const u of ["nurse", "viewer", "inactive"]) { await assertFails(getDoc(doc(db(u), "prescriptions", "nothing"))); await assertFails(getDoc(doc(db(u), "dispense_records", "nothing_0"))); }
+  // (a dispenser of ANOTHER business can also probe a missing id: the rules cannot tell whose it would be. This reveals only that a guessed id does not exist; existing documents stay protected, tested below.)
+  await PCD.runDispense(tools("pharm"), params("pharm"));
+  const rxRead = u => getDoc(doc(db(u), "prescriptions", "e1"));
+  await assertSucceeds(rxRead("owner")); await assertSucceeds(rxRead("viewer")); await assertFails(rxRead("nurse")); await assertFails(rxRead("pharmB")); await assertFails(rxRead("stranger"));
+});
+test("v16 reads: dispense.view can list its own facility's prescriptions and records but not another facility's", async () => {
+  await seedEngine(); await PCD.runDispense(tools("pharm"), params("pharm"));
+  const q = (u, c, fac) => getDocs(query(collection(db(u), c), where("businessId", "==", B), where("facilityId", "==", fac), limit(5)));
+  await assertSucceeds(q("viewer", "prescriptions", A)); await assertSucceeds(q("viewer", "dispense_records", A));
+  await assertFails(q("viewer", "prescriptions", S)); await assertFails(q("nurse", "dispense_records", A)); await assertFails(q("pharmB", "prescriptions", A));
+});
+test("v16 reads: dispense.view (without patient.view) can read MEDICINE orders, registration numbers and allergies of its facility, not procedure orders", async () => {
+  await seedEngine();
+  await env.withSecurityRulesDisabled(async c => {
+    const f = c.firestore();
+    await setDoc(doc(f, "pc_treatment_orders", "proc1"), { businessId: B, facilityId: A, kind: "procedure", status: "active", patientId: "p1" });
+    await setDoc(doc(f, "pc_patient_facility_links", "p1_" + A), { businessId: B, facilityId: A, patientId: "p1", localRegNo: "R-1" });
+    await setDoc(doc(f, "pc_allergies", "al1"), { businessId: B, facilityId: A, patientId: "p1", status: "active", substance: "x" });
+  });
+  await assertSucceeds(getDoc(doc(db("dispOnly"), "pc_treatment_orders", "e1")));
+  await assertFails(getDoc(doc(db("dispOnly"), "pc_treatment_orders", "proc1")));
+  await assertSucceeds(getDocs(query(collection(db("dispOnly"), "pc_treatment_orders"), where("businessId", "==", B), where("facilityId", "==", A), where("kind", "==", "medicine"), where("status", "==", "active"), limit(5))));
+  await assertSucceeds(getDoc(doc(db("dispOnly"), "pc_patient_facility_links", "p1_" + A)));
+  await assertSucceeds(getDocs(query(collection(db("dispOnly"), "pc_allergies"), where("businessId", "==", B), where("facilityId", "==", A), where("status", "==", "active"), limit(5))));
+  await assertFails(getDoc(doc(db("stranger"), "pc_treatment_orders", "e1")));
+  await assertFails(getDoc(doc(db("pharmB"), "pc_treatment_orders", "e1")));
+  await assertFails(getDoc(doc(db("viewer"), "pc_treatment_orders", "proc1")));
+});
+test("v16 access check: the read-only diagnostic finds nothing blocked for a pharmacist and flags what a non-dispenser cannot reach", async () => {
+  await seedEngine();
+  const okRows = await PCD.diagnose(tools("dispOnly"), { uid: "dispOnly", businessId: B, facilityId: A, role: "operator", perms: users.dispOnly.perms, facility: { businessId: B, enabledServices: ["patient_care"] } });
+  assert.deepEqual(okRows.filter(r => !r.ok), []);
+  const badRows = await PCD.diagnose(tools("nurse"), { uid: "nurse", businessId: B, facilityId: A, role: "operator", perms: users.nurse.perms, facility: { businessId: B, enabledServices: ["patient_care"] } });
+  assert.ok(badRows.some(r => !r.ok && /blocked by the security rules/.test(r.detail)));
 });
