@@ -379,7 +379,7 @@
     return '<h3 class="sub">' + (amend ? "Enter a corrected result" : "Enter the result") + "</h3>" +
       (rangeText(o) ? '<div class="pt-meta">Reference: ' + esc(rangeText(o)) + (o.refSource ? " (" + esc(o.refSource) + ")" : "") + "</div>" : "") +
       "<label>Result" + unit + " *</label>" + field +
-      '<label>Flag</label><select id="rFlag"><option value="none">Not stated</option><option value="normal">Within reference range</option><option value="low">Below reference range</option><option value="high">Above reference range</option><option value="abnormal">Abnormal</option></select>' +
+      '<label>Flag</label><select id="rFlag"><option value="none">Not stated</option><option value="normal">Within reference range</option><option value="low">Below reference range</option><option value="high">Above reference range</option><option value="abnormal">Abnormal</option></select><div class="hint2" id="fhelp-rFlag">Whether the result is inside the expected (reference) range for this test.</div>' +
       '<div class="hint2" id="rFlagHint"></div>' +
       '<label>Comments</label><textarea id="rCom" rows="2"></textarea>' +
       '<button class="btn-primary" id="rSaveBtn" data-amend="' + (amend ? "1" : "0") + '">' + (amend ? "Save corrected result" : "Save result") + "</button>" + '<div class="msg" id="rMsg"></div>';
@@ -396,7 +396,7 @@
     const older = results.filter(r => r.id !== o.currentResultId).sort((a, b) => (b.resultAt || 0) - (a.resultAt || 0));
     if (older.length) h += '<h3 class="sub">Earlier results (kept on record)</h3>' + older.map(r => resultBlock(r, false)).join("");
     if (o.status === "requested") {
-      if (can("lab.collect")) h += '<label>Sample number (optional)</label><input type="text" id="sampleId" autocomplete="off"><button class="btn-primary" id="collectBtn">Sample collected</button>';
+      if (can("lab.collect")) h += '<label>Sample number (optional)</label><input type="text" id="sampleId" autocomplete="off"><div class="hint2" id="fhelp-sampleId">The number written on the sample container, if your laboratory numbers samples.</div><button class="btn-primary" id="collectBtn">Sample collected</button>';
     } else if (o.status === "collected") {
       if (can("lab.process")) h += '<button class="btn-primary" id="processBtn">Start processing</button>';
       h += '<div class="pt-meta">Sample collected at ' + esc(hhmm(tsMs(o.collectedAt))) + ".</div>";

@@ -285,10 +285,10 @@
       <div class="pt-meta" id="tBmi"></div>
       <label>Blood glucose</label>
       <div class="row"><div><input type="number" inputmode="decimal" step="0.1" id="tGlu" placeholder="Value"></div><div><select id="tGluUnit"><option value="mmol/L">mmol/L</option><option value="mg/dL">mg/dL</option></select></div></div>
-      <div class="row"><div><label>Pain score (0-10)</label><select id="tPain"><option value="">Not asked</option></select></div><div><label>Consciousness</label><select id="tCons"><option value="">Not assessed</option><option value="alert">Alert</option><option value="voice">Responds to voice</option><option value="pain">Responds to pain</option><option value="unresponsive">Unresponsive</option></select></div></div>
-      <label>MUAC (cm) - children</label><input type="number" inputmode="decimal" step="0.1" id="tMuac">
+      <div class="row"><div><label>Pain score (0-10)</label><select id="tPain"><option value="">Not asked</option></select><div class="hint2" id="fhelp-tPain">0 means no pain. 10 means the worst pain imaginable.</div></div><div><label>Consciousness</label><select id="tCons"><option value="">Not assessed</option><option value="alert">Alert</option><option value="voice">Responds to voice</option><option value="pain">Responds to pain</option><option value="unresponsive">Unresponsive</option></select><div class="hint2" id="fhelp-tCons">How awake the patient is. Alert: awake and responding normally. Responds to voice: wakes when spoken to. Responds to pain: reacts only to pain. Unresponsive: no reaction.</div></div></div>
+      <label>MUAC (cm) - children</label><input type="number" inputmode="decimal" step="0.1" id="tMuac"><div class="hint2" id="fhelp-tMuac">Mid-upper arm circumference: the distance around the upper arm, measured with a tape. Mostly used for young children.</div>
       <label>Triage category (your decision)</label>
-      <select id="tCat"><option value="">Not set</option><option value="emergency">Emergency</option><option value="urgent">Urgent</option><option value="standard">Standard</option><option value="low">Low priority</option></select>
+      <select id="tCat"><option value="">Not set</option><option value="emergency">Emergency</option><option value="urgent">Urgent</option><option value="standard">Standard</option><option value="low">Low priority</option></select><div class="hint2" id="fhelp-tCat">Your own decision about how urgent this patient is. Emergency: needs help immediately. Urgent: needs to be seen soon. Standard: normal waiting. Low priority: can wait longer.</div>
       <label>Triage notes</label><textarea id="tNotes" rows="2"></textarea>
       <button class="btn-primary" id="tSaveBtn">Save triage</button>
       <div class="msg" id="tMsg"></div>
@@ -321,8 +321,8 @@
       <div class="hint2" style="margin-top:0;">The patient or guardian may not know every detail. Write what they can tell you.</div>
       <label>Medicine *</label><input type="text" id="mName" list="drugList" placeholder="Type or choose" autocomplete="off">
       <div class="row"><div><label>Strength</label><input type="text" id="mStrength" placeholder="e.g. 500 mg" autocomplete="off"></div><div><label>Dose</label><input type="text" id="mDose" placeholder="e.g. 1 tablet" autocomplete="off"></div></div>
-      <div class="row"><div><label>How often</label><input type="text" id="mFreq" list="freqList" autocomplete="off"></div><div><label>Route</label><input type="text" id="mRoute" list="routeList" autocomplete="off"></div></div>
-      <div class="row"><div><label>For how long</label><input type="text" id="mDur" placeholder="e.g. 3 days" autocomplete="off"></div>
+      <div class="row"><div><label>How often</label><input type="text" id="mFreq" list="freqList" autocomplete="off"><div class="hint2" id="fhelp-mFreq">How often the patient took the medicine, for example twice a day. Shorthand is fine.</div></div><div><label>Route</label><input type="text" id="mRoute" list="routeList" autocomplete="off"><div class="hint2" id="fhelp-mRoute">How the medicine entered the body, for example by mouth or by injection.</div></div></div>
+      <div class="row"><div><label>For how long</label><input type="text" id="mDur" placeholder="e.g. 3 days" autocomplete="off"><div class="hint2" id="fhelp-mDur">How long the patient took the medicine, or has been taking it, for example 5 days.</div></div>
         <div><label>Last dose taken</label><div class="dateField"><input type="text" id="mLast"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div></div></div>
       <div class="row"><div><label>Course</label><select id="mDone"><option value="unknown">Not known</option><option value="ongoing">Still taking</option><option value="completed">Completed</option><option value="stopped_early">Stopped early</option></select></div>
         <div><label>Response</label><select id="mResp"><option value="unknown">Not known</option><option value="improved">Improved</option><option value="no_change">No change</option><option value="worse">Worse</option></select></div></div>
@@ -382,10 +382,10 @@
       <h2 id="dTitle">Add a diagnosis</h2>
       <div class="hint2" style="margin-top:0;">You decide the diagnosis. The app never suggests one and never prescribes from it. Changing a diagnosis keeps the earlier version on record.</div>
       <label>Diagnosis *</label><input type="text" id="dName" list="dxList" placeholder="Type or choose" autocomplete="off">
-      <div class="row"><div><label>ICD-10 code (optional)</label><input type="text" id="dIcd" placeholder="e.g. B50.9" maxlength="8" autocomplete="off"></div>
-        <div><label>Role</label><select id="dRole"><option value="primary">Primary</option><option value="secondary">Secondary</option></select></div></div>
+      <div class="row"><div><label>ICD-10 code (optional)</label><input type="text" id="dIcd" placeholder="e.g. B50.9" maxlength="8" autocomplete="off"><div class="hint2" id="fhelp-dIcd">The international disease code for this diagnosis. Leave empty if you do not know it.</div></div>
+        <div><label>Role</label><select id="dRole"><option value="primary">Primary</option><option value="secondary">Secondary</option></select><div class="hint2" id="fhelp-dRole">Primary is the main problem for this visit. Secondary is any other problem found.</div></div></div>
       <label>How sure are you?</label>
-      <select id="dCert"><option value="provisional">Provisional</option><option value="suspected">Suspected</option><option value="confirmed">Confirmed</option></select>
+      <select id="dCert"><option value="provisional">Provisional</option><option value="suspected">Suspected</option><option value="confirmed">Confirmed</option></select><div class="hint2" id="fhelp-dCert">Provisional: a first working idea. Suspected: likely, but not proven. Confirmed: proven, for example by a test.</div>
       <label>What supports it (findings, test results)</label><textarea id="dFind" rows="2"></textarea>
       <label>Notes</label><textarea id="dNotes" rows="2"></textarea>
       <button class="btn-primary" id="dSaveBtn">Save diagnosis</button>
@@ -401,12 +401,12 @@
       <h2>Start a treatment plan</h2>
       <div class="hint2" style="margin-top:0;">A plan holds the medicines and procedures for one problem. A patient can have several plans, and a plan can continue over later visits.</div>
       <label>Plan title * (type or choose)</label><input type="text" id="pTitle" list="planTitleList" placeholder="e.g. Malaria treatment" autocomplete="off">
-      <div class="row"><div><label>Care setting</label><select id="pSetting"><option value="outpatient">Outpatient</option><option value="home">At home</option><option value="inpatient">Inpatient</option><option value="procedure_room">Procedure room</option></select></div>
+      <div class="row"><div><label>Care setting</label><select id="pSetting"><option value="outpatient">Outpatient</option><option value="home">At home</option><option value="inpatient">Inpatient</option><option value="procedure_room">Procedure room</option></select><div class="hint2" id="fhelp-pSetting">Where the treatment will be given.</div></div>
         <div><label>Priority</label><select id="pPriority"><option value="routine">Routine</option><option value="urgent">Urgent</option></select></div></div>
       <label>Expected end</label>
-      <div class="dateField"><input type="text" id="pEnd"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div>
+      <div class="dateField"><input type="text" id="pEnd"><div class="hint2" id="fhelp-pEnd">The date the treatment is expected to finish. Optional.</div><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div>
       <label>Review date</label>
-      <div class="dateField"><input type="text" id="pReview"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div>
+      <div class="dateField"><input type="text" id="pReview"><div class="hint2" id="fhelp-pReview">The date the plan should be checked again. Optional.</div><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div>
       <label>Diagnoses this plan treats</label><div id="pDx"></div>
       <label>Clinical notes</label><textarea id="pNotes" rows="2"></textarea>
       <button class="btn-primary" id="pSaveBtn">Start plan</button>
@@ -425,7 +425,7 @@
       <div id="obProcBox" class="hidden">
         <label>Procedure * (type or choose)</label><input type="text" id="obProc" list="procList" autocomplete="off">
         <label>Category</label><select id="obCat"><option value="dressing">Wound dressing</option><option value="catheter">Catheter care</option><option value="respiratory">Respiratory</option><option value="injection">Injection / infusion care</option><option value="physio">Physiotherapy</option><option value="other">Other</option></select>
-        <div class="row"><div><label>Materials used</label><input type="text" id="obMat" autocomplete="off"></div><div><label>Who does it</label><input type="text" id="obWho" list="whoList" autocomplete="off"></div></div>
+        <div class="row"><div><label>Materials used</label><input type="text" id="obMat" autocomplete="off"><div class="hint2" id="fhelp-obMat">Items used up during the procedure, for example gloves or a dressing.</div></div><div><label>Who does it</label><input type="text" id="obWho" list="whoList" autocomplete="off"></div></div>
         <label>How long (minutes)</label><input type="number" inputmode="numeric" id="obMinutes">
       </div>
       <label>Instructions for the patient or nurse (optional)</label><textarea id="obInstr" rows="2" placeholder="e.g. Take after food"></textarea><div id="obExpand" class="fhelp" style="font-size:12.5px;margin:2px 0 8px;line-height:1.4"></div>
@@ -1073,7 +1073,7 @@
   function timesField() { return '<label>Times of day * (24-hour, separated by commas)</label><input type="text" id="obTimes" placeholder="08:00, 20:00" autocomplete="off">'; }
   function freqPreset() { return '<label>Quick fill</label><select id="obFreq"><option value="">Choose…</option><option value="1">Once a day</option><option value="2">Twice a day</option><option value="3">Three times a day</option><option value="4">Four times a day</option></select>'; }
   function patternHtml(p) {
-    if (p === "interval") return '<div class="row"><div><label>Every (hours) *</label><input type="number" inputmode="decimal" step="any" id="obEvery"></div><div><label>Number of doses *</label><input type="number" inputmode="numeric" id="obCount"></div></div>';
+    if (p === "interval") return '<div class="row"><div><label>Every (hours) *</label><input type="number" inputmode="decimal" step="any" id="obEvery"><div class="hint2" id="fhelp-obEvery">The hours between doses. For example, 8 means three doses in a day.</div></div><div><label>Number of doses *</label><input type="number" inputmode="numeric" id="obCount"><div class="hint2" id="fhelp-obCount">How many doses in total.</div></div></div>';
     if (p === "daily") return freqPreset() + timesField() + '<label>For how many days *</label><input type="number" inputmode="numeric" id="obDays">';
     if (p === "elapsed") return '<label>Hours after the start when each dose is due *</label><input type="text" id="obHours" placeholder="0, 12, 24" autocomplete="off"><div class="fhelp" style="font-size:12px;color:#5b6b7a;margin:2px 0 8px;line-height:1.35">Separate the hours with commas. 0 means the start time you choose below.</div>';
     if (p === "fixed") return timesField() + '<label>On these days (none ticked = every day)</label><div>' + ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d, i) => '<label class="chk" style="display:inline-flex; margin-right:10px;"><input type="checkbox" data-wd="' + i + '"><span>' + d + "</span></label>").join("") + '</div><label>For how many days *</label><input type="number" inputmode="numeric" id="obDays">';
@@ -1085,7 +1085,7 @@
     const t = $("obType").value; let h = "";
     if (t === "interval" || t === "daily" || t === "fixed" || t === "elapsed") h = patternHtml(t);
     else if (t === "weight") h = '<label>Pattern</label><select id="obPattern"><option value="interval">Regular intervals</option><option value="daily">Times of day</option></select><div id="obPatFields">' + patternHtml("interval") + "</div>";
-    else if (t === "prn") h = '<label>What is it for? *</label><input type="text" id="obInd" list="indList" placeholder="e.g. Pain" autocomplete="off"><div class="row"><div><label>Shortest time between doses (hours) *</label><input type="number" inputmode="decimal" step="any" id="obMinInt"></div><div><label>Most doses in a day *</label><input type="number" inputmode="numeric" id="obMaxDay"></div></div><label>Most total in a day (optional)</label><input type="number" inputmode="decimal" step="any" id="obMaxDaily"><label>Allowed for how many days</label><input type="number" inputmode="numeric" id="obPrnDays">';
+    else if (t === "prn") h = '<label>What is it for? *</label><input type="text" id="obInd" list="indList" placeholder="e.g. Pain" autocomplete="off"><div class="hint2" id="fhelp-obInd">What the medicine is for, for example pain or fever.</div><div class="row"><div><label>Shortest time between doses (hours) *</label><input type="number" inputmode="decimal" step="any" id="obMinInt"><div class="hint2" id="fhelp-obMinInt">The shortest time that must pass between two doses.</div></div><div><label>Most doses in a day *</label><input type="number" inputmode="numeric" id="obMaxDay"><div class="hint2" id="fhelp-obMaxDay">The most doses the patient may have in one day.</div></div></div><label>Most total in a day (optional)</label><input type="number" inputmode="decimal" step="any" id="obMaxDaily"><div class="hint2" id="fhelp-obMaxDaily">The most of the medicine, all doses added together, that may be given in one day. Optional.</div><label>Allowed for how many days</label><input type="number" inputmode="numeric" id="obPrnDays"><div class="hint2" id="fhelp-obPrnDays">How many days this as-needed order stays valid.</div>';
     else if (t === "taper") h = '<label>Stages (each stage has its own dose)</label><div id="obStages">' + stageRow("", "", "") + '</div><button type="button" class="btn-small btn-secondary" id="obAddStage" style="width:100%; margin-top:6px;">Add a stage</button>';
     else if (t === "custom") h = '<label>Dates and times</label><div id="obItems">' + itemRow("", "", "") + '</div><button type="button" class="btn-small btn-secondary" id="obAddItem" style="width:100%; margin-top:6px;">Add another time</button>';
     const sh = SCHED_HELP[t]; $("obSchedHelp").innerHTML = sh ? esc(sh[0]) + "<br><b>" + esc(sh[1]) + "</b>" : ""; $("obSchedHelp").style.display = sh ? "" : "none";

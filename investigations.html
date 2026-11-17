@@ -270,18 +270,18 @@
     <label>Test name * (type or choose)</label>
     <input type="text" id="fName" list="nameList" placeholder="e.g. Full blood count" autocomplete="off">
     <label>Sample / specimen (type or choose)</label>
-    <input type="text" id="fSpec" list="specList" placeholder="e.g. Blood" autocomplete="off">
+    <input type="text" id="fSpec" list="specList" placeholder="e.g. Blood" autocomplete="off"><div class="hint2" id="fhelp-fSpec">The sample taken from the patient for this test, for example blood or urine.</div>
     <label>How is the result written? *</label>
-    <select id="fType"><option value="number">A number (with units)</option><option value="choice">One of a list (e.g. Positive / Negative)</option><option value="text">Free text (e.g. a report)</option></select>
+    <select id="fType"><option value="number">A number (with units)</option><option value="choice">One of a list (e.g. Positive / Negative)</option><option value="text">Free text (e.g. a report)</option></select><div class="hint2" id="fhelp-fType">How the result is written: as a number, as a choice (for example positive or negative), or as free text.</div>
     <div id="choiceWrap" class="hidden"><label>Choices (separate with commas)</label><input type="text" id="fChoices" placeholder="Positive, Negative" autocomplete="off"></div>
-    <div id="unitWrap"><label>Units (type or choose)</label><input type="text" id="fUnits" list="unitList" autocomplete="off"></div>
+    <div id="unitWrap"><label>Units (type or choose)</label><input type="text" id="fUnits" list="unitList" autocomplete="off"><div class="hint2" id="fhelp-fUnits">The unit the result is measured in, for example mmol/L.</div></div>
     <div id="rangeWrap">
       <label>Reference range (optional)</label>
       <div class="row"><div><input type="number" inputmode="decimal" step="any" id="fMin" placeholder="Lowest normal"></div><div><input type="number" inputmode="decimal" step="any" id="fMax" placeholder="Highest normal"></div></div>
     </div>
-    <label>Reference range in words (optional)</label><input type="text" id="fRefText" placeholder="e.g. Negative" autocomplete="off">
+    <label>Reference range in words (optional)</label><input type="text" id="fRefText" placeholder="e.g. Negative" autocomplete="off"><div class="hint2" id="fhelp-fRefText">The expected range for this test and method, as used by the laboratory. It can differ between laboratories, so say where it comes from below.</div>
     <label>Where the reference range comes from (needed if you give one)</label>
-    <input type="text" id="fRefSource" placeholder="e.g. Our laboratory's analyser manual 2025" autocomplete="off">
+    <input type="text" id="fRefSource" placeholder="e.g. Our laboratory's analyser manual 2025" autocomplete="off"><div class="hint2" id="fhelp-fRefSource">The book, manual or laboratory the range came from.</div>
     <label>Price (optional)</label><input type="number" inputmode="decimal" step="any" min="0" id="fPrice" placeholder="Leave empty if not set">
     <label class="chk"><input type="checkbox" id="fActive" checked><span>Offered now (untick to hide from doctors)</span></label>
     <button class="btn-primary" id="fSaveBtn">Save test</button>
