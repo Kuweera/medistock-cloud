@@ -1,0 +1,56 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Patients test harness</title></head>
+<body style="margin:0"><iframe id="f" style="border:0;width:100vw;height:100vh"></iframe>
+<script>
+/* Test harness (Developer 2): acts as the app shell (window.top.MC.api) with an IN-MEMORY Firestore stand-in so the real encounter.html runs in a browser.
+   NOT real Firebase. TEST CONTENT ONLY: every guideline below is obviously fake. ?as=owner|nopres  &weight=20  &preg=1  &nodata=1 */
+(function () {
+  var qs = new URLSearchParams(location.search), as = qs.get("as") || "owner";
+  var store = new Map(), listeners = [], clock = Date.now(), B = "biz1", F = "shop1", writes = [];
+  function put(c, id, d) { store.set(c + "/" + id, JSON.parse(JSON.stringify(d))); }
+  var yr = new Date().getFullYear() - 8, dob = yr + "-05-10";
+  put("shops", F, { businessId: B, name: "Test Clinic", enabledServices: ["patient_care"], timezone: "Africa/Kampala" });
+  put("users", "owner1", { businessId: B, role: "owner", name: "Dr Owner", active: true });
+  put("users", "nop1", { businessId: B, role: "operator", shopId: F, name: "Nurse NoPrescribe", active: true, perms: { "patient.view": true, "consult.record": true, "consult.sign": true } });
+  var uid = as === "nopres" ? "nop1" : "owner1";
+  /* Treatment-record seed (Developer 3). TEST CONTENT ONLY. One medicine due now, one planned later. ?allergy=1 adds a matching allergy. */
+  function localDay(ms) { return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Kampala", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms)); }
+  function localHm(ms) { return new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Kampala", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(ms)); }
+  var t0 = Date.now() - 10 * 60000;
+  var base = { businessId: B, facilityId: F, patientId: "p1", patientName: "Test Patient", encounterId: "e1" };
+  put("pc_treatment_events", "ev1", Object.assign({ orderId: "o1", planId: "pl1", kind: "medicine", label: "TESTmed 500 mg", plannedAt: t0, plannedDay: localDay(t0), plannedLocal: localDay(t0) + " " + localHm(t0), plannedDoseValue: 2, doseUnit: "tablet", route: "by mouth", status: "pending", instructions: "TEST after food", idKey: "k1", idx: 0 }, base));
+  put("pc_treatment_orders", "o1", Object.assign({ medicineName: "TESTmed 500 mg", kind: "medicine", status: "active", scheduleType: "interval", doseValue: 2, doseUnit: "tablet", route: "by mouth", planId: "pl1" }, base));
+  if (qs.get("allergy")) put("pc_allergies", "a1", { businessId: B, facilityId: F, patientId: "p1", status: "active", substance: "TESTmed", severity: "severe" });
+  window.__db = { store: store, writes: writes, all: function (c) { var o = []; store.forEach(function (v, k) { if (k.indexOf(c + "/") === 0) o.push(Object.assign({ _id: k.slice(c.length + 1) }, JSON.parse(JSON.stringify(v)))); }); return o; },
+    add: function (c, id, d) { put(c, id, d); notifyAll(); } };
+  function snapOf(q) {
+    var docs = [];
+    store.forEach(function (v, k) { var i = k.indexOf("/"), c = k.slice(0, i), id = k.slice(i + 1); if (c !== q.coll) return; for (var j = 0; j < q.wheres.length; j++) if (v[q.wheres[j].f] !== q.wheres[j].v) return;
+      docs.push({ id: id, data: function () { return JSON.parse(JSON.stringify(v)); }, exists: function () { return true; }, metadata: { hasPendingWrites: false } }); });
+    return { docs: docs, size: docs.length, empty: !docs.length, metadata: { fromCache: false }, forEach: function (f) { docs.forEach(f); } };
+  }
+  function notifyAll() { listeners.forEach(function (l) { setTimeout(function () { l.next(snapOf(l.q)); }, 0); }); }
+  function stampV(d) { return JSON.parse(JSON.stringify(d, function (k, v) { return v && v.__ts ? ++clock : v; })); }
+  function write(kind, r, d) { var v = stampV(d); if (kind === "update") { if (!store.has(r.path)) throw new Error("missing " + r.path); store.set(r.path, Object.assign(store.get(r.path), v)); } else store.set(r.path, v); writes.push({ kind: kind, path: r.path }); }
+  var api = {
+    initializeApp: function () { return {}; }, getAuth: function () { return { currentUser: { uid: uid }, signOut: function () { return Promise.resolve(); } }; },
+    onAuthStateChanged: function (a, cb) { setTimeout(function () { cb({ uid: uid }); }, 0); return function () {}; }, getFirestore: function () { return {}; },
+    doc: function (d, c, id) { if (d && d.type === "collection") { c = d.coll; id = "auto_" + Math.random().toString(36).slice(2); } return { type: "document", coll: c, id: id, path: c + "/" + id }; },
+    collection: function (d, c) { return { type: "collection", coll: c, wheres: [] }; },
+    where: function (f, op, v) { return { f: f, op: op, v: v }; }, limit: function (n) { return { limit: n }; }, orderBy: function () { return {}; },
+    query: function (c) { return { type: "query", coll: c.coll, wheres: Array.prototype.slice.call(arguments, 1).filter(function (x) { return x.f; }) }; },
+    serverTimestamp: function () { return { __ts: 1 }; },
+    getDoc: function (r) { var has = store.has(r.path), v = has ? JSON.parse(JSON.stringify(store.get(r.path))) : null; return Promise.resolve({ id: r.id, exists: function () { return has; }, data: function () { return v; } }); },
+    getDocFromCache: function (r) { return api.getDoc(r); },
+    getDocs: function (q) { return Promise.resolve(snapOf(q)); },
+    setDoc: function (r, d) { write("set", r, d); notifyAll(); return Promise.resolve(); },
+    updateDoc: function (r, d) { write("update", r, d); notifyAll(); return Promise.resolve(); },
+    onSnapshot: function (q) { var fn = Array.prototype.slice.call(arguments, 1).filter(function (x) { return typeof x === "function"; })[0]; var l = { q: q, next: fn }; listeners.push(l); setTimeout(function () { fn(snapOf(q)); }, 0); return function () { listeners = listeners.filter(function (x) { return x !== l; }); }; },
+    writeBatch: function () { var ops = []; var w = {}; w.set = function (r, d) { ops.push(["set", r, d]); return w; }; w.update = function (r, d) { ops.push(["update", r, d]); return w; };
+      w.commit = function () { ops.forEach(function (o) { write(o[0], o[1], o[2]); }); notifyAll(); return Promise.resolve(); }; return w; }
+  };
+  window.MC = { api: function () { return api; }, go: function () {}, home: function () {} };
+  window.mcGo = function (u) { window.__went = u; };
+  window.mcShareText = function (t) { window.__shared = t; return Promise.resolve(); };
+  document.getElementById("f").src = "/patients.html";
+})();
+</script></body></html>

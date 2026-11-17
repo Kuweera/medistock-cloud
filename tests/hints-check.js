@@ -12,11 +12,13 @@ const OUT = process.argv[2] || ".", ENC = "http://localhost:8765/tests/encounter
   const shows = async (id, re) => { const el = f.locator("#fhelp-" + id); await el.scrollIntoViewIfNeeded(); assert.equal(await el.isVisible(), true, id + " visible"); assert.match(await el.innerText(), re, id); };
   // triage
   await tab("triage");
+  assert.equal(await f.locator("#tCons").isVisible(), false, "less-used triage measurements start collapsed");
+  await f.locator("#tMore > summary").click();
   await shows("tCat", /Emergency: needs help immediately/); await shows("tCons", /Alert: awake/); await shows("tMuac", /Mid-upper arm/); await shows("tPain", /0 means no pain/);
   await page.screenshot({ path: OUT + "/hints-triage-mobile.png" });
   // earlier medicines (frequency, route, duration)
   await tab("consult");
-  await shows("mFreq", /How often the patient took/); await shows("mRoute", /How the medicine entered the body/); await shows("mDur", /How long the patient took/);
+  await shows("mFreq", /How often the patient took/); await shows("mRoute", /How the medicine entered the body/); await f.locator("#mMore > summary").click(); await shows("mDur", /How long the patient took/);
   // diagnosis
   await tab("dx");
   await shows("dCert", /Provisional: a first working idea/); await shows("dRole", /Primary is the main problem/); await shows("dIcd", /international disease code/);
