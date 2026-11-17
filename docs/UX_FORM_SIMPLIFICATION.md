@@ -74,14 +74,50 @@ At least one of review date, next action or instructions is needed. The plan is 
 | 3 | Consultation | Existing complaint, history, medicines, notes with structured examination. Not changed. |
 | 4 | Diagnosis | Existing form with codes. Not changed. |
 | 5 | Treatment plan | Plain-language schedule names and examples (pass 2). Medicine vs procedure distinction, consumables: **not done** (consumables belong to Developer 1). |
-| 6 | Medication administration | **Not done.** `treatment.html` exists; a review against the plan (given/withheld/refused/missed, reason, actual time) is still needed. |
+| 6 | Medication administration | **Reviewed and clarified (fourth pass, below).** Already recorded every item the plan lists. Added the missing explanations. |
 | 7 | Follow-up | **Done** (above), for the visit. A "patients due for review" list is **not done**. |
 | 8 | Screenshots | Follow-up form (mobile, desktop) and close card (mobile) in `docs/screenshots-dev3/`. Other forms **not done**. |
 | 9 | Field-by-field explanations | Follow-up fields (above) and pass 1 to 2 labels. A complete document for every form is **not done**. |
-| - | Facility-type workflows | **Not done.** Needs a decision on how a facility declares its services. |
+| - | Facility-type workflows | **Decision made by the owner: facilities choose the services they offer and are not limited.** Nothing built so far hides a screen or makes a step compulsory. No further build needed for this; see rule below. |
 | - | Reuse (allergies, diagnosis in test requests, dispensing history in patient history, lab results in review) | Allergy banner and weight reuse already exist. The other three were **not checked or built**. |
 
 ## Dependencies
 - Developer 2: guidance strips and abbreviation box in `encounter.html` are merged and untouched.
 - Developer 1: dispensing history on the patient screen needs the dispense records read access; not started by me.
 - Developer 4: the real-Firebase test of the new note, and any decision on a "due for review" list.
+
+---
+# Fourth pass: medication administration, and the facility rule
+Status: **tested in Chromium on an in-memory stand-in only. Not tested on real Firebase or a real phone.**
+
+## Rule from the owner (applies to all my screens)
+Each facility decides which services it offers. The app must **not limit** them. So: no screen is hidden by facility type, no step is compulsory because of a facility type, and every field I added is optional unless it is needed to keep a record safe (for example a reason when a medicine was not given). The follow-up plan, the "before you close" check and the administration help are all optional to use.
+
+## Review of `treatment.html` against the plan (item 6)
+| Plan asks for | Already in the screen? |
+|---|---|
+| Medicine, dose, route | Yes (shown on the card; planned dose pre-filled) |
+| Scheduled time / actual time | Yes (planned time shown; date and time of the event entered, not in the future) |
+| Administrator | Yes (name recorded automatically) |
+| Given / withheld / refused / missed | Yes: Given, Patient refused, Hold (withheld), Not given, Missed |
+| Reason or notes | Yes: reason is **required** for everything except Given; observations and reaction are optional |
+| Separate from dispensing | Yes in the data (nothing in pharmacy or stock is written). It was not explained on screen. |
+| Allergy safety | Yes: a matching allergy blocks "Given" until a clinician's authorisation is ticked |
+| Corrections | Yes: "This record is wrong: correct it" keeps the original |
+
+## What changed (text only; saved data and rules identical)
+- A line under "Record what happened": *This records what was given to the patient. Dispensing from the pharmacy is recorded separately and does not count as giving the medicine.*
+- A "Which button?" explanation of Patient refused / Hold / Not given / Missed. Staff were never told how Hold, Not given and Missed differ.
+- Labels: "Date" and "Time" are now "Date this happened" and "Time this happened" (they are used for not-given outcomes too). The reason label now says it is needed for everything except Given. A hint says the dose shows the planned amount and should be changed only if a different amount was given.
+
+## Files in this pass
+`treatment.html` (help text only), `tests/treatment-harness.html` (new, reuses Developer 2's in-memory shim with one due medicine), `tests/treatment-check.js` (new), screenshots `administration-*.png`.
+
+## Tests
+`tests/treatment-check.js`: explanations present; "Not given" without a reason is refused and nothing saved; "Missed" with a reason saves outcome, reason, who gave it and when, and updates the event; "Given" saves the actual and the planned dose and **writes nothing to `dispense_records`, `prescriptions`, `sales` or `inventory`**; a matching allergy blocks "Given"; desktop and 320 px layouts; no page errors. All pass. `node --test tests/*.test.js` 104/104 and the other two browser checks still pass.
+Run: `python3 -m http.server 8765`, then `node tests/treatment-check.js docs/screenshots-dev3`.
+
+## Still not done
+- Showing the pharmacy's dispensing record next to the administration (Dev 1's data; needs a read permission decision with Dev 4).
+- "As needed" (PRN) screen and the correction flow were reviewed by reading only, not in the browser.
+- The complete field-by-field document, other forms' screenshots, triage fields that change by service.
