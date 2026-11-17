@@ -161,6 +161,13 @@
   .cal-native{position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0; padding:0;}
   .info-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--accent); color:var(--text); font-size:13px; line-height:1.5;}
   .perm-warn{font-size:12px; color:var(--warn); margin-bottom:8px; line-height:1.5;}
+
+  details.more { margin: 10px 0 4px; border: 1px solid var(--border, #dfe6e3); border-radius: 10px; padding: 0 12px; background: rgba(0,0,0,.015); }
+  details.more > summary { cursor: pointer; font-weight: 700; color: #0f6b57; padding: 11px 0; list-style: none; min-height: 24px; }
+  details.more > summary::-webkit-details-marker { display: none; }
+  details.more > summary::before { content: "+ "; font-weight: 800; }
+  details.more[open] > summary::before { content: "\2212\00a0"; }
+  details.more[open] { padding-bottom: 8px; }
 </style>
 <script>
 (function(){
@@ -277,6 +284,7 @@
 
   <div class="card hidden" id="formCard">
     <h2>Register a new patient</h2>
+<div class="hint2" id="req-reg">Required: full name, sex, and the age (the date of birth if you know it, or an estimated age). Everything else is optional.</div>
     <label>Full name *</label>
     <input type="text" id="fName" placeholder="First and last name" autocomplete="off">
     <label>Sex *</label>
@@ -297,6 +305,7 @@
     </div>
     <label>Phone number</label>
     <input type="tel" id="fPhone" placeholder="e.g. 0772 123456" autocomplete="off">
+    <details class="more" id="regMore"><summary>Address and family contacts (optional)</summary>
     <label>Address</label><input type="text" id="fAddress" autocomplete="off">
     <div class="row">
       <div><label>Village</label><input type="text" id="fVillage" list="villageList" autocomplete="off"></div>
@@ -317,6 +326,7 @@
         <div><label>Phone</label><input type="tel" id="fEmPhone" autocomplete="off"></div>
       </div>
     </div>
+    </details>
     <div id="candBox" class="hidden"></div>
     <button class="btn-primary" id="saveBtn">Check and register</button>
     <button class="btn-small btn-secondary" id="cancelBtn" style="width:100%; margin-top:8px;">Cancel</button>

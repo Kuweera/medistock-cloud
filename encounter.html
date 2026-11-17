@@ -161,6 +161,13 @@
   .cal-native{position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0; padding:0;}
   .info-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--accent); color:var(--text); font-size:13px; line-height:1.5;}
   .perm-warn{font-size:12px; color:var(--warn); margin-bottom:8px; line-height:1.5;}
+
+  details.more { margin: 10px 0 4px; border: 1px solid var(--border, #dfe6e3); border-radius: 10px; padding: 0 12px; background: rgba(0,0,0,.015); }
+  details.more > summary { cursor: pointer; font-weight: 700; color: #0f6b57; padding: 11px 0; list-style: none; min-height: 24px; }
+  details.more > summary::-webkit-details-marker { display: none; }
+  details.more > summary::before { content: "+ "; font-weight: 800; }
+  details.more[open] > summary::before { content: "\2212\00a0"; }
+  details.more[open] { padding-bottom: 8px; }
 </style>
 <script>
 (function(){
@@ -276,6 +283,7 @@
     <div class="gstrip" data-gstage="triage"></div>
     <div class="card hidden" id="tAddCard">
       <h2>Record triage / vital signs</h2>
+<div class="hint2" id="req-triage">Every box here is optional, but enter at least one measurement, a category or a note.</div>
       <div class="hint2" style="margin-top:0;">Fill in only what you measured. Each save is a new record, so you can repeat observations during the visit.</div>
       <div class="row"><div><label>Temperature (°C)</label><input type="number" inputmode="decimal" step="0.1" id="tTemp"></div><div><label>Pulse (/min)</label><input type="number" inputmode="numeric" id="tPulse"></div></div>
       <label>Blood pressure (mmHg)</label>
@@ -283,10 +291,14 @@
       <div class="row"><div><label>Breathing rate (/min)</label><input type="number" inputmode="numeric" id="tResp"></div><div><label>Oxygen saturation (%)</label><input type="number" inputmode="numeric" id="tSpo2"></div></div>
       <div class="row"><div><label>Weight (kg)</label><input type="number" inputmode="decimal" step="0.1" id="tWeight"></div><div><label>Height (cm)</label><input type="number" inputmode="decimal" step="0.1" id="tHeight"></div></div>
       <div class="pt-meta" id="tBmi"></div>
-      <label>Blood glucose</label>
+            <label>Pain score (0-10)</label><select id="tPain"><option value="">Not asked</option></select><div class="hint2" id="fhelp-tPain">0 means no pain. 10 means the worst pain imaginable.</div>
+      <details class="more" id="tMore"><summary>More measurements: blood glucose, consciousness, arm circumference</summary>
+<label>Blood glucose</label>
       <div class="row"><div><input type="number" inputmode="decimal" step="0.1" id="tGlu" placeholder="Value"></div><div><select id="tGluUnit"><option value="mmol/L">mmol/L</option><option value="mg/dL">mg/dL</option></select></div></div>
-      <div class="row"><div><label>Pain score (0-10)</label><select id="tPain"><option value="">Not asked</option></select><div class="hint2" id="fhelp-tPain">0 means no pain. 10 means the worst pain imaginable.</div></div><div><label>Consciousness</label><select id="tCons"><option value="">Not assessed</option><option value="alert">Alert</option><option value="voice">Responds to voice</option><option value="pain">Responds to pain</option><option value="unresponsive">Unresponsive</option></select><div class="hint2" id="fhelp-tCons">How awake the patient is. Alert: awake and responding normally. Responds to voice: wakes when spoken to. Responds to pain: reacts only to pain. Unresponsive: no reaction.</div></div></div>
-      <label>MUAC (cm) - children</label><input type="number" inputmode="decimal" step="0.1" id="tMuac"><div class="hint2" id="fhelp-tMuac">Mid-upper arm circumference: the distance around the upper arm, measured with a tape. Mostly used for young children.</div>
+
+<label>Consciousness</label><select id="tCons"><option value="">Not assessed</option><option value="alert">Alert</option><option value="voice">Responds to voice</option><option value="pain">Responds to pain</option><option value="unresponsive">Unresponsive</option></select><div class="hint2" id="fhelp-tCons">How awake the patient is. Alert: awake and responding normally. Responds to voice: wakes when spoken to. Responds to pain: reacts only to pain. Unresponsive: no reaction.</div>
+<label>MUAC (cm) - children</label><input type="number" inputmode="decimal" step="0.1" id="tMuac"><div class="hint2" id="fhelp-tMuac">Mid-upper arm circumference: the distance around the upper arm, measured with a tape. Mostly used for young children.</div>
+</details>
       <label>Triage category (your decision)</label>
       <select id="tCat"><option value="">Not set</option><option value="emergency">Emergency</option><option value="urgent">Urgent</option><option value="standard">Standard</option><option value="low">Low priority</option></select><div class="hint2" id="fhelp-tCat">Your own decision about how urgent this patient is. Emergency: needs help immediately. Urgent: needs to be seen soon. Standard: normal waiting. Low priority: can wait longer.</div>
       <label>Triage notes</label><textarea id="tNotes" rows="2"></textarea>
@@ -300,17 +312,20 @@
     <div class="gstrip" data-gstage="consult"></div>
     <div class="card hidden" id="cAddCard">
       <h2>Add a presenting complaint</h2>
+<div class="hint2" id="req-complaint">Required: the complaint. Everything else is optional.</div>
       <label>Complaint *</label><input type="text" id="cName" list="complaintList" placeholder="Type or choose" autocomplete="off">
       <div class="row"><div><label>Started (type or choose)</label><input type="text" id="cOnset" list="onsetList" placeholder="e.g. 3 days ago" autocomplete="off"></div><div><label>Lasted (number)</label><input type="number" inputmode="numeric" id="cDurVal" min="0"></div></div>
       <label>How long has the patient had this complaint? (unit)</label><div class="fhelp" style="font-size:12px;color:#5b6b7a;margin:2px 0 8px;line-height:1.35">Choose hours, days, weeks, months or years. Use together with the number above. Optional.</div>
       <select id="cDurUnit"><option value="">-</option><option value="hours">hours</option><option value="days">days</option><option value="weeks">weeks</option><option value="months">months</option><option value="years">years</option></select>
       <div class="row"><div><label>Severity</label><select id="cSev"><option value="">Not stated</option><option value="mild">Mild</option><option value="moderate">Moderate</option><option value="severe">Severe</option></select></div>
         <div><label>Progression</label><select id="cProg"><option value="">Not stated</option><option value="improving">Improving</option><option value="same">Staying the same</option><option value="worsening">Getting worse</option><option value="comes_and_goes">Comes and goes</option></select></div></div>
+      <details class="more" id="cMore"><summary>More detail about the complaint (optional)</summary>
       <label>Other symptoms with it</label><input type="text" id="cAssoc" autocomplete="off">
       <label>Makes it worse</label><input type="text" id="cAgg" autocomplete="off">
       <label>Makes it better</label><input type="text" id="cRel" autocomplete="off">
       <label>Had it before?</label><input type="text" id="cPrev" autocomplete="off">
       <label>Notes</label><textarea id="cNotes" rows="2"></textarea>
+      </details>
       <button class="btn-primary" id="cSaveBtn">Add complaint</button>
       <div class="msg" id="cMsg"></div>
     </div>
@@ -318,16 +333,19 @@
 
     <div class="card hidden" id="mAddCard">
       <h2>Medicines taken before this visit</h2>
+<div class="hint2" id="req-priormed">Required: the medicine name. Everything else is optional.</div>
       <div class="hint2" style="margin-top:0;">The patient or guardian may not know every detail. Write what they can tell you.</div>
       <label>Medicine *</label><input type="text" id="mName" list="drugList" placeholder="Type or choose" autocomplete="off">
       <div class="row"><div><label>Strength</label><input type="text" id="mStrength" placeholder="e.g. 500 mg" autocomplete="off"></div><div><label>Dose</label><input type="text" id="mDose" placeholder="e.g. 1 tablet" autocomplete="off"></div></div>
       <div class="row"><div><label>How often</label><input type="text" id="mFreq" list="freqList" autocomplete="off"><div class="hint2" id="fhelp-mFreq">How often the patient took the medicine, for example twice a day. Shorthand is fine.</div></div><div><label>Route</label><input type="text" id="mRoute" list="routeList" autocomplete="off"><div class="hint2" id="fhelp-mRoute">How the medicine entered the body, for example by mouth or by injection.</div></div></div>
+      <details class="more" id="mMore"><summary>More detail: how long, last dose, course, response, source (optional)</summary>
       <div class="row"><div><label>For how long</label><input type="text" id="mDur" placeholder="e.g. 3 days" autocomplete="off"><div class="hint2" id="fhelp-mDur">How long the patient took the medicine, or has been taking it, for example 5 days.</div></div>
         <div><label>Last dose taken</label><div class="dateField"><input type="text" id="mLast"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div></div></div>
       <div class="row"><div><label>Course</label><select id="mDone"><option value="unknown">Not known</option><option value="ongoing">Still taking</option><option value="completed">Completed</option><option value="stopped_early">Stopped early</option></select></div>
         <div><label>Response</label><select id="mResp"><option value="unknown">Not known</option><option value="improved">Improved</option><option value="no_change">No change</option><option value="worse">Worse</option></select></div></div>
       <label>Told to us by</label>
       <select id="mBy"><option value="patient">Patient</option><option value="guardian">Guardian</option><option value="records">Records / card</option><option value="unknown">Not known</option></select>
+      </details>
       <button class="btn-primary" id="mSaveBtn">Add medicine</button>
       <div class="msg" id="mMsg"></div>
     </div>
@@ -370,6 +388,7 @@
       <div class="row"><div><label>Priority</label><select id="oPri"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">Stat (immediately)</option></select></div></div>
       <label>Reason for the request (type or choose)</label>
       <input type="text" id="oNote" list="oNoteList" placeholder="e.g. Fever for 3 days" autocomplete="off">
+      <div id="oContext" class="hint2"></div>
       <button class="btn-primary" id="oReqBtn">Request selected tests</button>
       <div class="msg" id="oMsg"></div>
     </div>
@@ -380,14 +399,17 @@
     <div class="gstrip" data-gstage="dx"></div>
     <div class="card hidden" id="dAddCard">
       <h2 id="dTitle">Add a diagnosis</h2>
+<div class="hint2" id="req-dx">Required: the diagnosis. Everything else is optional. If you add an ICD code, it must be in the correct format.</div>
       <div class="hint2" style="margin-top:0;">You decide the diagnosis. The app never suggests one and never prescribes from it. Changing a diagnosis keeps the earlier version on record.</div>
       <label>Diagnosis *</label><input type="text" id="dName" list="dxList" placeholder="Type or choose" autocomplete="off">
       <div class="row"><div><label>ICD-10 code (optional)</label><input type="text" id="dIcd" placeholder="e.g. B50.9" maxlength="8" autocomplete="off"><div class="hint2" id="fhelp-dIcd">The international disease code for this diagnosis. Leave empty if you do not know it.</div></div>
         <div><label>Role</label><select id="dRole"><option value="primary">Primary</option><option value="secondary">Secondary</option></select><div class="hint2" id="fhelp-dRole">Primary is the main problem for this visit. Secondary is any other problem found.</div></div></div>
       <label>How sure are you?</label>
       <select id="dCert"><option value="provisional">Provisional</option><option value="suspected">Suspected</option><option value="confirmed">Confirmed</option></select><div class="hint2" id="fhelp-dCert">Provisional: a first working idea. Suspected: likely, but not proven. Confirmed: proven, for example by a test.</div>
+      <details class="more" id="dMore"><summary>Findings and notes (optional)</summary>
       <label>What supports it (findings, test results)</label><textarea id="dFind" rows="2"></textarea>
       <label>Notes</label><textarea id="dNotes" rows="2"></textarea>
+      </details>
       <button class="btn-primary" id="dSaveBtn">Save diagnosis</button>
       <button class="btn-small btn-secondary hidden" id="dCancelBtn" style="width:100%; margin-top:8px;">Cancel</button>
       <div class="msg" id="dMsg"></div>
@@ -399,6 +421,7 @@
     <div class="gstrip" data-gstage="treat"></div>
     <div class="card hidden" id="pAddCard">
       <h2>Start a treatment plan</h2>
+<div class="hint2" id="req-plan">Required: the plan title. Everything else is optional.</div>
       <div class="hint2" style="margin-top:0;">A plan holds the medicines and procedures for one problem. A patient can have several plans, and a plan can continue over later visits.</div>
       <label>Plan title * (type or choose)</label><input type="text" id="pTitle" list="planTitleList" placeholder="e.g. Malaria treatment" autocomplete="off">
       <div class="row"><div><label>Care setting</label><select id="pSetting"><option value="outpatient">Outpatient</option><option value="home">At home</option><option value="inpatient">Inpatient</option><option value="procedure_room">Procedure room</option></select><div class="hint2" id="fhelp-pSetting">Where the treatment will be given.</div></div>
@@ -415,6 +438,7 @@
 
     <div class="card hidden" id="obCard">
       <h2 id="obTitle">Add an order</h2>
+      <div class="hint2" id="req-order">For a medicine, required: the medicine, the dose, the unit, how it is given, when it starts, and the details of the chosen pattern. For a procedure, required: the procedure and when it starts. Everything else is optional.</div>
       <div id="obPlanLine" class="pt-meta"></div>
       <div id="obMedBox">
         <label>Medicine * (type or choose from this shop's medicines)</label><input type="text" id="obMed" list="drugList" placeholder="Type or choose" autocomplete="off">
@@ -874,7 +898,16 @@
 
 
   // ---------- tests (investigations) ----------
+  function renderTestContext() {
+    const el = $("oContext"); if (!el) return;
+    const dx = diagnoses.filter(d => d.status === "active").sort((a, b) => (a.role === "primary" ? 0 : 1) - (b.role === "primary" ? 0 : 1)).map(d => ({ k: "Diagnosis", t: d.name }));
+    const cp = complaints.filter(c => c.status !== "entered_in_error").map(c => ({ k: "Complaint", t: c.name }));
+    const items = dx.concat(cp).filter(x => x.t).slice(0, 6);
+    el.innerHTML = items.length ? "On this visit (tap to use as the reason): " + items.map(x => '<button type="button" class="btn-small btn-secondary" data-reason="' + esc(x.t) + '" style="margin:2px 4px 2px 0;width:auto;">' + esc(x.k) + ": " + esc(x.t) + "</button>").join("") : "Nothing is recorded yet on this visit. Once a complaint or diagnosis is recorded, it can be used here as the reason.";
+    el.onclick = ev => { const b = ev.target.closest("[data-reason]"); if (!b) return; const cur = $("oNote").value.trim(), t = b.getAttribute("data-reason"); if (cur.split("; ").indexOf(t) < 0) $("oNote").value = cur ? cur + "; " + t : t; };
+  }
   function renderOrderPick() {
+    renderTestContext();
     const q = $("oQ").value.trim().toLowerCase(), cf = $("oCat").value;
     const rows = catalogue.filter(i => i.active && (!cf || i.category === cf) && (!q || String(i.name).toLowerCase().indexOf(q) >= 0)).sort((a, b) => String(a.name).localeCompare(String(b.name)));
     $("oPick").innerHTML = rows.length ? rows.map(i => '<label class="chk"><input type="checkbox" data-pick="' + esc(i.id) + '"' + (pickedTests[i.id] ? " checked" : "") + '><span>' + esc(i.name) + ' <span class="pt-meta">' + esc(CAT_LABEL[i.category] || "") + "</span></span></label>").join("")
@@ -969,7 +1002,7 @@
   }
   function startEditDx(id) {
     const d = diagnoses.find(x => x.id === id); if (!d) return;
-    editDx = d; $("dName").value = d.name; $("dIcd").value = d.icd10 || ""; $("dRole").value = d.role; $("dCert").value = d.certainty; $("dFind").value = d.findings || ""; $("dNotes").value = d.notes || "";
+    editDx = d; setTimeout(() => { $("dMore").open = !!($("dFind").value || $("dNotes").value); }, 0); $("dName").value = d.name; $("dIcd").value = d.icd10 || ""; $("dRole").value = d.role; $("dCert").value = d.certainty; $("dFind").value = d.findings || ""; $("dNotes").value = d.notes || "";
     $("dTitle").textContent = "Change diagnosis (saved as a new version)"; $("dSaveBtn").textContent = "Save new version"; $("dCancelBtn").classList.remove("hidden"); $("dAddCard").scrollIntoView({ behavior: "smooth", block: "start" });
   }
   function dxError(id) {
@@ -1407,7 +1440,7 @@
   });
 
   // ---------- wiring ----------
-  const rAll = () => { if (!enc) return; scheduleGuidance(); renderHeader(); renderTriage(); renderComplaints(); renderMeds(); renderNotes(); renderOrders(); renderDx(); renderTreat(); renderPlanDx(); renderSummary(); };
+  const rAll = () => { if (!enc) return; scheduleGuidance(); renderHeader(); renderTriage(); renderComplaints(); renderMeds(); renderNotes(); renderOrders(); renderTestContext(); renderDx(); renderTreat(); renderPlanDx(); renderSummary(); };
   document.querySelectorAll("#tabs .pill-btn").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll("#tabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b));
     ["triage", "consult", "notes", "tests", "dx", "treat", "close"].forEach(t => { $("tab-" + t).classList.toggle("hidden", t !== b.dataset.t); });
