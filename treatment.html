@@ -305,6 +305,8 @@
   const tz = () => (facility && facility.timezone) || "Africa/Kampala";
   const todayLocal = () => PCS.utcToLocal(Date.now(), tz()).date;
   const ST = { pending: "Pending", due: "Due now", delayed: "Late", administered: "Given", refused: "Refused", missed: "Missed", held: "Held", not_given: "Not given", cancelled: "Cancelled" };
+  const SEP_NOTE = '<div class="hint2">This records what was given to the patient. Dispensing from the pharmacy is recorded separately and does not count as giving the medicine.</div>';
+  const OUT_HELP = '<div class="hint2" id="outHelp"><b>Which button?</b><br><b>Patient refused:</b> the patient did not accept it.<br><b>Hold:</b> wait on purpose, for example a doctor asked to wait. You can release the hold later.<br><b>Not given:</b> it was not given and will not be given at this time, for example the medicine is not available.<br><b>Missed:</b> the time passed and it was not given.</div>';
   const ST_CLASS = { due: "warn", delayed: "bad", administered: "ok", refused: "bad", missed: "bad", held: "warn", not_given: "warn" };
 
   function showGate(msg) { $("gateMsg").innerHTML = msg; $("gateCard").classList.remove("hidden"); $("mainArea").classList.add("hidden"); }
@@ -409,7 +411,7 @@
   }
   function nowFields(prefix) {
     const n = PCS.utcToLocal(Date.now(), tz());
-    return '<div class="row"><div><label>Date</label><div class="dateField"><input type="text" id="' + prefix + 'Date" value="' + esc(PCF.toTyped(n.date)) + '"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div></div><div><label>Time</label><input type="time" id="' + prefix + 'Time" value="' + n.time + '"></div></div>';
+    return '<div class="row"><div><label>Date this happened</label><div class="dateField"><input type="text" id="' + prefix + 'Date" value="' + esc(PCF.toTyped(n.date)) + '"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div></div><div><label>Time this happened</label><input type="time" id="' + prefix + 'Time" value="' + n.time + '"></div></div>';
   }
   function readTime(prefix) {
     const di = PCF.dateInfo(prefix + "Date"), tm = $(prefix + "Time").value;
@@ -428,13 +430,13 @@
     const recs = selRecs.filter(r => r.status === "active").sort((a, b) => (b.clientCreatedAt || 0) - (a.clientCreatedAt || 0));
     if (e.status === "pending" || e.status === "held") {
       if (can("treatment.administer")) {
-        h += '<h3 class="sub">Record what happened</h3>' + nowFields("a") +
-          (e.kind === "medicine" ? '<label>Dose actually given (' + esc(e.doseUnit || "") + ")</label>" + '<input type="number" inputmode="decimal" step="any" id="aDose" value="' + esc(e.plannedDoseValue != null ? e.plannedDoseValue : "") + '">' : "") +
+        h += '<h3 class="sub">Record what happened</h3>' + SEP_NOTE + nowFields("a") +
+          (e.kind === "medicine" ? '<label>Dose actually given (' + esc(e.doseUnit || "") + ")</label>" + '<div class="hint2">Shows the planned dose. Change it only if you gave a different amount.</div><input type="number" inputmode="decimal" step="any" id="aDose" value="' + esc(e.plannedDoseValue != null ? e.plannedDoseValue : "") + '">' : "") +
           "<label>Observations</label><textarea id=\"aObs\" rows=\"2\"></textarea><label>Reaction or side effect (if any)</label><textarea id=\"aAdv\" rows=\"2\"></textarea>" +
           (al.length ? '<label class="chk"><input type="checkbox" id="aAlg"><span>I have checked the allergy and a clinician has authorised this</span></label>' : "") +
           '<button class="btn-primary" data-out="administered">' + (e.kind === "procedure" ? "Procedure done" : "Given") + "</button>" +
-          '<label>If it was not given: the reason (type or choose)</label><input type="text" id="aReason" list="reasonList" autocomplete="off">' +
-          '<div class="op-actions"><button class="btn-small btn-secondary" data-out="refused">Patient refused</button><button class="btn-small btn-secondary" data-out="held">Hold</button><button class="btn-small btn-secondary" data-out="not_given">Not given</button><button class="btn-small btn-secondary" data-out="missed">Missed</button></div>';
+          '<label>Reason (needed for everything except Given)</label><input type="text" id="aReason" list="reasonList" autocomplete="off">' +
+          '<div class="op-actions"><button class="btn-small btn-secondary" data-out="refused">Patient refused</button><button class="btn-small btn-secondary" data-out="held">Hold</button><button class="btn-small btn-secondary" data-out="not_given">Not given</button><button class="btn-small btn-secondary" data-out="missed">Missed</button></div>' + OUT_HELP;
         if (e.status === "held" ) h += '<button class="btn-small btn-secondary" id="relBtn" style="width:100%; margin-top:8px;">Release the hold (back to pending)</button>';
       } else h += '<div class="pt-meta">You do not have permission to record administrations.</div>';
     } else {
