@@ -77,7 +77,7 @@ At least one of review date, next action or instructions is needed. The plan is 
 | 6 | Medication administration | **Reviewed and clarified (fourth pass, below).** Already recorded every item the plan lists. Added the missing explanations. |
 | 7 | Follow-up | **Done** (above), for the visit. A "patients due for review" list is **not done**. |
 | 8 | Screenshots | Follow-up form (mobile, desktop) and close card (mobile) in `docs/screenshots-dev3/`. Other forms **not done**. |
-| 9 | Field-by-field explanations | Follow-up fields (above) and pass 1 to 2 labels. A complete document for every form is **not done**. |
+| 9 | Field-by-field explanations | **Done (fifth pass): `docs/FIELD_EXPLANATIONS.md`, 186 fields, with a test that keeps it complete.** Required/optional marking on screen is only partly done (see below). |
 | - | Facility-type workflows | **Decision made by the owner: facilities choose the services they offer and are not limited.** Nothing built so far hides a screen or makes a step compulsory. No further build needed for this; see rule below. |
 | - | Reuse (allergies, diagnosis in test requests, dispensing history in patient history, lab results in review) | Allergy banner and weight reuse already exist. The other three were **not checked or built**. |
 
@@ -121,3 +121,29 @@ Run: `python3 -m http.server 8765`, then `node tests/treatment-check.js docs/scr
 - Showing the pharmacy's dispensing record next to the administration (Dev 1's data; needs a read permission decision with Dev 4).
 - "As needed" (PRN) screen and the correction flow were reviewed by reading only, not in the browser.
 - The complete field-by-field document, other forms' screenshots, triage fields that change by service.
+
+---
+# Fifth pass: field-by-field explanations (deliverable 9) and on-screen help
+Status: **tested in Chromium on an in-memory stand-in and by unit tests only. Not tested on real Firebase or a real phone.**
+
+## What was built
+1. **`docs/FIELD_EXPLANATIONS.md`**: every labelled field in the nine patient-care pages (186) with what it means and whether the screen marks it required, optional or neither. I wrote it from the real forms and checked option lists against the explanations; three explanations were wrong on the first draft (sex has four options, history types, consent methods) and were corrected.
+2. **On-screen explanations** (a short grey line under the box) for the fields that confuse most, including the five the plan names:
+   - Frequency, route, duration: *Medicines taken before* (how often, route, for how long).
+   - Specimen and reference range: *Test catalogue* (sample, result type, units, reference range in words, where the range comes from) and the lab result flag and sample number.
+   - Triage: category, consciousness, MUAC, pain score. Diagnosis: how sure, role, ICD code. Plan: setting, review date, expected end, materials used. Order form: hours between doses, number of doses, and the as-needed limits (what it is for, shortest time between doses, most doses a day, most total, how many days).
+   - 30 explanations in all: `encounter.html` 21, `investigations.html` 5, `laboratory.html` 2, `patients.html` 1, `patient.html` 1. They describe the field only. **No clinical advice or dosing numbers were added.**
+3. **Tests that keep this honest**
+   - `tests/fields-doc.test.js` (10 tests): fails if a plainly labelled field in any of the nine pages is not in the document. I proved it by deleting one row: it failed naming the field, then passed when restored.
+   - `tests/hints-check.js` (Chromium): the explanations appear on screen, including those built in JavaScript (the scheduled and as-needed order fields), are not duplicated when the form re-renders, and the page has no errors. The test-catalogue explanations are checked in the source file because that page needs the app shell to render; this is a source check, not a rendered one.
+
+## Test results
+`node --test tests/*.test.js`: **114 of 114** (104 earlier + 10 new). Browser checks `hints-check`, `treatment-check`, `followup-check` and Developer 2's `encounter-guidance-check` all pass.
+
+## Findings (not fixed)
+- **Required/optional marking is only partly done.** Of the 186 fields, 37 are marked required, 16 are marked optional and **133 are marked neither way**. The plan asks that required and optional fields are clearly identified. I did not mark the 133, because whether a field is really optional is decided by the code that saves it, and each one needs checking against that code (and, for records, the rules). This is the natural next piece of work.
+- The document was produced with a helper script that is not in the repository. The test above is the safeguard; regenerating the document from scratch would need that script rewritten.
+- The laboratory section describes the current screen. Developer 4 is rebuilding it, so it will need an update.
+
+## Files in this pass
+`encounter.html`, `investigations.html`, `laboratory.html`, `patients.html`, `patient.html` (explanation lines only; `encounter.html` also contains the earlier follow-up change, so merge rather than overwrite), `docs/FIELD_EXPLANATIONS.md`, `docs/UX_FORM_SIMPLIFICATION.md`, `tests/fields-doc.test.js`, `tests/hints-check.js`, screenshots `hints-*.png`.
