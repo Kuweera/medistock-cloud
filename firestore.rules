@@ -1,6 +1,11 @@
 rules_version = '2';
 
-// MediStock Cloud — multi-shop roles & security (v17)
+// MediStock Cloud — multi-shop roles & security (v18)
+// v18 (laboratory, Developer 4): result types qualitative / semiquant / categorical / multi / titer / organism (older number / text / choice unchanged);
+//   specimen steps received / accepted / rejected (rejection needs a reason; rejected is final); a correction of a result now needs a written reason;
+//   a test can be requested only if it is active and approved in the facility catalogue; NEW pc_lab_alerts (critical results: lab informs, clinician
+//   acknowledges, nothing deleted) and pc_lab_bills (one bill per test order, id = order id, so a test can be billed once; reversal needs a reason).
+//   New permission keys: lab.payment, lab.report. Nothing else changed; older orders and results keep working.
 // v17 (dispensing money, reversals, substitution, consumables): ADDS rules for dispense_bills, dispense_handovers, dispense_returns,
 //   dispense_return_ledger, consumable_items, consumable_movements, consumable_bundles; lets prescriptions move DOWN only through a
 //   reversal (matching dispense_returns record in the same commit, per-record ledger capped at the quantity dispensed) and change medicine only
@@ -194,7 +199,7 @@ service cloud.firestore {
     }
     // v17: get of a MISSING account (dispensing looks for the patient's account before creating it) is allowed for dispensers only; the rest is as before
     match /credit_accounts/{docId} {
-      allow get: if (resource == null && dispenserMayProbe()) || (resource != null && shopScoped());
+      allow get: if (resource == null && (dispenserMayProbe() || labBillerMayProbe())) || (resource != null && shopScoped());
       allow list, update, delete: if shopScoped();
       allow create: if shopScopedCreate();
     }
@@ -698,14 +703,19 @@ service cloud.firestore {
     // A result is never overwritten: it can be verified, or replaced by a new result that points to the old one.
     // A diagnosis is never overwritten: a change is a new version, and the old version stays on record.
     // =====================================================================================
+    function invCatPath(id) { return /databases/$(database)/documents/pc_inv_catalogue/$(id); }
     function invOrderPath(id) { return /databases/$(database)/documents/pc_inv_orders/$(id); }
     function invResultPath(id) { return /databases/$(database)/documents/pc_inv_results/$(id); }
     function dxPath(id) { return /databases/$(database)/documents/pc_diagnoses/$(id); }
     function catOk(d) {
       return d.name is string && d.name.size() > 0
         && d.category in ['malaria', 'haematology', 'biochemistry', 'urinalysis', 'pregnancy', 'microbiology', 'stool', 'imaging', 'other']
-        && d.resultType in ['number', 'text', 'choice']
+        && d.resultType in ['number', 'text', 'choice', 'qualitative', 'semiquant', 'categorical', 'multi', 'titer', 'organism']
         && d.active is bool
+        && d.get('approvalStatus', 'approved') in ['draft', 'approved']
+        && (d.get('approvalStatus', 'approved') != 'approved' || d.get('approvedBy', null) is string || !('approvalStatus' in d))
+        && (d.get('profile', null) == null || d.profile is map)
+        && (d.get('critical', null) == null || (d.critical is map && d.critical.get('source', '') is string && d.critical.get('source', '').size() >= 3))
         && (d.get('price', null) == null || (d.price is number && d.price >= 0))
         && (!(d.get('refMin', null) != null || d.get('refMax', null) != null || d.get('refText', '') != '')
             || (d.get('refSource', '') is string && d.get('refSource', '').size() >= 3));
@@ -734,7 +744,11 @@ service cloud.firestore {
         && request.resource.data.requestedBy == request.auth.uid
         && request.resource.data.name is string && request.resource.data.name.size() > 0
         && request.resource.data.priority in ['routine', 'urgent', 'stat']
-        && request.resource.data.resultType in ['number', 'text', 'choice'];
+        && request.resource.data.resultType in ['number', 'text', 'choice', 'qualitative', 'semiquant', 'categorical', 'multi', 'titer', 'organism']
+        && (request.resource.data.resultType in ['number', 'text', 'choice'] || request.resource.data.get('profile', null) is map)
+        && (!exists(invCatPath(request.resource.data.investigationId))
+            || (get(invCatPath(request.resource.data.investigationId)).data.active == true
+                && get(invCatPath(request.resource.data.investigationId)).data.get('approvalStatus', 'approved') == 'approved'));
       allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
         && pcUpdateStamped()
         && (
@@ -745,7 +759,29 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['status', 'collectedAt', 'collectedBy', 'collectedByName', 'sampleId', 'updatedAt', 'updatedBy']))
           ||
-          (resource.data.status == 'collected' && request.resource.data.status == 'processing'
+          (resource.data.status == 'collected' && request.resource.data.status == 'received'
+            && hasPerm(resource.data.businessId, 'lab.process')
+            && request.resource.data.receivedBy == request.auth.uid
+            && request.resource.data.receivedAt == request.time
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'receivedAt', 'receivedBy', 'receivedByName', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.status == 'received' && request.resource.data.status == 'accepted'
+            && hasPerm(resource.data.businessId, 'lab.process')
+            && request.resource.data.acceptedBy == request.auth.uid
+            && request.resource.data.acceptedAt == request.time
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'acceptedAt', 'acceptedBy', 'acceptedByName', 'specimenCondition', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.status == 'received' && request.resource.data.status == 'rejected'
+            && hasPerm(resource.data.businessId, 'lab.process')
+            && request.resource.data.rejectedBy == request.auth.uid
+            && request.resource.data.rejectedAt == request.time
+            && request.resource.data.rejectReason is string && request.resource.data.rejectReason.size() >= 3
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'rejectedAt', 'rejectedBy', 'rejectedByName', 'rejectReason', 'rejectCode', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.status in ['collected', 'accepted'] && request.resource.data.status == 'processing'
             && hasPerm(resource.data.businessId, 'lab.process')
             && request.resource.data.processingBy == request.auth.uid
             && request.resource.data.processingAt == request.time
@@ -790,7 +826,7 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['status', 'resultedAt', 'resultedBy', 'resultedByName', 'currentResultId', 'updatedAt', 'updatedBy']))
           ||
-          (resource.data.status in ['requested', 'collected', 'processing'] && request.resource.data.status == 'cancelled'
+          (resource.data.status in ['requested', 'collected', 'received', 'accepted', 'processing'] && request.resource.data.status == 'cancelled'
             && labCancelPerm(resource.data.businessId)
             && request.resource.data.cancelledBy == request.auth.uid
             && request.resource.data.cancelReason is string && request.resource.data.cancelReason.size() >= 3
@@ -817,6 +853,7 @@ service cloud.firestore {
           ||
           (resultId != request.resource.data.orderId
             && request.resource.data.amends is string
+            && request.resource.data.correctionReason is string && request.resource.data.correctionReason.size() >= 3
             && get(invOrderPath(request.resource.data.orderId)).data.status in ['resulted', 'verified', 'reviewed']
             && get(invOrderPath(request.resource.data.orderId)).data.currentResultId == request.resource.data.amends)
         );
@@ -836,6 +873,70 @@ service cloud.firestore {
             && request.resource.data.errorReason is string && request.resource.data.errorReason.size() >= 3
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'errorReason', 'updatedAt', 'updatedBy']))
         );
+      allow delete: if false;
+    }
+
+
+    // ---- v18: critical results. The laboratory records who was told; the clinician acknowledges. Nothing is deleted. ----
+    match /pc_lab_alerts/{alertId} {
+      allow read: if childReadOk(resource.data);
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'lab.result')
+        && request.resource.data.status == 'open'
+        && alertId == request.resource.data.resultId
+        && existsAfter(invResultPath(alertId))
+        && getAfter(invResultPath(alertId)).data.critical == true
+        && getAfter(invResultPath(alertId)).data.orderId == request.resource.data.orderId
+        && getAfter(invResultPath(alertId)).data.patientId == request.resource.data.patientId
+        && getAfter(invResultPath(alertId)).data.facilityId == request.resource.data.facilityId;
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && pcUpdateStamped()
+        && (
+          (resource.data.status == 'open' && request.resource.data.status == 'informed'
+            && hasPerm(resource.data.businessId, 'lab.result')
+            && request.resource.data.informedBy == request.auth.uid
+            && request.resource.data.informedPerson is string && request.resource.data.informedPerson.size() >= 2
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'informedBy', 'informedByName', 'informedAt', 'informedPerson', 'informedHow', 'updatedAt', 'updatedBy']))
+          ||
+          (resource.data.status in ['open', 'informed'] && request.resource.data.status == 'acknowledged'
+            && hasPerm(resource.data.businessId, 'investigation.review')
+            && request.resource.data.ackedBy == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'ackedBy', 'ackedByName', 'ackedAt', 'ackNote', 'updatedAt', 'updatedBy']))
+        );
+      allow delete: if false;
+    }
+
+    // ---- v18: laboratory bills. One bill per test order (document id = order id), so a test cannot be billed twice. ----
+    match /pc_lab_bills/{billId} {
+      allow read: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && (hasPerm(resource.data.businessId, 'lab.payment') || hasPerm(resource.data.businessId, 'lab.report'));
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'lab.payment')
+        && request.resource.data.orderId == billId
+        && exists(invOrderPath(billId))
+        && get(invOrderPath(billId)).data.patientId == request.resource.data.patientId
+        && get(invOrderPath(billId)).data.facilityId == request.resource.data.facilityId
+        && get(invOrderPath(billId)).data.businessId == request.resource.data.businessId
+        && get(invOrderPath(billId)).data.status in ['requested', 'collected', 'received', 'accepted', 'processing', 'resulted', 'verified', 'reviewed']
+        && request.resource.data.status in ['paid', 'part_paid', 'credit', 'waived', 'no_charge']
+        && request.resource.data.price is number && request.resource.data.price >= 0
+        && (get(invOrderPath(billId)).data.get('price', null) == null || math.abs(request.resource.data.price - get(invOrderPath(billId)).data.price) < 0.02)
+        && request.resource.data.amountPaid is number && request.resource.data.amountPaid >= 0
+        && request.resource.data.amountOutstanding is number && request.resource.data.amountOutstanding >= 0
+        && request.resource.data.amountWaived is number && request.resource.data.amountWaived >= 0
+        && math.abs(request.resource.data.amountPaid + request.resource.data.amountOutstanding + request.resource.data.amountWaived - request.resource.data.price) < 0.02
+        && (request.resource.data.amountWaived == 0 || (request.resource.data.waiveReason is string && request.resource.data.waiveReason.size() >= 3 && request.resource.data.waivedBy == request.auth.uid))
+        && (request.resource.data.amountOutstanding == 0 || request.resource.data.get('customerName', '') is string);
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && hasPerm(resource.data.businessId, 'lab.payment')
+        && pcUpdateStamped()
+        && resource.data.status != 'reversed' && request.resource.data.status == 'reversed'
+        && request.resource.data.reverseReason is string && request.resource.data.reverseReason.size() >= 3
+        && request.resource.data.reversedBy == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'reverseReason', 'reversedBy', 'reversedByName', 'reversedAt', 'updatedAt', 'updatedBy']);
       allow delete: if false;
     }
 
@@ -1108,6 +1209,11 @@ service cloud.firestore {
     function qtyClose(a, b) { return math.abs(a - b) < 0.001; }
     // v16: the dispensing transaction reads documents that do not exist yet (duplicate check). resource is null for those, so the
     // normal read rules (which look at resource.data) would deny it. Only a dispenser may probe for a missing document.
+    // v18: the laboratory cashier (lab.payment) may look for a patient's MISSING credit account before creating it (same narrow fix as dispensers); nothing else changes
+    function labBillerMayProbe() {
+      return isSignedIn() && (myProfile().role == 'owner'
+        || (myProfile().role == 'operator' && myProfile().active == true && myProfile().get('perms', {}).get('lab.payment', false) == true));
+    }
     function dispenserMayProbe() {
       return isSignedIn() && (myProfile().role == 'owner'
         || (myProfile().role == 'operator' && myProfile().active == true && myProfile().get('perms', {}).get('dispense.perform', false) == true));

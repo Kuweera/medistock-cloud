@@ -20,6 +20,7 @@
     ["patients.html", "Patient Care"],
     ["encounters.html", "Visits & Queue"],
     ["laboratory.html", "Laboratory"],
+    ["lab-reports.html", "Laboratory reports"],
     ["investigations.html", "Test catalogue"],
     ["treatment.html", "Treatment & MAR"],
     ["dosing-rules.html", "Dosing rules"],

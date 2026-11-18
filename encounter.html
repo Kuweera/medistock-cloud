@@ -506,6 +506,7 @@
 
 <script src="pc-ux.js"></script>
 <script src="pc-fields.js"></script>
+<script src="pc-lab.js"></script>
 <script src="pc-sched.js"></script>
 <script src="pc-guidelines.js"></script>
 <script src="pc-abbrev.js"></script>
@@ -602,7 +603,7 @@
   const encId = params.get("id");
   let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
   let enc = null, triage = [], complaints = [], meds = [], notes = [], allergies = [], obsRules = null, loggedView = false;
-  let orders = [], oResults = [], catalogue = [], diagnoses = [], pickedTests = {}, editDx = null, showDxHistory = {};
+  let orders = [], oResults = [], labAlerts = [], catalogue = [], diagnoses = [], pickedTests = {}, editDx = null, showDxHistory = {};
   let editNote = null, amendOf = null, showAllTri = false;
   const can = k => role === "owner" || perms[k] === true;
   const isOpen = () => enc && enc.status === "open";
@@ -909,7 +910,7 @@
   function renderOrderPick() {
     renderTestContext();
     const q = $("oQ").value.trim().toLowerCase(), cf = $("oCat").value;
-    const rows = catalogue.filter(i => i.active && (!cf || i.category === cf) && (!q || String(i.name).toLowerCase().indexOf(q) >= 0)).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    const rows = catalogue.filter(i => i.active && i.approvalStatus !== "draft" && (!cf || i.category === cf) && (!q || String(i.name).toLowerCase().indexOf(q) >= 0)).sort((a, b) => String(a.name).localeCompare(String(b.name)));
     $("oPick").innerHTML = rows.length ? rows.map(i => '<label class="chk"><input type="checkbox" data-pick="' + esc(i.id) + '"' + (pickedTests[i.id] ? " checked" : "") + '><span>' + esc(i.name) + ' <span class="pt-meta">' + esc(CAT_LABEL[i.category] || "") + "</span></span></label>").join("")
       : '<div class="empty">' + (catalogue.length ? "No test matches." : "No tests are set up for this facility yet. The owner or laboratory can add them in Test catalogue.") + "</div>";
   }
@@ -918,12 +919,13 @@
     const ids = Object.keys(pickedTests).filter(k => pickedTests[k]);
     if (!ids.length) { m.textContent = "Tick at least one test."; return; }
     const pri = $("oPri").value, note = $("oNote").value.trim();
+    const dup = ids.map(id => catalogue.find(x => x.id === id)).filter(c => c && orders.some(o => o.investigationId === c.id && PCL.OPEN_STATES.indexOf(o.status) >= 0));
+    if (dup.length && !window.confirm("Already requested and not finished on this visit: " + dup.map(c => c.name).join(", ") + ".\n\nRequest again anyway?")) return;
     const b = writeBatch(db);
     ids.forEach(id => {
       const c = catalogue.find(x => x.id === id); if (!c) return;
       const ref = doc(collection(db, "pc_inv_orders"));
-      b.set(ref, Object.assign(stamp(), { encounterId: encId, patientId: enc.patientId, patientName: enc.patientName, encounterNo: enc.encounterNo, investigationId: c.id, name: c.name, category: c.category, specimen: c.specimen || "", resultType: c.resultType,
-        choices: c.choices || [], units: c.units || "", refMin: c.refMin != null ? c.refMin : null, refMax: c.refMax != null ? c.refMax : null, refText: c.refText || "", refSource: c.refSource || "", price: c.price != null ? c.price : null,
+      b.set(ref, Object.assign(stamp(), { encounterId: encId, patientId: enc.patientId, patientName: enc.patientName, encounterNo: enc.encounterNo, investigationId: c.id, name: c.name, category: c.category, specimen: c.specimen || "" }, PCL.orderFields(c), {
         priority: pri, clinicalNote: note, status: "requested", requestedBy: me.id, requestedByName: myName, requestedAt: Date.now(), requestedDay: isoDate(new Date()) }));
       b.set(doc(collection(db, "pc_audit_logs")), auditDoc("investigation.request", "pc_inv_orders/" + ref.id, { test: c.name, priority: pri }));
     });
@@ -931,23 +933,35 @@
     pickedTests = {}; $("oNote").value = ""; $("oPri").value = "routine"; renderOrderPick();
     ok(ids.length + " test" + (ids.length === 1 ? "" : "s") + " requested. Saved on this phone; the laboratory will see them when it syncs.");
   }
+  // result text for every result type (single value, panel parameters, organisms)
+  function resultBody(r) {
+    if (r.values && r.values.organisms) return r.values.noGrowth ? '<div class="pt-name">No growth</div>' : r.values.organisms.map(g => '<div class="pt-name">' + esc(g.name) + (g.quantity ? " — " + esc(g.quantity) : "") + '</div><div class="pt-meta">' + (Object.keys(g.susceptibility || {}).map(a => esc(a) + ": <b>" + esc(g.susceptibility[a]) + "</b>").join(" · ") || "No antibiotics recorded") + "</div>").join("");
+    if (r.values) return '<div class="pt-meta">' + Object.keys(r.values).map(k => r.values[k]).filter(x => x && x.value != null).map(x => esc(x.label) + ": <b>" + esc(String(x.value)) + (x.unit ? " " + esc(x.unit) : "") + "</b>" + (x.flag === "low" || x.flag === "high" ? " (" + esc(FLAG_LABEL[x.flag]) + ")" : "")).join("<br>") + "</div>";
+    return '<div class="pt-name">' + esc(String(r.value)) + (r.unit ? " " + esc(r.unit) : "") + "</div>";
+  }
+  function ackAlert(id) {
+    const note = (window.prompt("Note (optional): what will you do about this result?") || "").trim();
+    updateDoc(doc(db, "pc_lab_alerts", id), { status: "acknowledged", ackedBy: me.id, ackedByName: myName, ackedAt: serverTimestamp(), ackNote: note, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    logAudit("investigation.critical_ack", "pc_lab_alerts/" + id, { note: note });
+  }
   function renderOrders() {
     const sorted = orders.slice().sort((a, b) => (b.requestedAt || 0) - (a.requestedAt || 0));
     $("oList").innerHTML = sorted.length ? sorted.map(o => {
       const cur = oResults.find(r => r.id === o.currentResultId);
       const older = oResults.filter(r => r.orderId === o.id && r.id !== o.currentResultId).sort((a, b) => (b.resultAt || 0) - (a.resultAt || 0));
-      const st = { requested: "Waiting for sample", collected: "Sample collected", processing: "Being processed", resulted: "Result entered, NOT yet verified", verified: "Verified", reviewed: "Reviewed", cancelled: "Cancelled" }[o.status] || o.status;
+      const st = { requested: "Waiting for sample", collected: "Sample collected", processing: "Being processed", resulted: "Result entered, NOT yet verified", verified: "Verified", reviewed: "Reviewed", cancelled: "Cancelled", received: "Sample received by the laboratory", accepted: "Sample accepted", rejected: "Sample REJECTED" }[o.status] || o.status;
       let h = '<div class="entry"><div class="pt-name">' + esc(o.name) + (o.priority !== "routine" ? ' <span class="chip ' + (o.priority === "stat" ? "bad" : "warn") + '">' + (o.priority === "stat" ? "STAT" : "Urgent") + "</span>" : "") +
         ' <span class="chip ' + (o.status === "verified" || o.status === "reviewed" ? "ok" : o.status === "resulted" ? "warn" : o.status === "cancelled" ? "bad" : "") + '">' + esc(st) + "</span></div>" +
-        '<div class="pt-meta">Requested by ' + esc(o.requestedByName || "") + " at " + esc(stampText(null, o.requestedAt)) + (o.clinicalNote ? " · " + esc(o.clinicalNote) : "") + (o.status === "cancelled" && o.cancelReason ? "<br>Cancelled: " + esc(o.cancelReason) : "") + "</div>";
-      if (cur) h += '<div class="cand"><div class="pt-name">' + esc(String(cur.value)) + (cur.unit ? " " + esc(cur.unit) : "") + (cur.flag && FLAG_LABEL[cur.flag] ? ' <span class="chip ' + (cur.flag === "normal" ? "ok" : "warn") + '">' + esc(FLAG_LABEL[cur.flag]) + "</span>" : "") +
+        '<div class="pt-meta">Requested by ' + esc(o.requestedByName || "") + " at " + esc(stampText(null, o.requestedAt)) + (o.clinicalNote ? " · " + esc(o.clinicalNote) : "") + (o.status === "cancelled" && o.cancelReason ? "<br>Cancelled: " + esc(o.cancelReason) : "") + (o.status === "rejected" ? "<br><b>Specimen rejected: " + esc(o.rejectReason || "") + "</b>. If the test is still needed, request it again." : "") + "</div>";
+      labAlerts.filter(a => a.orderId === o.id && a.status !== "acknowledged").forEach(a => { h += '<div class="cand"><span class="chip bad">CRITICAL result</span> <span class="pt-meta">' + (a.why || []).map(esc).join("; ") + " (a comparison with this facility's limits, not a diagnosis)." + (a.status === "informed" ? " Laboratory informed " + esc(a.informedPerson || "") + "." : "") + "</span>" + (can("investigation.review") ? ' <button class="btn-small btn-primary" data-oack="' + esc(a.id) + '">I have seen this</button>' : "") + "</div>"; });
+      if (cur) h += '<div class="cand">' + resultBody(cur) + '<div>' + (cur.flag && FLAG_LABEL[cur.flag] ? ' <span class="chip ' + (cur.flag === "normal" ? "ok" : "warn") + '">' + esc(FLAG_LABEL[cur.flag]) + "</span>" : "") +
         ' <span class="chip ' + (cur.status === "verified" ? "ok" : cur.status === "entered_in_error" ? "bad" : "warn") + '">' + (cur.status === "verified" ? "Verified" : cur.status === "entered_in_error" ? "Entered in error" : "Not verified") + "</span></div>" +
         '<div class="pt-meta">' + (rangeText(cur) ? "Reference: " + esc(rangeText(cur)) + (cur.refSource ? " (" + esc(cur.refSource) + ")" : "") + "<br>" : "") + (cur.comments ? esc(cur.comments) + "<br>" : "") +
         "Entered by " + esc(cur.enteredByName || "") + (cur.status === "verified" ? " · verified by " + esc(cur.verifiedByName || "") : "") + (o.status === "reviewed" ? " · reviewed by " + esc(o.reviewedByName || "") : "") + "</div></div>";
       if (older.length) h += '<div class="pt-meta" style="margin-top:6px;">' + older.length + " earlier result" + (older.length === 1 ? "" : "s") + " kept on record (corrected): " + older.map(r => esc(String(r.value)) + (r.unit ? " " + esc(r.unit) : "") + (r.status === "entered_in_error" ? " (error)" : "")).join(", ") + "</div>";
       const acts = [];
       if (o.status === "verified" && can("investigation.review")) acts.push('<button class="btn-small btn-primary" data-orev="' + esc(o.id) + '">I have reviewed this result</button>');
-      if (["requested", "collected", "processing"].indexOf(o.status) >= 0 && can("investigation.request")) acts.push('<button class="btn-small btn-secondary" data-ocan="' + esc(o.id) + '">Cancel test</button>');
+      if (["requested", "collected", "received", "accepted", "processing"].indexOf(o.status) >= 0 && can("investigation.request")) acts.push('<button class="btn-small btn-secondary" data-ocan="' + esc(o.id) + '">Cancel test</button>');
       return h + (acts.length ? '<div class="op-actions">' + acts.join("") + "</div>" : "") + "</div>";
     }).join("") : '<div class="empty">No tests requested for this visit.</div>';
   }
@@ -1451,7 +1465,7 @@
   $("tWeight").addEventListener("input", updateBmi); $("tHeight").addEventListener("input", updateBmi);
   $("oQ").addEventListener("input", renderOrderPick); $("oCat").addEventListener("change", renderOrderPick); $("oReqBtn").onclick = requestTests;
   $("oPick").addEventListener("change", e => { const c = e.target.closest("[data-pick]"); if (c) pickedTests[c.dataset.pick] = c.checked; });
-  $("oList").addEventListener("click", e => { const r = e.target.closest("[data-orev]"); if (r) { reviewOrder(r.dataset.orev); return; } const c = e.target.closest("[data-ocan]"); if (c) cancelOrder(c.dataset.ocan); });
+  $("oList").addEventListener("click", e => { const r = e.target.closest("[data-orev]"); if (r) { reviewOrder(r.dataset.orev); return; } const k = e.target.closest("[data-oack]"); if (k) { ackAlert(k.dataset.oack); return; } const c = e.target.closest("[data-ocan]"); if (c) cancelOrder(c.dataset.ocan); });
   $("dSaveBtn").onclick = saveDx; $("dCancelBtn").onclick = resetDx;
   $("dList").addEventListener("click", e => {
     const h = e.target.closest("[data-dxh]"); if (h) { showDxHistory[h.dataset.dxh] = !showDxHistory[h.dataset.dxh]; renderDx(); return; }
@@ -1519,6 +1533,7 @@
     sub("pc_clinical_notes", v => { notes = v; }, renderNotes);
     sub("pc_inv_orders", v => { orders = v; }, renderOrders);
     sub("pc_inv_results", v => { oResults = v; }, renderOrders);
+    sub("pc_lab_alerts", v => { labAlerts = v; }, renderOrders);
     sub("pc_diagnoses", v => { diagnoses = v; renderPlanDx(); }, renderDx);
     const pbase = [where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", enc.patientId), limit(1000)];
     onSnapshot(query(collection(db, "pc_treatment_plans"), ...pbase), { includeMetadataChanges: true }, s => { plans = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTreat(); }, () => {});

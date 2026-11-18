@@ -273,8 +273,13 @@
     <label>Sample / specimen (type or choose)</label>
     <input type="text" id="fSpec" list="specList" placeholder="e.g. Blood" autocomplete="off"><div class="hint2" id="fhelp-fSpec">The sample taken from the patient for this test, for example blood or urine.</div>
     <label>How is the result written? *</label>
-    <select id="fType"><option value="number">A number (with units)</option><option value="choice">One of a list (e.g. Positive / Negative)</option><option value="text">Free text (e.g. a report)</option></select><div class="hint2" id="fhelp-fType">How the result is written: as a number, as a choice (for example positive or negative), or as free text.</div>
+    <select id="fType"><option value="number">A number (with units)</option><option value="qualitative">Positive / negative type (qualitative)</option><option value="semiquant">Graded scale (e.g. Trace, 1+, 2+)</option><option value="choice">One of a list (e.g. blood groups)</option><option value="text">Free text (e.g. a report)</option><option value="multi">Several parameters in one report (panel)</option><option value="titer">Titer (e.g. 1:80)</option><option value="organism">Organism and antibiotic susceptibility</option></select><div class="hint2" id="typeHelp"></div><div class="hint2" id="fhelp-fType">How the result is written: as a number, as a choice (for example positive or negative), or as free text.</div>
+    <div id="tplWrap"><label>Start from a template (structure only)</label><select id="tplPick"><option value="">— none —</option></select><div class="hint2">A template only fills in the layout. It never fills in units, reference ranges, prices, critical limits or the meaning of scale terms: you add those from your own approved procedure.</div></div>
     <div id="choiceWrap" class="hidden"><label>Choices (separate with commas)</label><input type="text" id="fChoices" placeholder="Positive, Negative" autocomplete="off"></div>
+    <div id="scaleWrap" class="hidden"><label>Scale terms, one per line (optional meaning after =)</label><textarea id="fScale" rows="4" placeholder="Tr = as defined in our procedure&#10;1+&#10;2+"></textarea><div class="hint2">Type the terms exactly as your laboratory procedure reports them, in order. Local terms such as Tr, Trr or Trrk are only text: the app never assumes what they mean.</div></div>
+    <div id="titerWrap" class="hidden"><label>Titer is reported as</label><select id="fTiterMode"><option value="">Choose…</option><option value="numeric">A dilution (for example 1:80)</option><option value="categorical">A category (uses the choices above)</option></select></div>
+    <div id="paramsWrap" class="hidden"><label>Parameters in this report</label><div class="hint2">Each parameter is entered separately. Add units and reference information only from your own source; a range needs its source.</div><div id="paramList"></div><button type="button" class="btn-small btn-secondary" id="addParamBtn" style="width:100%; margin-top:6px;">Add a parameter</button></div>
+    <div id="orgWrap" class="hidden"><label>Susceptibility result codes, separated by commas *</label><input type="text" id="fCodes" placeholder="the codes or words your report uses" autocomplete="off"><label>Antibiotics you test, separated by commas</label><input type="text" id="fAbx" autocomplete="off"><label>Organisms you commonly report (optional, separated by commas)</label><input type="text" id="fOrgs" autocomplete="off"><div class="hint2">Only offered if your laboratory provides this service. Nothing is filled in for you.</div></div>
     <div id="unitWrap"><label>Units (type or choose)</label><input type="text" id="fUnits" list="unitList" autocomplete="off"><div class="hint2" id="fhelp-fUnits">The unit the result is measured in, for example mmol/L.</div></div>
     <div id="rangeWrap">
       <label>Reference range (optional)</label>
@@ -283,6 +288,13 @@
     <label>Reference range in words (optional)</label><input type="text" id="fRefText" placeholder="e.g. Negative" autocomplete="off"><div class="hint2" id="fhelp-fRefText">The expected range for this test and method, as used by the laboratory. It can differ between laboratories, so say where it comes from below.</div>
     <label>Where the reference range comes from (needed if you give one)</label>
     <input type="text" id="fRefSource" placeholder="e.g. Our laboratory's analyser manual 2025" autocomplete="off"><div class="hint2" id="fhelp-fRefSource">The book, manual or laboratory the range came from.</div>
+    <details id="critDet"><summary>Critical (urgent) results — optional</summary><div class="hint2">Only if your laboratory has approved limits for this test. Without limits, no result is ever marked critical.</div>
+      <div class="row"><div><input type="number" inputmode="decimal" step="any" id="fCritLow" placeholder="Critical low (number tests)"></div><div><input type="number" inputmode="decimal" step="any" id="fCritHigh" placeholder="Critical high"></div></div>
+      <input type="text" id="fCritVals" placeholder="Critical results (for non-number tests), separated by commas" autocomplete="off" style="margin-top:6px;"><input type="text" id="fCritSrc" placeholder="Where these limits come from (required if you set any)" autocomplete="off" style="margin-top:6px;"></details>
+    <details id="detDet"><summary>Method, collection and notes — optional</summary>
+      <label>Test method</label><input type="text" id="fMethod" autocomplete="off"><label>Equipment</label><input type="text" id="fEquip" autocomplete="off">
+      <label>Collection instructions</label><textarea id="fColl" rows="2"></textarea><label>Processing instructions</label><textarea id="fProc" rows="2"></textarea><label>Interpretation notes (from your approved source)</label><textarea id="fInterp" rows="2"></textarea></details>
+    <label>Approval status</label><select id="fApproval"><option value="approved">Approved for use in this facility</option><option value="draft">Draft (cannot be requested yet)</option></select><div class="hint2">Only approved and offered tests can be requested by doctors.</div>
     <label>Price (optional)</label><input type="number" inputmode="decimal" step="any" min="0" id="fPrice" placeholder="Leave empty if not set">
     <label class="chk"><input type="checkbox" id="fActive" checked><span>Offered now (untick to hide from doctors)</span></label>
     <button class="btn-primary" id="fSaveBtn">Save test</button>
@@ -297,6 +309,7 @@
 
 <script src="pc-ux.js"></script>
 <script src="pc-fields.js"></script>
+<script src="pc-lab.js"></script>
 <script type="module">
   const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, getDocFromCache } = window.top.MC.api(window);
 
@@ -368,16 +381,28 @@
       const g = rows.filter(i => i.category === c[0]).sort((a, b) => String(a.name).localeCompare(String(b.name)));
       if (!g.length) return "";
       return '<h3 class="sub">' + esc(c[1]) + "</h3>" + g.map(i => '<div class="entry"><div class="pt-name">' + esc(i.name) + (i.active ? "" : ' <span class="chip warn">Not offered</span>') + "</div>" +
-        '<div class="pt-meta">' + [i.specimen ? "Sample: " + esc(i.specimen) : "", i.resultType === "choice" ? "Result: " + esc((i.choices || []).join(" / ")) : i.resultType === "text" ? "Result: text" : "Result: number" + (i.units ? " (" + esc(i.units) + ")" : ""),
+        '<div class="pt-meta">' + [i.specimen ? "Sample: " + esc(i.specimen) : "", (function () { const t = i.resultType; if (t === "choice" || t === "qualitative" || t === "titer") return "Result: " + esc((PCL.TYPES[t] || {}).label || t) + ((i.choices || []).length ? " — " + esc((i.choices || []).join(" / ")) : ""); if (t === "text") return "Result: text"; if (t === "semiquant") return "Result: graded scale — " + esc(PCL.scaleTerms(i.scale).map(x => x.term).join(" / ")); if (t === "multi") return "Result: panel — " + esc((i.params || []).map(x => x.label).join(", ")); if (t === "organism") return "Result: organism and susceptibility"; return "Result: number" + (i.units ? " (" + esc(i.units) + ")" : ""); })(), i.approvalStatus === "draft" ? "DRAFT — not available to doctors until approved" : "", i.critical ? "Critical limits set (" + esc(i.critical.source || "") + ")" : "",
           (i.refMin != null || i.refMax != null) ? "Reference: " + esc(i.refMin != null ? i.refMin : "") + " to " + esc(i.refMax != null ? i.refMax : "") + " " + esc(i.units || "") : (i.refText ? "Reference: " + esc(i.refText) : ""),
           i.refSource ? "Source: " + esc(i.refSource) : "", i.price != null ? "Price: " + esc(Number(i.price).toLocaleString()) : ""].filter(Boolean).join("<br>") + "</div>" +
         (can("catalogue.manage") ? '<div class="op-actions"><button class="btn-small btn-secondary" data-edit="' + esc(i.id) + '">Edit</button><button class="btn-small btn-secondary" data-toggle="' + esc(i.id) + '">' + (i.active ? "Stop offering" : "Offer again") + "</button></div>" : "") + "</div>").join("");
     }).join("");
   }
 
+  let paramRows = [];
+  const PT = ["number", "qualitative", "semiquant", "choice", "text"], PTL = { number: "Number", qualitative: "Positive/negative type", semiquant: "Graded scale", choice: "One of a list", text: "Free text" };
+  function renderParams() {
+    $("paramList").innerHTML = paramRows.map((p, i) => '<div class="entry" data-pi="' + i + '"><input type="text" data-pf="label" placeholder="Parameter name" value="' + esc(p.label || "") + '">' +
+      '<select data-pf="type">' + PT.map(t => '<option value="' + t + '"' + (PCL.normType(p.type) === PCL.normType(t) ? " selected" : "") + ">" + PTL[t] + "</option>").join("") + "</select>" +
+      (PCL.normType(p.type) === "number" ? '<div class="row"><input type="text" data-pf="unit" placeholder="Unit" value="' + esc(p.unit || "") + '"><input type="number" step="any" data-pf="refMin" placeholder="Lowest normal" value="' + esc(p.refMin == null ? "" : p.refMin) + '"><input type="number" step="any" data-pf="refMax" placeholder="Highest normal" value="' + esc(p.refMax == null ? "" : p.refMax) + '"></div><input type="text" data-pf="refSource" placeholder="Where the range comes from" value="' + esc(p.refSource || "") + '">' : "") +
+      (p.type === "semiquant" ? '<input type="text" data-pf="scaleText" placeholder="Scale terms, separated by commas" value="' + esc(PCL.scaleTerms(p.scale).map(x => x.term).join(", ")) + '">' : "") +
+      (["qualitative", "choice", "categorical"].indexOf(p.type) >= 0 ? '<input type="text" data-pf="choicesText" placeholder="Allowed results, separated by commas" value="' + esc(PCL.parseList(p.choices).join(", ")) + '">' : "") +
+      '<button type="button" class="btn-small btn-secondary" data-prm="' + i + '" style="margin-top:6px;">Remove parameter</button></div>').join("");
+  }
   function syncForm() {
     const t = $("fType").value;
-    $("choiceWrap").classList.toggle("hidden", t !== "choice"); $("unitWrap").classList.toggle("hidden", t !== "number"); $("rangeWrap").classList.toggle("hidden", t !== "number");
+    $("typeHelp").textContent = (PCL.TYPES[t] || {}).help || "";
+    $("choiceWrap").classList.toggle("hidden", ["choice", "qualitative", "titer"].indexOf(t) < 0); $("unitWrap").classList.toggle("hidden", t !== "number"); $("rangeWrap").classList.toggle("hidden", t !== "number");
+    $("scaleWrap").classList.toggle("hidden", t !== "semiquant"); $("titerWrap").classList.toggle("hidden", t !== "titer"); $("paramsWrap").classList.toggle("hidden", t !== "multi"); $("orgWrap").classList.toggle("hidden", t !== "organism");
     const cat = $("fCat").value; $("nameList").innerHTML = (SUGGEST[cat] || []).map(n => '<option value="' + esc(n) + '">').join("");
   }
   function openForm(item) {
@@ -387,6 +412,13 @@
     $("fChoices").value = item && item.choices ? item.choices.join(", ") : ""; $("fUnits").value = item ? item.units || "" : "";
     $("fMin").value = item && item.refMin != null ? item.refMin : ""; $("fMax").value = item && item.refMax != null ? item.refMax : ""; $("fRefText").value = item ? item.refText || "" : ""; $("fRefSource").value = item ? item.refSource || "" : "";
     $("fPrice").value = item && item.price != null ? item.price : ""; $("fActive").checked = item ? item.active : true; $("fMsg").textContent = "";
+    $("fScale").value = item ? PCL.scaleTerms(item.scale).map(x => x.term + (x.meaning ? " = " + x.meaning : "")).join("\n") : "";
+    $("fTiterMode").value = item && item.titerMode ? item.titerMode : "";
+    paramRows = item && item.params ? JSON.parse(JSON.stringify(item.params)) : []; renderParams();
+    $("fCodes").value = item ? PCL.parseList(item.resultCodes).join(", ") : ""; $("fAbx").value = item ? PCL.parseList(item.antibiotics).join(", ") : ""; $("fOrgs").value = item ? PCL.parseList(item.organisms).join(", ") : "";
+    const cr = item && item.critical || {}; $("fCritLow").value = cr.low != null ? cr.low : ""; $("fCritHigh").value = cr.high != null ? cr.high : ""; $("fCritVals").value = PCL.parseList(cr.values).join(", "); $("fCritSrc").value = cr.source || "";
+    $("fMethod").value = item ? item.method || "" : ""; $("fEquip").value = item ? item.equipment || "" : ""; $("fColl").value = item ? item.collection || "" : ""; $("fProc").value = item ? item.processing || "" : ""; $("fInterp").value = item ? item.interpretation || "" : "";
+    $("fApproval").value = item ? (item.approvalStatus || "approved") : "approved"; $("tplWrap").classList.toggle("hidden", !!item); $("tplPick").value = ""; $("critDet").open = !!(cr.source); $("detDet").open = !!(item && (item.method || item.equipment || item.collection || item.processing || item.interpretation));
     syncForm(); $("formCard").classList.remove("hidden"); $("showFormBtn").classList.add("hidden"); $("formCard").scrollIntoView({ behavior: "smooth", block: "start" });
   }
   function closeForm() { editing = null; $("formCard").classList.add("hidden"); $("showFormBtn").classList.toggle("hidden", !can("catalogue.manage")); }
@@ -395,8 +427,18 @@
     const f = { name: $("fName").value.trim().replace(/\s+/g, " "), category: $("fCat").value, specimen: $("fSpec").value.trim(), resultType: $("fType").value, choices: parseChoices($("fChoices").value),
       units: $("fUnits").value.trim(), refMin: null, refMax: null, refText: $("fRefText").value.trim(), refSource: $("fRefSource").value.trim(), price: num("fPrice"), active: $("fActive").checked };
     if (f.resultType === "number") { f.refMin = num("fMin"); f.refMax = num("fMax"); } else { f.units = ""; }
-    if (f.resultType !== "choice") f.choices = [];
-    const bad = validateTest(f), m = $("fMsg"); m.className = "msg err";
+    if (["choice", "qualitative", "titer"].indexOf(f.resultType) < 0) f.choices = [];
+    f.scale = f.resultType === "semiquant" ? $("fScale").value.split(/\n/).map(l => { const i = l.indexOf("="); return { term: (i < 0 ? l : l.slice(0, i)).trim(), meaning: i < 0 ? "" : l.slice(i + 1).trim() }; }).filter(x => x.term) : [];
+    f.titerMode = f.resultType === "titer" ? $("fTiterMode").value : "";
+    f.params = f.resultType === "multi" ? paramRows.map(p => { const o = { label: (p.label || "").trim(), type: p.type || "number", unit: (p.unit || "").trim(), refMin: p.refMin === "" || p.refMin == null ? null : Number(p.refMin), refMax: p.refMax === "" || p.refMax == null ? null : Number(p.refMax), refSource: (p.refSource || "").trim() };
+      if (o.type === "semiquant") o.scale = PCL.scaleTerms(p.scale); if (["qualitative", "choice", "categorical"].indexOf(o.type) >= 0) o.choices = PCL.parseList(p.choices);
+      o.key = o.label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, ""); return o; }) : [];
+    f.resultCodes = f.resultType === "organism" ? PCL.parseList($("fCodes").value) : []; f.antibiotics = f.resultType === "organism" ? PCL.parseList($("fAbx").value) : []; f.organisms = f.resultType === "organism" ? PCL.parseList($("fOrgs").value) : [];
+    const cl = num("fCritLow"), ch = num("fCritHigh"), cv = PCL.parseList($("fCritVals").value);
+    f.critical = (cl != null || ch != null || cv.length) ? { low: cl, high: ch, values: cv, source: $("fCritSrc").value.trim() } : null;
+    f.method = $("fMethod").value.trim(); f.equipment = $("fEquip").value.trim(); f.collection = $("fColl").value.trim(); f.processing = $("fProc").value.trim(); f.interpretation = $("fInterp").value.trim();
+    f.approvalStatus = $("fApproval").value; if (f.approvalStatus === "approved") { f.approvedBy = me.id; f.approvedByName = myName; f.approvedAt = Date.now(); }
+    const bad = validateTest(f) || PCL.validateTest(f), m = $("fMsg"); m.className = "msg err";
     if (bad) { m.textContent = bad; return; }
     if (editing) {
       updateDoc(doc(db, "pc_inv_catalogue", editing.id), Object.assign({}, f, { updatedAt: serverTimestamp(), updatedBy: me.id })).catch(saveFailed);
@@ -417,6 +459,14 @@
   $("q").addEventListener("input", renderList); $("catFilter").addEventListener("change", renderList);
   $("showFormBtn").onclick = () => openForm(null); $("fCancelBtn").onclick = closeForm; $("fSaveBtn").onclick = saveTest;
   $("fType").addEventListener("change", syncForm); $("fCat").addEventListener("change", syncForm);
+  PCL.TEMPLATES.forEach(t => { const o = document.createElement("option"); o.value = t.id; o.textContent = t.name; $("tplPick").appendChild(o); });
+  $("tplPick").addEventListener("change", () => { const t = PCL.TEMPLATES.find(x => x.id === $("tplPick").value); if (!t) return; const keep = $("tplPick").value;
+    openForm(Object.assign({}, t, { id: undefined, active: true, resultType: t.resultType === "categorical" ? "choice" : t.resultType, approvalStatus: "draft", params: (t.params || []).map(p => Object.assign({}, p)) })); editing = null; $("fTitle").textContent = "Add a test"; $("tplPick").value = keep; $("tplWrap").classList.remove("hidden");
+    $("fMsg").className = "msg"; $("fMsg").textContent = t.note || "Template loaded: add the details from your own approved procedure, then save."; });
+  $("addParamBtn").onclick = () => { paramRows.push({ label: "", type: "number" }); renderParams(); };
+  $("paramList").addEventListener("input", e => { const row = e.target.closest("[data-pi]"), f = e.target.dataset.pf; if (!row || !f) return; const p = paramRows[Number(row.dataset.pi)];
+    if (f === "type") { p.type = e.target.value; renderParams(); } else if (f === "scaleText") p.scale = PCL.parseList(e.target.value); else if (f === "choicesText") p.choices = PCL.parseList(e.target.value); else p[f] = e.target.value; });
+  $("paramList").addEventListener("click", e => { const b = e.target.closest("[data-prm]"); if (b) { paramRows.splice(Number(b.dataset.prm), 1); renderParams(); } });
   $("list").addEventListener("click", e => {
     const ed = e.target.closest("[data-edit]"); if (ed) { openForm(items.find(x => x.id === ed.dataset.edit)); return; }
     const tg = e.target.closest("[data-toggle]"); if (tg) toggleItem(tg.dataset.toggle);

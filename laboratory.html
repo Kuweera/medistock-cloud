@@ -133,6 +133,7 @@
 
   /* ===== Patient Care ===== */
   .sub{font-size:13px; margin:16px 0 2px; color:var(--accent); font-weight:700;}
+  .rt{width:100%; border-collapse:collapse; font-size:14px;} .rt td{padding:3px 6px 3px 0; vertical-align:top;}
   .chk{display:flex; align-items:center; gap:10px; font-size:13.5px; color:var(--text); margin:8px 0;}
   .chk input{width:22px; height:22px; flex:0 0 22px; padding:0; margin:0;}
   .pt{padding:11px 0; border-bottom:1px solid var(--border); cursor:pointer;}
@@ -271,6 +272,7 @@
 
 <script src="pc-ux.js"></script>
 <script src="pc-fields.js"></script>
+<script src="pc-lab.js"></script>
 <script type="module">
   const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, writeBatch, getDocFromCache } = window.top.MC.api(window);
 
@@ -302,8 +304,8 @@
     return (o.refMin != null || o.refMax != null) ? "normal" : "none";
   }
   const FLAG_LABEL = { normal: "Within reference range", low: "Below reference range", high: "Above reference range", abnormal: "Abnormal", none: "" };
-  const STATUS_LABEL = { requested: "Requested", collected: "Sample collected", processing: "Processing", resulted: "Result entered (not verified)", verified: "Verified", reviewed: "Reviewed by doctor", cancelled: "Cancelled" };
-  const STEPS = ["requested", "collected", "processing", "resulted", "verified", "reviewed"];
+  const STATUS_LABEL = window.PCL.STATUS_LABEL, STEPS = window.PCL.STEPS;
+  const ST = ["requested", "collected", "received", "accepted", "processing", "resulted"], IN_LAB = ["collected", "received", "accepted", "processing"];
   const PRI_RANK = { stat: 0, urgent: 1, routine: 2 };
   function sortOrders(list) { return list.slice().sort((a, b) => ((PRI_RANK[a.priority] != null ? PRI_RANK[a.priority] : 2) - (PRI_RANK[b.priority] != null ? PRI_RANK[b.priority] : 2)) || ((a.requestedAt || 0) - (b.requestedAt || 0))); }
   function rangeText(o) {
@@ -314,7 +316,7 @@
 
   const params = new URLSearchParams(location.search);
   let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
-  let byStatus = { requested: [], collected: [], processing: [], resulted: [] }, todayList = [], orders = {}, filter = "requested", selId = null, results = [], unsubRes = null;
+  let byStatus = { requested: [], collected: [], received: [], accepted: [], processing: [], resulted: [] }, alerts = [], billDoc = null, unsubAl = null, unsubBill = null, todayList = [], orders = {}, filter = "requested", selId = null, results = [], unsubRes = null;
   const can = k => role === "owner" || perms[k] === true;
   const canCancel = () => can("investigation.request") || can("lab.collect");
 
@@ -334,7 +336,7 @@
   // ---------- queue ----------
   function rebuild() {
     orders = {};
-    ["requested", "collected", "processing", "resulted"].forEach(k => byStatus[k].forEach(o => { orders[o.id] = o; }));
+    ST.forEach(k => byStatus[k].forEach(o => { orders[o.id] = o; }));
     todayList.forEach(o => { orders[o.id] = o; });
     renderList(); if (selId) renderAct();
   }
@@ -342,13 +344,13 @@
     const all = Object.keys(orders).map(k => orders[k]);
     let rows;
     if (filter === "requested") rows = all.filter(o => o.status === "requested");
-    else if (filter === "inlab") rows = all.filter(o => o.status === "collected" || o.status === "processing");
+    else if (filter === "inlab") rows = all.filter(o => IN_LAB.indexOf(o.status) >= 0);
     else if (filter === "resulted") rows = all.filter(o => o.status === "resulted");
-    else rows = all.filter(o => ["verified", "reviewed", "cancelled"].indexOf(o.status) >= 0 && o.requestedDay === isoDate(new Date()));
+    else rows = all.filter(o => ["verified", "reviewed", "cancelled", "rejected"].indexOf(o.status) >= 0 && o.requestedDay === isoDate(new Date()));
     const q = $("q").value.trim().toLowerCase();
     if (q) rows = rows.filter(o => (String(o.patientName) + " " + o.name).toLowerCase().indexOf(q) >= 0);
     rows = filter === "done" ? rows.sort((a, b) => (b.requestedAt || 0) - (a.requestedAt || 0)) : sortOrders(rows);
-    const n = k => k === "requested" ? all.filter(o => o.status === "requested").length : k === "inlab" ? all.filter(o => o.status === "collected" || o.status === "processing").length : all.filter(o => o.status === "resulted").length;
+    const n = k => k === "requested" ? all.filter(o => o.status === "requested").length : k === "inlab" ? all.filter(o => IN_LAB.indexOf(o.status) >= 0).length : all.filter(o => o.status === "resulted").length;
     document.querySelectorAll("#tabs .pill-btn").forEach(b => { const base = { requested: "To collect", inlab: "In the lab", resulted: "To verify", done: "Done today" }[b.dataset.f]; b.textContent = base + (b.dataset.f === "done" ? "" : " (" + n(b.dataset.f) + ")"); });
     $("info").textContent = "Stat first, then urgent, then routine, then by request time";
     $("list").innerHTML = rows.length ? rows.map(o => '<div class="pt' + (selId === o.id ? " sel" : "") + '" data-ord="' + esc(o.id) + '"><div class="pt-name">' + esc(o.name) +
@@ -358,48 +360,91 @@
 
   // ---------- action panel ----------
   function selectOrder(id) {
-    selId = id; if (unsubRes) { try { unsubRes(); } catch (e) {} unsubRes = null; } results = [];
-    unsubRes = onSnapshot(query(collection(db, "pc_inv_results"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("orderId", "==", id), limit(30)), s => {
-      results = s.docs.map(d => ({ id: d.id, ...d.data() })); renderAct();
-    }, () => { renderAct(); });
+    selId = id; [unsubRes, unsubAl, unsubBill].forEach(u => { if (u) { try { u(); } catch (e) {} } }); unsubRes = unsubAl = unsubBill = null; results = []; alerts = []; billDoc = null;
+    const scope = [where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("orderId", "==", id), limit(30)];
+    unsubRes = onSnapshot(query(collection(db, "pc_inv_results"), ...scope), s => { results = s.docs.map(d => ({ id: d.id, ...d.data() })); renderAct(); }, () => { renderAct(); });
+    unsubAl = onSnapshot(query(collection(db, "pc_lab_alerts"), ...scope), s => { alerts = s.docs.map(d => ({ id: d.id, ...d.data() })); renderAct(); }, () => {});
+    // a query (not a get of one document) so that "no bill yet" is an empty answer, not a permission error
+    if (can("lab.payment") || can("lab.report")) unsubBill = onSnapshot(query(collection(db, "pc_lab_bills"), ...scope), s => { billDoc = s.docs.length ? { id: s.docs[0].id, ...s.docs[0].data() } : null; renderAct(); }, () => {});
     renderAct(); renderList(); $("actCard").scrollIntoView({ behavior: "smooth", block: "start" });
   }
+  function closeAct() { selId = null; [unsubRes, unsubAl, unsubBill].forEach(u => { if (u) { try { u(); } catch (e) {} } }); unsubRes = unsubAl = unsubBill = null; renderAct(); renderList(); }
   function resultBlock(r, current) {
-    return '<div class="cand ' + (current ? "" : "") + '" style="' + (current ? "" : "opacity:.65;") + '"><div class="pt-name">' + esc(String(r.value)) + (r.unit ? " " + esc(r.unit) : "") + (r.flag && FLAG_LABEL[r.flag] ? ' <span class="chip ' + (r.flag === "normal" ? "ok" : "warn") + '">' + esc(FLAG_LABEL[r.flag]) + "</span>" : "") +
-      ' <span class="chip ' + (r.status === "verified" ? "ok" : r.status === "entered_in_error" ? "bad" : "warn") + '">' + (r.status === "verified" ? "Verified" : r.status === "entered_in_error" ? "Entered in error" : "Not verified") + "</span>" + (current ? "" : ' <span class="chip">Earlier result</span>') + "</div>" +
-      '<div class="pt-meta">' + (rangeText(r) ? "Reference: " + esc(rangeText(r)) + (r.refSource ? " (" + esc(r.refSource) + ")" : "") + "<br>" : "") + (r.comments ? esc(r.comments) + "<br>" : "") +
+    const vals = r.values && r.valueType !== "organism" && r.values.organisms == null ? Object.keys(r.values).map(k => r.values[k]).filter(x => x && x.value != null) : null;
+    let body;
+    if (vals && vals.length) body = '<table class="rt">' + vals.map(x => "<tr><td>" + esc(x.label) + "</td><td><b>" + esc(String(x.value)) + (x.unit ? " " + esc(x.unit) : "") + "</b></td><td>" + (x.flag && FLAG_LABEL[x.flag] && x.flag !== "none" ? esc(FLAG_LABEL[x.flag]) : "") + "</td></tr>").join("") + "</table>";
+    else if (r.values && r.values.organisms) body = r.values.noGrowth ? '<div class="pt-name">No growth</div>' : r.values.organisms.map(g => '<div class="pt-name">' + esc(g.name) + (g.quantity ? " — " + esc(g.quantity) : "") + '</div><div class="pt-meta">' + (Object.keys(g.susceptibility || {}).map(a => esc(a) + ": <b>" + esc(g.susceptibility[a]) + "</b>").join(" · ") || "No antibiotics recorded") + (g.comment ? "<br>" + esc(g.comment) : "") + "</div>").join("");
+    else body = '<div class="pt-name">' + esc(String(r.value)) + (r.unit ? " " + esc(r.unit) : "") + "</div>";
+    return '<div class="cand" style="' + (current ? "" : "opacity:.65;") + '">' + body + '<div style="margin:4px 0;">' +
+      (r.flag && FLAG_LABEL[r.flag] && r.flag !== "none" ? '<span class="chip ' + (r.flag === "normal" ? "ok" : "warn") + '">' + esc(FLAG_LABEL[r.flag]) + "</span> " : "") +
+      (r.critical ? '<span class="chip bad">CRITICAL (by this facility\'s limits)</span> ' : "") +
+      '<span class="chip ' + (r.status === "verified" ? "ok" : r.status === "entered_in_error" ? "bad" : "warn") + '">' + (r.status === "verified" ? "Verified" : r.status === "entered_in_error" ? "Entered in error" : "Not verified") + "</span>" + (current ? "" : ' <span class="chip">Earlier result</span>') + "</div>" +
+      '<div class="pt-meta">' + (rangeText(r) ? "Reference: " + esc(rangeText(r)) + (r.refSource ? " (" + esc(r.refSource) + ")" : "") + "<br>" : "") + (r.comments ? esc(r.comments) + "<br>" : "") + (r.correctionReason ? "Correction reason: " + esc(r.correctionReason) + "<br>" : "") +
       "Entered by " + esc(r.enteredByName || "") + " at " + esc(hhmm(r.resultAt)) + (r.status === "verified" ? " · verified by " + esc(r.verifiedByName || "") : "") + (r.errorReason ? "<br>Error: " + esc(r.errorReason) : "") + "</div></div>";
   }
+
+  // ----- result entry form: only the fields that suit this test's type -----
+  const optHtml = (list, ph) => '<option value="">' + (ph || "Choose…") + "</option>" + list.map(c => '<option value="' + esc(c) + '">' + esc(c) + "</option>").join("");
+  function oneField(type, id, p) {
+    p = p || {};
+    if (type === "number") return '<input type="number" inputmode="decimal" step="any" id="' + id + '" placeholder="Result' + (p.unit ? " (" + esc(p.unit) + ")" : "") + '">';
+    if (type === "semiquant") return '<select id="' + id + '">' + optHtml((p.scale || []).map(s => s.term)) + "</select>";
+    if (type === "qualitative" || type === "categorical" || type === "choice") return '<select id="' + id + '">' + optHtml(p.choices || []) + "</select>";
+    return '<textarea id="' + id + '" rows="' + (p.rows || 3) + '" placeholder="Write the result or report"></textarea>';
+  }
   function resultForm(o, amend) {
-    const unit = o.resultType === "number" && o.units ? " (" + esc(o.units) + ")" : "";
-    let field;
-    if (o.resultType === "number") field = '<input type="number" inputmode="decimal" step="any" id="rVal" placeholder="Result' + unit + '">';
-    else if (o.resultType === "choice") field = '<select id="rVal"><option value="">Choose…</option>' + (o.choices || []).map(c => '<option value="' + esc(c) + '">' + esc(c) + "</option>").join("") + "</select>";
-    else field = '<textarea id="rVal" rows="4" placeholder="Write the result or report"></textarea>';
+    const prof = PCL.profileFromOrder(o), t = prof.type, unit = t === "number" && o.units ? " (" + esc(o.units) + ")" : "";
+    let field = "";
+    if (t === "number") field = oneField("number", "rVal", { unit: o.units });
+    if (t === "semiquant") field = oneField("semiquant", "rVal", prof) + ((prof.scale || []).some(s => s.meaning) ? '<div class="hint2">' + (prof.scale || []).filter(s => s.meaning).map(s => esc(s.term) + " = " + esc(s.meaning)).join("<br>") + "</div>" : "");
+    else if (t === "qualitative" || t === "categorical") field = oneField(t, "rVal", { choices: (prof.choices && prof.choices.length) ? prof.choices : o.choices });
+    else if (t === "text") field = oneField("text", "rVal", { rows: 4 });
+    else if (t === "titer") field = prof.titerMode === "categorical" ? oneField("categorical", "rVal", { choices: prof.choices }) : '<input type="text" id="rVal" placeholder="For example 1:80" autocomplete="off">';
+    else if (t === "multi") field = (prof.params || []).map(p => "<label>" + esc(p.label) + (p.unit ? " (" + esc(p.unit) + ")" : "") + "</label>" + oneField(p.type, "rp_" + p.key, p) + ((p.refMin != null || p.refMax != null || p.refText) ? '<div class="hint2">Reference: ' + esc(rangeText({ resultType: "number", refMin: p.refMin, refMax: p.refMax, units: p.unit, refText: p.refText })) + (p.refSource ? " (" + esc(p.refSource) + ")" : "") + "</div>" : "")).join("");
+    else if (t === "organism") field = '<label class="chk"><input type="checkbox" id="rNoGrowth"> No growth</label><div id="orgHost"></div><button type="button" class="btn-small btn-secondary" id="addOrgBtn" style="width:100%; margin-top:6px;">Add an organism</button>';
     return '<h3 class="sub">' + (amend ? "Enter a corrected result" : "Enter the result") + "</h3>" +
-      (rangeText(o) ? '<div class="pt-meta">Reference: ' + esc(rangeText(o)) + (o.refSource ? " (" + esc(o.refSource) + ")" : "") + "</div>" : "") +
-      "<label>Result" + unit + " *</label>" + field +
+      (prof.method || prof.equipment ? '<div class="pt-meta">' + (prof.method ? "Method: " + esc(prof.method) : "") + (prof.method && prof.equipment ? " · " : "") + (prof.equipment ? "Equipment: " + esc(prof.equipment) : "") + "</div>" : "") +
+      (prof.processing ? '<div class="pt-meta">Processing: ' + esc(prof.processing) + "</div>" : "") +
+      (t === "number" && rangeText(o) ? '<div class="pt-meta">Reference: ' + esc(rangeText(o)) + (o.refSource ? " (" + esc(o.refSource) + ")" : "") + "</div>" : "") +
+      (t === "multi" || t === "organism" ? "" : "<label>Result" + unit + " *</label>") + field +
       '<label>Flag</label><select id="rFlag"><option value="none">Not stated</option><option value="normal">Within reference range</option><option value="low">Below reference range</option><option value="high">Above reference range</option><option value="abnormal">Abnormal</option></select><div class="hint2" id="fhelp-rFlag">Whether the result is inside the expected (reference) range for this test.</div>' +
       '<div class="hint2" id="rFlagHint"></div>' +
+      (amend ? '<label>Reason for the correction *</label><input type="text" id="rReason" autocomplete="off" placeholder="For example: wrong value typed"><div class="hint2">The earlier result stays on record. A correction is saved as a new version.</div>' : "") +
       '<label>Comments</label><textarea id="rCom" rows="2"></textarea>' +
       '<button class="btn-primary" id="rSaveBtn" data-amend="' + (amend ? "1" : "0") + '">' + (amend ? "Save corrected result" : "Save result") + "</button>" + '<div class="msg" id="rMsg"></div>';
   }
-  function renderAct() {
-    const o = orders[selId]; const card = $("actCard");
-    if (!o) { card.classList.add("hidden"); return; }
-    card.classList.remove("hidden");
-    const step = STEPS.indexOf(o.status);
-    const cur = results.find(r => r.id === o.currentResultId);
-    let h = '<h2>' + esc(o.name) + "</h2><div class=\"pt-meta\">" + esc(o.patientName) + " · " + esc(o.encounterNo || "") + (o.specimen ? " · " + esc(o.specimen) : "") + " · requested by " + esc(o.requestedByName || "") + " at " + esc(hhmm(o.requestedAt)) + (o.clinicalNote ? "<br>Reason: " + esc(o.clinicalNote) : "") + "</div>" +
-      '<div class="pt-meta" style="margin-top:6px;">' + (o.status === "cancelled" ? '<span class="chip bad">Cancelled' + (o.cancelReason ? ": " + esc(o.cancelReason) : "") + "</span>" : STEPS.map((s, i) => '<span class="chip ' + (i === step ? "ok" : "") + '" style="' + (i > step ? "opacity:.5;" : "") + '">' + esc({ requested: "Requested", collected: "Sample", processing: "Processing", resulted: "Result", verified: "Verified", reviewed: "Reviewed" }[s]) + "</span>").join(" ")) + "</div>";
-    if (cur) h += '<h3 class="sub">Current result</h3>' + resultBlock(cur, true);
-    const older = results.filter(r => r.id !== o.currentResultId).sort((a, b) => (b.resultAt || 0) - (a.resultAt || 0));
-    if (older.length) h += '<h3 class="sub">Earlier results (kept on record)</h3>' + older.map(r => resultBlock(r, false)).join("");
+  function orgBlock(prof, i) {
+    return '<div class="cand" data-oi="' + i + '"><label>Organism</label><input type="text" data-of="name" list="orgList" autocomplete="off"><datalist id="orgList">' + (prof.organisms || []).map(x => '<option value="' + esc(x) + '">').join("") + "</datalist>" +
+      '<label>Quantity or growth (optional)</label><input type="text" data-of="quantity" autocomplete="off">' +
+      ((prof.antibiotics || []).length ? '<div class="hint2">Result for each antibiotic you tested (leave blank if not tested)</div>' + prof.antibiotics.map((a, k) => '<div class="row"><div style="padding-top:10px;">' + esc(a) + '</div><div><select data-ab="' + k + '">' + optHtml(prof.resultCodes || [], "—") + "</select></div></div>").join("") : '<div class="hint2">No antibiotics are set up for this test.</div>') +
+      '<label>Comment (optional)</label><input type="text" data-of="comment" autocomplete="off"><button type="button" class="btn-small btn-secondary" data-orm="' + i + '" style="margin-top:6px;">Remove organism</button></div>';
+  }
+  function readInput(o) {
+    const prof = PCL.profileFromOrder(o), t = prof.type, v = id => { const e = $(id); return e ? e.value : ""; };
+    if (t === "multi") { const bag = {}; (prof.params || []).forEach(p => { bag[p.key] = v("rp_" + p.key); }); return { params: bag }; }
+    if (t === "organism") {
+      const orgs = [...document.querySelectorAll("#orgHost [data-oi]")].map(el => { const g = { susceptibility: {} }; el.querySelectorAll("[data-of]").forEach(i => { g[i.dataset.of] = i.value; }); el.querySelectorAll("[data-ab]").forEach(s => { if (s.value) g.susceptibility[prof.antibiotics[Number(s.dataset.ab)]] = s.value; }); return g; });
+      return { noGrowth: $("rNoGrowth") && $("rNoGrowth").checked, organisms: orgs };
+    }
+    return { value: v("rVal") };
+  }
+  function actionPanels(o, cur) {
+    let h = "";
     if (o.status === "requested") {
       if (can("lab.collect")) h += '<label>Sample number (optional)</label><input type="text" id="sampleId" autocomplete="off"><div class="hint2" id="fhelp-sampleId">The number written on the sample container, if your laboratory numbers samples.</div><button class="btn-primary" id="collectBtn">Sample collected</button>';
+      const prof = PCL.profileFromOrder(o); if (prof.collection) h += '<div class="pt-meta" style="margin-top:6px;">Collection: ' + esc(prof.collection) + "</div>";
     } else if (o.status === "collected") {
+      h += '<div class="pt-meta">Sample collected at ' + esc(hhmm(tsMs(o.collectedAt))) + (o.sampleId ? " · sample " + esc(o.sampleId) : "") + ".</div>";
+      if (can("lab.process")) h += '<button class="btn-primary" id="receiveBtn">Received in the laboratory</button><button class="btn-small btn-secondary" id="processBtn" style="width:100%; margin-top:8px;">Start processing without a receiving step (small laboratory)</button>';
+    } else if (o.status === "received") {
+      h += '<div class="pt-meta">Received at ' + esc(hhmm(tsMs(o.receivedAt))) + " by " + esc(o.receivedByName || "") + ". Check the specimen before accepting it.</div>";
+      if (can("lab.process")) h += '<label>Specimen condition (optional)</label><input type="text" id="specCond" autocomplete="off"><button class="btn-primary" id="acceptBtn">Accept the specimen</button>' +
+        '<label>Reject the specimen — reason</label><select id="rejCode">' + optHtml(PCL.REJECT_REASONS, "Choose a reason…") + '</select><input type="text" id="rejText" autocomplete="off" placeholder="Details (required for Other)" style="margin-top:6px;"><button class="btn-small btn-secondary" id="rejectBtn" style="width:100%; margin-top:6px;">Reject the specimen</button><div class="hint2">A rejected specimen ends this request. The doctor sees the reason and can request the test again.</div>';
+    } else if (o.status === "accepted") {
+      h += '<div class="pt-meta">Accepted at ' + esc(hhmm(tsMs(o.acceptedAt))) + " by " + esc(o.acceptedByName || "") + (o.specimenCondition ? " · " + esc(o.specimenCondition) : "") + ".</div>";
       if (can("lab.process")) h += '<button class="btn-primary" id="processBtn">Start processing</button>';
-      h += '<div class="pt-meta">Sample collected at ' + esc(hhmm(tsMs(o.collectedAt))) + ".</div>";
+    } else if (o.status === "rejected") {
+      h += '<div class="pt-meta"><span class="chip bad">Specimen rejected</span> ' + esc(o.rejectReason || "") + " (" + esc(o.rejectedByName || "") + " at " + esc(hhmm(tsMs(o.rejectedAt))) + ")</div>";
     } else if (o.status === "processing") {
       if (can("lab.result")) h += resultForm(o, false);
     } else if (o.status === "resulted") {
@@ -409,27 +454,104 @@
     } else if (o.status === "verified" || o.status === "reviewed") {
       if (can("lab.result")) h += '<button class="btn-small btn-secondary" id="showAmendBtn" style="width:100%; margin-top:8px;">Enter a corrected result</button><div id="amendHost"></div>';
     }
-    if (["requested", "collected", "processing"].indexOf(o.status) >= 0 && canCancel()) h += '<button class="btn-small btn-secondary" id="cancelBtn" style="width:100%; margin-top:8px;">Cancel this test</button>';
+    return h;
+  }
+  function alertPanel() {
+    if (!alerts.length) return "";
+    return '<h3 class="sub">Critical result notices</h3>' + alerts.sort((a, b) => (b.clientCreatedAt || 0) - (a.clientCreatedAt || 0)).map(a => '<div class="cand"><span class="chip ' + (a.status === "acknowledged" ? "ok" : "bad") + '">' + (a.status === "acknowledged" ? "Doctor acknowledged" : a.status === "informed" ? "Doctor informed, waiting for acknowledgement" : "Doctor not yet informed") + "</span>" +
+      '<div class="pt-meta">' + (a.why || []).map(esc).join("<br>") + "<br>This is a comparison with limits your facility set. It is not a diagnosis." +
+      (a.status !== "open" && a.informedPerson ? "<br>Informed: " + esc(a.informedPerson) + (a.informedHow ? " (" + esc(a.informedHow) + ")" : "") + " by " + esc(a.informedByName || "") + " at " + esc(hhmm(tsMs(a.informedAt))) : "") +
+      (a.status === "acknowledged" ? "<br>Acknowledged by " + esc(a.ackedByName || "") + (a.ackNote ? ": " + esc(a.ackNote) : "") : "") + "</div>" +
+      (a.status === "open" && can("lab.result") ? '<label>Who was informed? *</label><input type="text" data-inf-who="' + esc(a.id) + '" autocomplete="off"><label>How</label><select data-inf-how="' + esc(a.id) + '"><option>In person</option><option>By phone</option><option>By message</option><option>Other</option></select><button class="btn-small btn-primary" data-inf="' + esc(a.id) + '" style="margin-top:6px;">Record that the doctor was informed</button>' : "") + "</div>").join("");
+  }
+  function billPanel(o) {
+    if (!can("lab.payment") || ["cancelled", "rejected"].indexOf(o.status) >= 0) return "";
+    const price = o.price != null ? o.price : null;
+    if (billDoc) {
+      const rev = billDoc.status === "reversed";
+      return '<h3 class="sub">Payment</h3><div class="cand"><span class="chip ' + (rev ? "bad" : billDoc.status === "paid" ? "ok" : "warn") + '">' + (rev ? "Bill reversed" : esc(PCL.PAY_LABEL[billDoc.status] || billDoc.status)) + "</span>" +
+        '<div class="pt-meta">Price ' + esc(billDoc.price) + " · paid " + esc(billDoc.amountPaid) + " · on credit " + esc(billDoc.amountOutstanding) + (billDoc.amountWaived ? " · waived " + esc(billDoc.amountWaived) + " (" + esc(billDoc.waiveReason || "") + ")" : "") + (billDoc.paymentMethod ? " · " + esc(billDoc.paymentMethod) : "") + "<br>Recorded by " + esc(billDoc.createdByName || "") +
+        (rev ? "<br>Reversed: " + esc(billDoc.reverseReason || "") + " (" + esc(billDoc.reversedByName || "") + ")" : "") + "</div>" +
+        (rev ? "" : '<button class="btn-small btn-secondary" id="reverseBillBtn" style="width:100%; margin-top:6px;">Reverse this bill</button><div class="hint2">A reversal removes any credit this bill created. Cash already received must be refunded by hand.</div>') + "</div>";
+    }
+    return '<h3 class="sub">Payment</h3><div class="cand">' + (price == null ? '<label>Price *</label><input type="number" inputmode="decimal" step="any" id="bPrice">' : '<div class="pt-name">Price: ' + esc(price) + "</div>") +
+      '<label>How is it paid?</label><select id="bMode"><option value="paid">Paid in full</option><option value="part">Part paid (the rest on credit)</option><option value="credit">Not paid (on credit)</option><option value="waive">No charge (authorised)</option></select>' +
+      '<div id="bPaidWrap" class="hidden"><label>Amount paid now</label><input type="number" inputmode="decimal" step="any" id="bPaid"></div>' +
+      '<div id="bMethodWrap"><label>Payment method</label><select id="bMethod"><option>Cash</option><option>Mobile money</option><option>Card</option><option>Other</option></select></div>' +
+      '<div id="bCreditWrap" class="hidden"><label>Name on the credit account *</label><input type="text" id="bName" autocomplete="off" value="' + esc(o.patientName || "") + '"><label>Due date (optional)</label><input type="date" id="bDue"></div>' +
+      '<div id="bWaiveWrap" class="hidden"><label>Reason for no charge *</label><input type="text" id="bWaive" autocomplete="off"></div>' +
+      '<button class="btn-primary" id="billBtn">Save payment</button><div class="msg" id="bMsg"></div><div class="hint2">A request is not income. Revenue is counted only from saved payments.</div></div>';
+  }
+  function renderAct() {
+    const o = orders[selId]; const card = $("actCard");
+    if (!o) { card.classList.add("hidden"); return; }
+    card.classList.remove("hidden");
+    const step = STEPS.indexOf(o.status);
+    const cur = results.find(r => r.id === o.currentResultId);
+    // keep what the person is typing if the screen refreshes because of a background update
+    const typing = card.querySelector("#rVal, #rCom, [id^=rp_], #bPaid, #bName, #bWaive, #sampleId, #specCond, #rejText") && document.activeElement && card.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+    if (typing && card.dataset.sel === selId + ":" + o.status + ":" + (o.currentResultId || "")) return;
+    card.dataset.sel = selId + ":" + o.status + ":" + (o.currentResultId || "");
+    const labels = { requested: "Requested", collected: "Sample", received: "Received", accepted: "Accepted", processing: "Processing", resulted: "Result", verified: "Verified", reviewed: "Reviewed" };
+    let h = '<h2>' + esc(o.name) + "</h2><div class=\"pt-meta\">" + esc(o.patientName) + " · " + esc(o.encounterNo || "") + (o.specimen ? " · " + esc(o.specimen) : "") + " · requested by " + esc(o.requestedByName || "") + " at " + esc(hhmm(o.requestedAt)) + (o.clinicalNote ? "<br>Reason: " + esc(o.clinicalNote) : "") + "</div>" +
+      '<div class="pt-meta" style="margin-top:6px;">' + (o.status === "cancelled" ? '<span class="chip bad">Cancelled' + (o.cancelReason ? ": " + esc(o.cancelReason) : "") + "</span>" : o.status === "rejected" ? '<span class="chip bad">Specimen rejected</span>' : STEPS.map((s, i) => '<span class="chip ' + (i === step ? "ok" : "") + '" style="' + (i > step ? "opacity:.5;" : "") + '">' + esc(labels[s]) + "</span>").join(" ")) + "</div>";
+    if (cur) h += '<h3 class="sub">Current result</h3>' + resultBlock(cur, true);
+    const older = results.filter(r => r.id !== o.currentResultId).sort((a, b) => (b.resultAt || 0) - (a.resultAt || 0));
+    if (older.length) h += '<h3 class="sub">Earlier results (kept on record)</h3>' + older.map(r => resultBlock(r, false)).join("");
+    h += alertPanel() + actionPanels(o, cur) + billPanel(o);
+    if (["requested", "collected", "received", "accepted", "processing"].indexOf(o.status) >= 0 && canCancel()) h += '<button class="btn-small btn-secondary" id="cancelBtn" style="width:100%; margin-top:8px;">Cancel this test</button>';
     h += '<button class="btn-small btn-secondary" id="closeActBtn" style="width:100%; margin-top:8px;">Close</button>';
     card.innerHTML = h;
     const g = id => $(id);
     if (g("collectBtn")) g("collectBtn").onclick = () => collect(o);
+    if (g("receiveBtn")) g("receiveBtn").onclick = () => step2(o, "received", "lab.receive", { receivedAt: serverTimestamp(), receivedBy: me.id, receivedByName: myName }, "Specimen received. Saved on this phone.");
+    if (g("acceptBtn")) g("acceptBtn").onclick = () => step2(o, "accepted", "lab.accept", { acceptedAt: serverTimestamp(), acceptedBy: me.id, acceptedByName: myName, specimenCondition: $("specCond").value.trim() }, "Specimen accepted. Saved on this phone.");
+    if (g("rejectBtn")) g("rejectBtn").onclick = () => rejectSpecimen(o);
     if (g("processBtn")) g("processBtn").onclick = () => startProcessing(o);
     if (g("verifyBtn")) g("verifyBtn").onclick = () => verify(o, cur);
     if (g("errBtn")) g("errBtn").onclick = () => resultError(o, cur);
     if (g("cancelBtn")) g("cancelBtn").onclick = () => cancelOrder(o);
-    if (g("closeActBtn")) g("closeActBtn").onclick = () => { selId = null; if (unsubRes) { try { unsubRes(); } catch (e) {} unsubRes = null; } renderAct(); renderList(); };
+    if (g("closeActBtn")) g("closeActBtn").onclick = closeAct;
     if (g("showAmendBtn")) g("showAmendBtn").onclick = () => { $("amendHost").innerHTML = resultForm(o, true); g("showAmendBtn").classList.add("hidden"); wireResultForm(o); };
+    card.querySelectorAll("[data-inf]").forEach(b => { b.onclick = () => informClinician(o, b.dataset.inf); });
+    if (g("billBtn")) wireBill(o);
+    if (g("reverseBillBtn")) g("reverseBillBtn").onclick = () => reverseBill(o);
     if (o.status === "processing" && can("lab.result")) wireResultForm(o);
   }
   function wireResultForm(o) {
-    const v = $("rVal"), fl = $("rFlag"); if (!v) return;
-    const upd = () => { const f = autoFlag(v.value, o); if (o.resultType === "number") { fl.value = f; $("rFlagHint").textContent = f === "none" ? "" : "Worked out from the reference range this laboratory entered. You can change it."; } };
-    v.addEventListener("input", upd);
+    const prof = PCL.profileFromOrder(o), fl = $("rFlag");
+    const v = $("rVal");
+    if (v && prof.type === "number") v.addEventListener("input", () => { const f = autoFlag(v.value, o); fl.value = f; $("rFlagHint").textContent = f === "none" ? "" : "Worked out from the reference range this laboratory entered. You can change it."; });
+    if (prof.type === "organism") {
+      let n = 0; const host = $("orgHost");
+      const add = () => { host.insertAdjacentHTML("beforeend", orgBlock(prof, n++)); };
+      $("addOrgBtn").onclick = add; add();
+      host.addEventListener("click", e => { const b = e.target.closest("[data-orm]"); if (b) b.closest("[data-oi]").remove(); });
+    }
     $("rSaveBtn").onclick = () => saveResult(o, $("rSaveBtn").dataset.amend === "1");
+  }
+  function wireBill(o) {
+    const sync = () => { const m = $("bMode").value; $("bPaidWrap").classList.toggle("hidden", m !== "part"); $("bCreditWrap").classList.toggle("hidden", m !== "credit" && m !== "part"); $("bWaiveWrap").classList.toggle("hidden", m !== "waive"); $("bMethodWrap").classList.toggle("hidden", m === "credit" || m === "waive"); };
+    $("bMode").addEventListener("change", sync); sync();
+    $("billBtn").onclick = () => saveBill(o);
   }
 
   // ---------- steps ----------
+  function step2(o, to, action, fields, msg) {
+    if (!PCL.canMove(o.status, to)) return;
+    const b = writeBatch(db);
+    b.update(doc(db, "pc_inv_orders", o.id), Object.assign({ status: to, updatedAt: serverTimestamp(), updatedBy: me.id }, fields));
+    b.set(doc(collection(db, "pc_audit_logs")), audit(o, action));
+    b.commit().catch(saveFailed); ok(msg);
+  }
+  function rejectSpecimen(o) {
+    const code = $("rejCode").value, text = $("rejText").value.trim(), m = $("doneMsg");
+    if (!code) { alert("Choose why the specimen is rejected."); return; }
+    if (code.indexOf("Other") === 0 && text.length < 3) { alert("Explain the reason."); return; }
+    const reason = code.indexOf("Other") === 0 ? text : code + (text ? " — " + text : "");
+    if (!window.confirm("Reject this specimen? This ends the request. The doctor will see the reason.")) return;
+    step2(o, "rejected", "lab.reject", { rejectedAt: serverTimestamp(), rejectedBy: me.id, rejectedByName: myName, rejectReason: reason, rejectCode: code }, "Specimen rejected. Saved on this phone.");
+  }
   function collect(o) {
     const sid = ($("sampleId") && $("sampleId").value.trim()) || "";
     const b = writeBatch(db);
@@ -445,19 +567,34 @@
   }
   function saveResult(o, amend) {
     const m = $("rMsg"); m.className = "msg err"; m.textContent = "";
-    const raw = $("rVal").value.trim();
-    if (raw === "") { m.textContent = "Enter the result."; return; }
-    let value = raw;
-    if (o.resultType === "number") { value = Number(raw); if (isNaN(value)) { m.textContent = "The result must be a number."; return; } }
+    const input = readInput(o);
+    const br = PCL.buildResult(o, input);
+    if (!br.ok) { m.textContent = br.error; return; }
+    const reason = amend ? ($("rReason").value || "").trim() : "";
+    if (amend && reason.length < 3) { m.textContent = "Give the reason for the correction."; return; }
+    const picked = $("rFlag").value, flag = picked !== "none" ? picked : br.flag;
+    if (br.critical && !window.confirm("This result is CRITICAL by the limits your facility set:\n\n" + br.criticalWhy.join("\n") + "\n\nSave it, then inform the doctor and record who was told. Continue?")) return;
     const rid = amend ? doc(collection(db, "pc_inv_results")).id : o.id;
     const prev = amend ? o.currentResultId : null;
-    const rdoc = Object.assign(stamp(), { orderId: o.id, encounterId: o.encounterId, patientId: o.patientId, testName: o.name, value: value, valueType: o.resultType, unit: o.units || "", refMin: o.refMin != null ? o.refMin : null, refMax: o.refMax != null ? o.refMax : null,
-      refText: o.refText || "", refSource: o.refSource || "", flag: $("rFlag").value, comments: $("rCom").value.trim(), resultAt: Date.now(), enteredBy: me.id, enteredByName: myName, status: "unverified", amends: prev });
+    const rdoc = Object.assign(stamp(), { orderId: o.id, encounterId: o.encounterId, patientId: o.patientId, testName: o.name, value: br.value, valueType: br.valueType, unit: o.units || "", refMin: o.refMin != null ? o.refMin : null, refMax: o.refMax != null ? o.refMax : null,
+      refText: o.refText || "", refSource: o.refSource || "", flag: flag, critical: br.critical === true, comments: $("rCom").value.trim(), resultAt: Date.now(), enteredBy: me.id, enteredByName: myName, status: "unverified", amends: prev });
+    if (br.values) rdoc.values = br.values;
+    if (br.critical) rdoc.criticalWhy = br.criticalWhy;
+    if (amend) rdoc.correctionReason = reason;
     const b = writeBatch(db);
     b.set(doc(db, "pc_inv_results", rid), rdoc);
     b.update(doc(db, "pc_inv_orders", o.id), { status: "resulted", resultedAt: serverTimestamp(), resultedBy: me.id, resultedByName: myName, currentResultId: rid, updatedAt: serverTimestamp(), updatedBy: me.id });
-    b.set(doc(collection(db, "pc_audit_logs")), audit(o, amend ? "lab.result_amend" : "lab.result", { resultId: rid, amends: prev }));
-    b.commit().catch(saveFailed); ok((amend ? "Corrected result" : "Result") + " saved on this phone. It still needs to be verified.");
+    if (br.critical) b.set(doc(db, "pc_lab_alerts", rid), Object.assign(stamp(), { orderId: o.id, encounterId: o.encounterId, patientId: o.patientId, patientName: o.patientName || "", testName: o.name, resultId: rid, resultSummary: String(br.value).slice(0, 200), why: br.criticalWhy, status: "open" }));
+    b.set(doc(collection(db, "pc_audit_logs")), audit(o, amend ? "lab.result_amend" : "lab.result", { resultId: rid, amends: prev, reason: reason || null, critical: br.critical === true }));
+    b.commit().catch(saveFailed); ok((amend ? "Corrected result" : "Result") + " saved on this phone. It still needs to be verified." + (br.critical ? " CRITICAL: now inform the doctor and record who was told." : ""));
+  }
+  function informClinician(o, alertId) {
+    const who = (document.querySelector('[data-inf-who="' + alertId + '"]').value || "").trim(), how = document.querySelector('[data-inf-how="' + alertId + '"]').value;
+    if (who.length < 2) { alert("Write who was informed."); return; }
+    const b = writeBatch(db);
+    b.update(doc(db, "pc_lab_alerts", alertId), { status: "informed", informedBy: me.id, informedByName: myName, informedAt: serverTimestamp(), informedPerson: who, informedHow: how, updatedAt: serverTimestamp(), updatedBy: me.id });
+    b.set(doc(collection(db, "pc_audit_logs")), audit(o, "lab.critical_informed", { resultId: alertId, informedPerson: who, how: how }));
+    b.commit().catch(saveFailed); ok("Recorded. Saved on this phone.");
   }
   function verify(o, cur) {
     if (!cur || cur.status !== "unverified") return;
@@ -483,6 +620,49 @@
     b.commit().catch(saveFailed); ok("Test cancelled. Saved on this phone.");
   }
 
+  // ---------- money ----------
+  // One bill per order (document id = order id), so it cannot be billed twice, even from two phones. Credit goes to the same patient credit account the pharmacy uses.
+  async function saveBill(o) {
+    const m = $("bMsg"); m.className = "msg err"; m.textContent = "";
+    if (billDoc) { m.textContent = "This test already has a bill."; return; }
+    const mode = $("bMode").value, price = o.price != null ? o.price : Number($("bPrice") && $("bPrice").value);
+    if (o.price == null && (!(price >= 0) || $("bPrice").value === "")) { m.textContent = "Enter the price."; return; }
+    const paidIn = mode === "paid" ? price : mode === "part" ? Number($("bPaid").value) : 0;
+    if (mode === "part" && !(paidIn > 0 && paidIn < price)) { m.textContent = "For a part payment, the amount paid must be more than 0 and less than the price."; return; }
+    if (mode === "waive" && $("bWaive").value.trim().length < 3) { m.textContent = "Give the reason for no charge."; return; }
+    const bl = PCL.bill({ price: price, amountPaid: paidIn, waived: mode === "waive" });
+    const custName = (($("bName") && $("bName").value) || o.patientName || "").trim();
+    if (bl.outstanding > 0 && custName.length < 2) { m.textContent = "Enter the name for the credit account."; return; }
+    const credId = "dspca_" + o.patientId;      // the same account the pharmacy uses for this patient
+    let acctExists = false;
+    if (bl.outstanding > 0) {
+      try { const a = await getDocServerFirst(doc(db, "credit_accounts", credId)); acctExists = a.exists(); if (acctExists) { const d = a.data(); if (d.businessId !== businessId || d.shopId !== facilityId) { m.textContent = "That credit account belongs to another shop."; return; } } }
+      catch (e) { m.textContent = "Could not check the patient's credit account (no internet?). Nothing was saved. Try again when online."; return; }
+    }
+    const b = writeBatch(db), money = { businessId: businessId, shopId: facilityId };
+    const rec = Object.assign(stamp(), { orderId: o.id, encounterId: o.encounterId, patientId: o.patientId, patientName: o.patientName || "", testName: o.name, price: bl.price, amountPaid: bl.paid, amountOutstanding: bl.outstanding, amountWaived: bl.waived, status: bl.status,
+      paymentMethod: bl.paid > 0 ? $("bMethod").value : null, createdByName: myName });
+    if (bl.waived > 0) { rec.waiveReason = $("bWaive").value.trim(); rec.waivedBy = me.id; }
+    if (bl.outstanding > 0) {
+      rec.customerId = credId; rec.customerName = custName; rec.creditTxnId = "labct_" + o.id;
+      if (!acctExists) b.set(doc(db, "credit_accounts", credId), Object.assign({}, money, { name: custName, phone: null, creditLimit: 0, createdAt: serverTimestamp(), source: "laboratory", patientId: o.patientId }));
+      b.set(doc(db, "credit_transactions", rec.creditTxnId), Object.assign({}, money, { customerId: credId, customerName: custName, type: "CREDIT_SALE", amount: bl.outstanding, paidAmount: 0, balanceChange: bl.outstanding, dueDate: ($("bDue") && $("bDue").value) || null, description: "Laboratory test: " + o.name, createdAt: serverTimestamp(), cashier: myName }));
+    }
+    b.set(doc(db, "pc_lab_bills", o.id), rec);
+    b.set(doc(collection(db, "pc_audit_logs")), audit(o, "lab.bill", { status: bl.status, price: bl.price, paid: bl.paid, outstanding: bl.outstanding }));
+    b.commit().catch(saveFailed); ok("Payment saved on this phone.");
+  }
+  function reverseBill(o) {
+    if (!billDoc || billDoc.status === "reversed") return;
+    const reason = (window.prompt("Why is this bill being reversed?") || "").trim();
+    if (reason.length < 3) { if (reason) alert("Please give a short reason."); return; }
+    const b = writeBatch(db);
+    b.update(doc(db, "pc_lab_bills", o.id), { status: "reversed", reverseReason: reason, reversedBy: me.id, reversedByName: myName, reversedAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: me.id });
+    if (billDoc.amountOutstanding > 0) b.set(doc(db, "credit_transactions", "labrv_" + o.id), { businessId: businessId, shopId: facilityId, customerId: billDoc.customerId, customerName: billDoc.customerName || "", type: "LAB_REVERSAL", amount: billDoc.amountOutstanding, paidAmount: 0, balanceChange: -billDoc.amountOutstanding, description: "Laboratory bill reversed: " + o.name + " — " + reason, createdAt: serverTimestamp(), cashier: myName });
+    b.set(doc(collection(db, "pc_audit_logs")), audit(o, "lab.bill_reverse", { reason: reason }));
+    b.commit().catch(saveFailed); ok("Bill reversed. Saved on this phone.");
+  }
+
   // ---------- wiring ----------
   $("list").addEventListener("click", e => { const r = e.target.closest("[data-ord]"); if (r) selectOrder(r.dataset.ord); });
   $("q").addEventListener("input", renderList);
@@ -498,7 +678,7 @@
     if (!can("patient.view")) { showGate("You do not have Patient Care access yet. Ask the owner to give you access in Users."); return; }
     $("shopIndicator").textContent = "Patient Care · " + facility.name;
     $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
-    ["requested", "collected", "processing", "resulted"].forEach(st => {
+    ST.forEach(st => {
       onSnapshot(query(collection(db, "pc_inv_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", st), limit(500)), { includeMetadataChanges: true }, s => {
         byStatus[st] = s.docs.map(d => ({ id: d.id, ...d.data() })); mark(s); rebuild();
       }, err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view tests." : "The the queue could not be loaded. Check your internet connection and try again.") + "</div>"; });
