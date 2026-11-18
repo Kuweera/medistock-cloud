@@ -32,7 +32,9 @@ const users = {
   clin: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "investigation.request": true, "investigation.review": true } },
   rules0: { role: "operator", businessId: B, shopId: A, active: true, perms: { "treatment.prescribe": true } }
 };
-const db = uid => env.authenticatedContext(uid).firestore();
+// one Firestore object per user for the whole run: building a new one on every call made the SDK refuse to mix documents ("different Firestore instance")
+const dbs = {};
+const db = uid => dbs[uid] || (dbs[uid] = env.authenticatedContext(uid).firestore());
 const stamp = uid => ({ businessId: B, facilityId: A, schemaVersion: 1, createdBy: uid, createdAt: serverTimestamp() });
 
 test.before(async () => {
@@ -287,7 +289,7 @@ test("v16 reads: dispense.view (without patient.view) can read MEDICINE orders, 
 });
 test("v16 access check: the read-only diagnostic finds nothing blocked for a pharmacist and flags what a non-dispenser cannot reach", async () => {
   await seedEngine();
-  const okRows = await PCD.diagnose(tools("dispOnly"), { uid: "dispOnly", businessId: B, facilityId: A, role: "operator", perms: users.dispOnly.perms, facility: { businessId: B, enabledServices: ["patient_care"] } });
+  const okRows = await PCD.diagnose(tools("dispOnly"), { uid: "dispOnly", businessId: B, facilityId: A, role: "operator", perms: Object.assign({}, users.dispOnly.perms, { "dispense.report": true }), facility: { businessId: B, enabledServices: ["patient_care"] } });
   assert.deepEqual(okRows.filter(r => !r.ok), []);
   const badRows = await PCD.diagnose(tools("nurse"), { uid: "nurse", businessId: B, facilityId: A, role: "operator", perms: users.nurse.perms, facility: { businessId: B, enabledServices: ["patient_care"] } });
   assert.ok(badRows.some(r => !r.ok && /blocked by the security rules/.test(r.detail)));
