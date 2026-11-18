@@ -720,6 +720,15 @@ service cloud.firestore {
         && (!(d.get('refMin', null) != null || d.get('refMax', null) != null || d.get('refText', '') != '')
             || (d.get('refSource', '') is string && d.get('refSource', '').size() >= 3));
     }
+    // v18: which permission a status step needs, looked up once. (Calling hasPerm in every branch made the update rule exceed the
+    // 1000-expression limit of the rules engine, so a legitimate step late in the list could be refused.) Cancelling is handled in its own branch.
+    function orderStepPerm() {
+      return {
+        'requested>collected': 'lab.collect', 'collected>received': 'lab.process', 'received>accepted': 'lab.process', 'received>rejected': 'lab.process',
+        'collected>processing': 'lab.process', 'accepted>processing': 'lab.process', 'processing>resulted': 'lab.result', 'resulted>verified': 'lab.verify',
+        'verified>reviewed': 'investigation.review', 'resulted>resulted': 'lab.result', 'verified>resulted': 'lab.result', 'reviewed>resulted': 'lab.result'
+      }.get(resource.data.status + '>' + request.resource.data.status, '');
+    }
     function labCancelPerm(biz) { return hasPerm(biz, 'investigation.request') || hasPerm(biz, 'lab.collect'); }
 
     match /pc_inv_catalogue/{id} {
@@ -752,29 +761,26 @@ service cloud.firestore {
       allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
         && pcUpdateStamped()
         && (
+          (orderStepPerm() != '' && hasPerm(resource.data.businessId, orderStepPerm()) && (
           (resource.data.status == 'requested' && request.resource.data.status == 'collected'
-            && hasPerm(resource.data.businessId, 'lab.collect')
             && request.resource.data.collectedBy == request.auth.uid
             && request.resource.data.collectedAt == request.time
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['status', 'collectedAt', 'collectedBy', 'collectedByName', 'sampleId', 'updatedAt', 'updatedBy']))
           ||
           (resource.data.status == 'collected' && request.resource.data.status == 'received'
-            && hasPerm(resource.data.businessId, 'lab.process')
             && request.resource.data.receivedBy == request.auth.uid
             && request.resource.data.receivedAt == request.time
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['status', 'receivedAt', 'receivedBy', 'receivedByName', 'updatedAt', 'updatedBy']))
           ||
           (resource.data.status == 'received' && request.resource.data.status == 'accepted'
-            && hasPerm(resource.data.businessId, 'lab.process')
             && request.resource.data.acceptedBy == request.auth.uid
             && request.resource.data.acceptedAt == request.time
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['status', 'acceptedAt', 'acceptedBy', 'acceptedByName', 'specimenCondition', 'updatedAt', 'updatedBy']))
           ||
           (resource.data.status == 'received' && request.resource.data.status == 'rejected'
-            && hasPerm(resource.data.businessId, 'lab.process')
             && request.resource.data.rejectedBy == request.auth.uid
             && request.resource.data.rejectedAt == request.time
             && request.resource.data.rejectReason is string && request.resource.data.rejectReason.size() >= 3
@@ -782,14 +788,12 @@ service cloud.firestore {
                  .hasOnly(['status', 'rejectedAt', 'rejectedBy', 'rejectedByName', 'rejectReason', 'rejectCode', 'updatedAt', 'updatedBy']))
           ||
           (resource.data.status in ['collected', 'accepted'] && request.resource.data.status == 'processing'
-            && hasPerm(resource.data.businessId, 'lab.process')
             && request.resource.data.processingBy == request.auth.uid
             && request.resource.data.processingAt == request.time
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['status', 'processingAt', 'processingBy', 'processingByName', 'updatedAt', 'updatedBy']))
           ||
           (resource.data.status == 'processing' && request.resource.data.status == 'resulted'
-            && hasPerm(resource.data.businessId, 'lab.result')
             && request.resource.data.currentResultId == orderId
             && request.resource.data.resultedBy == request.auth.uid
             && request.resource.data.resultedAt == request.time
@@ -800,7 +804,6 @@ service cloud.firestore {
                  .hasOnly(['status', 'resultedAt', 'resultedBy', 'resultedByName', 'currentResultId', 'updatedAt', 'updatedBy']))
           ||
           (resource.data.status == 'resulted' && request.resource.data.status == 'verified'
-            && hasPerm(resource.data.businessId, 'lab.verify')
             && request.resource.data.verifiedBy == request.auth.uid
             && request.resource.data.verifiedAt == request.time
             && getAfter(invResultPath(resource.data.currentResultId)).data.status == 'verified'
@@ -808,14 +811,12 @@ service cloud.firestore {
                  .hasOnly(['status', 'verifiedAt', 'verifiedBy', 'verifiedByName', 'updatedAt', 'updatedBy']))
           ||
           (resource.data.status == 'verified' && request.resource.data.status == 'reviewed'
-            && hasPerm(resource.data.businessId, 'investigation.review')
             && request.resource.data.reviewedBy == request.auth.uid
             && request.resource.data.reviewedAt == request.time
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['status', 'reviewedAt', 'reviewedBy', 'reviewedByName', 'reviewNote', 'updatedAt', 'updatedBy']))
           ||
           (resource.data.status in ['resulted', 'verified', 'reviewed'] && request.resource.data.status == 'resulted'
-            && hasPerm(resource.data.businessId, 'lab.result')
             && request.resource.data.currentResultId != resource.data.currentResultId
             && request.resource.data.resultedBy == request.auth.uid
             && request.resource.data.resultedAt == request.time
@@ -825,6 +826,7 @@ service cloud.firestore {
             && getAfter(invResultPath(request.resource.data.currentResultId)).data.status == 'unverified'
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['status', 'resultedAt', 'resultedBy', 'resultedByName', 'currentResultId', 'updatedAt', 'updatedBy']))
+          ))
           ||
           (resource.data.status in ['requested', 'collected', 'received', 'accepted', 'processing'] && request.resource.data.status == 'cancelled'
             && labCancelPerm(resource.data.businessId)
