@@ -39,7 +39,7 @@ Developer 4. Date: 2026-11-15. Legend: [x] done and checked here · [~] written,
 | Prescription reaches pharmacy, dispensing updates history, credit once | Developer 1's `tests/dispense-ext.test.js`, `tests/browser-check.js` | Passed (mock) |
 | No duplicate financial records | bill id = order id; credit ids `labct_`/`labrv_` fixed; lab writes no receipts or sales (`tests/lab-integration.test.js`, `tests/lab-check.js`) | Passed (mock) |
 | Duplicate lab request | encounter.html asks before repeating an unfinished test on the same visit | Added; not browser-tested |
-| Permissions at business and facility level | rules v18 use `hasPerm`/`canAccessShop`; `tests-emulator/rules.test.js` v18 tests | Written, NOT RUN |
+| Permissions at business and facility level | rules v18 use `hasPerm`/`canAccessShop`; `tests-emulator/rules.test.js` v18 tests | CI run 33/41; fixes applied, re-run pending |
 | Every permission a lab page checks exists in Users and the rules | `tests/lab-integration.test.js` | Passed |
 | Offline sync safe | Writes are single batches with fixed ids. Credit bills refuse to save when the patient's credit account cannot be checked | Not tested on a phone or in airplane mode |
 | Protected files unchanged | `tests/integration.test.js` hash baseline | Passed |

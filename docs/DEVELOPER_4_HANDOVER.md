@@ -18,9 +18,9 @@ Documented in `docs/DATABASE_SCHEMA.md` (Laboratory section) and the v18 note in
 - Emulator rules tests for v18 are written in `tests-emulator/rules.test.js`.
 
 ## Firebase testing status (honest)
-- Emulator tests for v18: **written, NOT RUN.**
+- Emulator tests: first CI run 33 of 41 passed; the 8 failures were 7 test-code mistakes plus one rule that was too expensive (fixed). **The fixes have not been re-run yet.** See `docs/SECURITY_TEST_REPORT.md`.
 - Real Firebase: **not tested.** Offline, airplane-mode and two-phone behaviour: **not tested** (steps in `docs/OFFLINE_SYNC_TEST_REPORT.md`).
-- Rules v18 have not been run against any emulator; lookup counts were counted by hand.
+- Lookup counts in the new rules were counted by hand only; the emulator has run once (see above).
 
 ## Screenshots
 `docs/screenshots-dev4/`: mobile (390 px) specimen steps, critical notice, panel result, organism entry, billing, reports, catalogue editor; desktop (1280 px) laboratory screen. Taken from the in-memory test harness with invented test data.
