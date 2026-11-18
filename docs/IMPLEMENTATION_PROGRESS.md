@@ -124,3 +124,6 @@ Developer 1, 2026-11-16. Every dispensing failed with "You do not have permissio
 
 ## Update: price/payment/credit, reversals, substitution, consumables (rules v17)
 Developer 1, 2026-11-16. Added `pc-dispense-ext.js` (billing hook, reversals, hand-over marker, consumables), the matching screens in `pharmacy.html`, substitution and hand-over support in `pc-dispense.js`, rules v17, tests (offline: 84 passing; browser check passing; emulator tests written, **not run**). Nothing was tested on real Firebase, offline on a real phone, or with several people at once. See PHARMACY_DISPENSING_SPEC.md section 8.
+
+## Developer 4: laboratory (rules v18)
+Built and tested on in-memory stand-ins only: flexible catalogue (9 result types, templates, approval, critical limits with source), specimen workflow (receive, accept, reject), type-specific result entry, corrections with reason, critical notices, bills with credit and no-charge, laboratory reports. **Rules v18 not run on an emulator; real Firebase and phones not tested.** See `docs/LABORATORY_SPEC.md` and `docs/DEVELOPER_4_HANDOVER.md`.

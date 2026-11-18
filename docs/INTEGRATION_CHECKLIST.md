@@ -30,3 +30,16 @@ Developer 4. Date: 2026-11-15. Legend: [x] done and checked here · [~] written,
 5. Dev 2: a guideline can be edited/approved only by users of the facility that wrote it (rules use the writer's `facilityId`). Cross-facility approval is not possible. Say so in the guide or change the rule.
 6. Dev 2: self-approval is allowed and flagged (`selfApproved`). Not forbidden by rules.
 7. Dev 3: `pc-ux.js` was missing from the offline cache before this change.
+
+## E. Developer 4 integration verification (laboratory phase)
+| Check | How | Result |
+|---|---|---|
+| Lab request links to the right visit and patient | `tests/test-request-check.js`, `tests/lab-check.js` (orders carry encounterId, patientId) | Passed on the in-memory stand-in |
+| Results return to the right clinician | encounter.html reads results by the visit; critical notices show there with an acknowledge button | Built; browser-checked for order display only. Acknowledge click not browser-tested |
+| Prescription reaches pharmacy, dispensing updates history, credit once | Developer 1's `tests/dispense-ext.test.js`, `tests/browser-check.js` | Passed (mock) |
+| No duplicate financial records | bill id = order id; credit ids `labct_`/`labrv_` fixed; lab writes no receipts or sales (`tests/lab-integration.test.js`, `tests/lab-check.js`) | Passed (mock) |
+| Duplicate lab request | encounter.html asks before repeating an unfinished test on the same visit | Added; not browser-tested |
+| Permissions at business and facility level | rules v18 use `hasPerm`/`canAccessShop`; `tests-emulator/rules.test.js` v18 tests | Written, NOT RUN |
+| Every permission a lab page checks exists in Users and the rules | `tests/lab-integration.test.js` | Passed |
+| Offline sync safe | Writes are single batches with fixed ids. Credit bills refuse to save when the patient's credit account cannot be checked | Not tested on a phone or in airplane mode |
+| Protected files unchanged | `tests/integration.test.js` hash baseline | Passed |

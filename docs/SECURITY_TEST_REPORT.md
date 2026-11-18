@@ -29,3 +29,8 @@ Known observation: the guidelines `update` rule reports "maximum of 1000 express
 
 ## Required next
 Publish rules to a TEST Firebase project and repeat the key checks in the Rules Playground, then do the phone tests in OFFLINE_SYNC_TEST_REPORT.md. Only then consider the real project.
+
+## v18 (Developer 4, laboratory) - added
+Rules changes (all in `firestore.rules`, header note v18): catalogue approval status and critical-limit source; orders may request only active and approved catalogue tests; new order steps received/accepted/rejected with their own permission and field lists; a correction needs `correctionReason`; new `pc_lab_alerts` (only with a critical result in the same commit; acknowledged only with `investigation.review`; no deletes); new `pc_lab_bills` (one per order, amounts must add up to the price, no-charge needs reason and authoriser, reversal needs reason, read only with `lab.payment` or `lab.report`, no deletes); `credit_accounts` get of a MISSING document is now also allowed for `lab.payment` (same narrow fix as dispensers, nothing else changed).
+Status: 142 offline file/logic tests pass (`node --test "tests/*.test.js"`). The emulator tests for v18 are written in `tests-emulator/rules.test.js` but were **NOT RUN** (no emulator or network in the build sandbox). **v18 rules have not been run against any emulator or real Firebase.** Document-lookup counts in the new rules were counted by hand only.
+Open: `credit_transactions` creation is shop-scoped only (an existing rule). Lab credit relies on it, as the pharmacy does; it is not permission-checked.

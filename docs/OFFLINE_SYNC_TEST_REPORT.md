@@ -20,3 +20,7 @@ Duplicate request returns no second deduction; failed commit leaves stock unchan
 | 11 | Sale on the Sales page while dispensing the same batch | both succeed or one retries; stock correct | |
 | 12 | Phase 4: record a dose offline on two devices, sync | single administration record per planned dose | |
 Gate: no Phase 5 release until rows 1-11 pass.
+
+## Laboratory (Developer 4) - not yet run
+Not tested: any offline or multi-device behaviour of the laboratory screens. Please run on two phones: (1) collect and receive a specimen offline, reconnect, check one status each; (2) enter a result on phone A while phone B verifies the old state, check the rules refuse the stale write and the screen says so; (3) bill the same test from two phones, check only one bill and one credit entry exist; (4) enter a critical result offline, reconnect, check the notice appears once; (5) try to save a credit bill offline, check it refuses with the message. Record date, device and build.
+Design for safety: every step is one batch; bill id = order id; credit entry ids are fixed.

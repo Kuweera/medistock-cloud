@@ -175,6 +175,18 @@ Where a field is explained on the screen itself (a short grey line under the box
 | Reference range in words (optional) | Optional | The reference range written in words, when numbers are not enough. |
 | Where the reference range comes from (needed if you give one) | Required if a reference range is given | The book, manual or laboratory the range came from. Needed when a range is given. |
 | Price (optional) | Optional | The price charged for the test. |
+| Start from a template (structure only) | Optional | Fills in the layout of a common test type. It never fills in units, ranges, prices, critical limits or the meaning of scale terms. |
+| Scale terms, one per line (optional meaning after =) | Required for a graded scale | The terms your laboratory reports in order (for example 1+, 2+). Local terms such as Tr or Trr are kept as typed; the app never assumes their meaning. |
+| Titer is reported as | Required for a titer | Whether the titer is a dilution such as 1:80 or a category from the choices. |
+| Susceptibility result codes, separated by commas | Required for organism and susceptibility | The codes or words your report uses for each antibiotic result. |
+| Antibiotics you test, separated by commas | Optional | The antibiotics your laboratory tests. |
+| Organisms you commonly report (optional, separated by commas) | Optional | A shortcut list of organisms; others can still be typed. |
+| Test method | Optional | The method used, for example the kit or technique. |
+| Equipment | Optional | The analyser or equipment used. |
+| Collection instructions | Optional | How the sample is collected, shown to whoever collects it. |
+| Processing instructions | Optional | How the laboratory handles the sample. |
+| Interpretation notes (from your approved source) | Optional | Notes from your own approved source. The app writes no interpretation itself. |
+| Approval status | Required | Draft tests cannot be requested; approved tests can. |
 
 ## Laboratory results (`laboratory.html`)
 
@@ -183,7 +195,22 @@ Where a field is explained on the screen itself (a short grey line under the box
 | Flag | Not marked | Whether the result is inside the expected range for this test. |
 | Comments | Not marked | Any comment on the result. |
 | Sample number (optional) | Optional | The number written on the sample container, if your laboratory numbers samples. |
-| Result (box built by the page) | Not marked | The result box is built by the page for each test: a number box for numeric tests, a list of choices, or a text box for a report. |
+| Result (box built by the page) | Required | The result boxes are built from the test's own setup: a number box, a list of allowed results, a graded scale, a titer, one box per parameter for a panel, or organisms with an antibiotic list. Only allowed values can be saved. |
+| Reason for the correction | Required when correcting | Why a verified or entered result is being replaced. The earlier result stays on record. |
+| Organism | Required for each organism row | The organism found. Tick No growth instead if nothing grew. |
+| Quantity or growth (optional) | Optional | How much growth, in the words your laboratory uses. |
+| Comment (optional) | Optional | A note about this organism. |
+| Specimen condition (optional) | Optional | A note on the specimen when accepting it. |
+| Reject the specimen — reason | Required to reject | Why the specimen cannot be used. Choose from the list; Other needs an explanation. A rejected specimen ends the request. |
+| Who was informed? | Required | The doctor or nurse told about a critical result. |
+| How | Required | In person, by phone, by message or other. |
+| Price | Required only when the test has no price | The price of this test, when the catalogue has none. |
+| How is it paid? | Required | Paid in full, part paid (rest on credit), not paid (credit), or no charge (authorised). |
+| Amount paid now | Required for part payment | Must be more than 0 and less than the price. |
+| Payment method | Required when money is received | Cash, mobile money, card or other. |
+| Name on the credit account | Required when anything is on credit | The name for the patient's credit account (the same account the pharmacy uses). |
+| Due date (optional) | Optional | When the credit should be paid. |
+| Reason for no charge | Required for no charge | Why the test is free. Recorded with the name of the person who authorised it. |
 
 ## Medication administration (`treatment.html`)
 
@@ -240,5 +267,5 @@ Where a field is explained on the screen itself (a short grey line under the box
 ## Findings
 - **186 fields** are labelled across these pages: 37 are marked required on the box, 16 are marked optional on the box, 98 now have their requirement stated for a form whose saving code I checked and tested, and **35 are still not marked either way**. The master plan asks that required and optional fields are clearly identified. That is now met for the forms listed above and **not yet** for the rest (plain notes, merge and sharing, laboratory result entry, administration beyond the reason rule, and the hours-after-start and weight-based order patterns). Whether a field is truly optional is decided by the code that saves it, so each remaining form needs the same check.
 - **Not covered by this document:** fields the page builds in code without a visible label (for example the result box on the laboratory page, described above), and the search and filter boxes that only narrow a list.
-- **Laboratory:** Developer 4 is rebuilding the result entry (reporting profiles). This section describes the current screen and will need updating.
+- **Laboratory:** Developer 4 rebuilt result entry (reporting profiles, specimen steps, critical notices, payment). This section describes the new screen.
 - **Hints:** the plan names frequency, route, duration, specimen and reference range. All five now have a short explanation on screen (earlier medicines: how often, route, for how long; test catalogue: sample, reference range). Developer 2's abbreviation box shows the meaning of shorthand.
