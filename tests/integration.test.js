@@ -54,7 +54,7 @@ test("service worker: every local script/page used by the new and Patient Care p
 
 test("rules: Phase 5 collections exist, nothing can be deleted, dispense records are append-only", () => {
   const r = read("firestore.rules");
-  assert.match(r, /\(v17\)/);
+  assert.match(r, /\(v18\)/);
   ["prescriptions", "dispense_records", "guidelines"].forEach(c => assert.match(r, new RegExp("match /" + c + "/\\{")));
   const block = n => { const i = r.indexOf("match /" + n + "/{"); return r.slice(i, r.indexOf("\n    }\n", i)); };
   assert.match(block("prescriptions"), /allow delete: if false/);
@@ -97,7 +97,7 @@ test("rules v17: new collections cannot be deleted; reversals, ledger caps and c
   assert.match(block("consumable_movements"), /existsAfter\(conItemPath/);
   const rx = block("prescriptions"); assert.match(rx, /dispense\.reverse/); assert.match(rx, /resource\.data\.qtyDispensed == 0/);
   assert.match(block("stock_transactions"), /drt_/);
-  assert.match(block("credit_accounts"), /resource == null && dispenserMayProbe\(\)/);
+  assert.match(block("credit_accounts"), /resource == null && \(dispenserMayProbe\(\) || labBillerMayProbe\(\)\)/);
 });
 test("pc-dispense-ext.js is cached for offline use and does not touch mc-core.js", () => {
   assert.ok(fs.existsSync(path.join(__dirname, "..", "pc-dispense-ext.js")));

@@ -1,0 +1,59 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Laboratory test harness</title></head>
+<body style="margin:0"><iframe id="f" style="border:0;width:100vw;height:100vh"></iframe>
+<script>
+/* Test harness (Developer 4): app shell (window.top.MC.api) with an IN-MEMORY Firestore stand-in so the real laboratory.html runs in a browser. NOT real Firebase, NO security rules.
+   TEST CONTENT ONLY: names, limits and scale terms below are invented for testing. */
+(function () {
+  var store = new Map(), listeners = [], clock = Date.now(), B = "biz1", F = "shop1", writes = [];
+  function put(c, id, d) { store.set(c + "/" + id, JSON.parse(JSON.stringify(d))); }
+  var today = new Date(), day = today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0") + "-" + String(today.getDate()).padStart(2, "0");
+  put("shops", F, { businessId: B, name: "Test Clinic", enabledServices: ["patient_care"] });
+  put("users", "owner1", { businessId: B, role: "owner", name: "Lab Owner", active: true });
+  var base = { businessId: B, facilityId: F, patientId: "p1", patientName: "Test Patient", encounterId: "e1", encounterNo: "V-1", priority: "routine", requestedBy: "doc1", requestedByName: "Dr Test", requestedAt: Date.now() - 600000, requestedDay: day, schemaVersion: 1 };
+  function o(id, name, extra) { put("pc_inv_orders", id, Object.assign({ id: id, name: name, status: "requested" }, base, extra)); }
+  o("oNum", "TEST number", { resultType: "number", units: "u/L", refMin: 10, refMax: 20, refSource: "Test source", price: 5000, specimen: "Blood", profile: { type: "number", critical: { low: 5, high: 50, values: [], source: "Test limits" } } });
+  o("oQual", "TEST qualitative", { resultType: "qualitative", choices: ["Positive", "Negative"], price: 3000, profile: { type: "qualitative", choices: ["Positive", "Negative"], critical: { low: null, high: null, values: ["Positive"], source: "Test limits" } } });
+  o("oScale", "TEST scale", { resultType: "semiquant", price: 0, profile: { type: "semiquant", scale: [{ term: "T1", meaning: "test meaning one" }, { term: "T2", meaning: "" }] } });
+  o("oMulti", "TEST panel", { resultType: "multi", price: 2000, profile: { type: "multi", params: [{ key: "a", label: "Alpha", type: "number", unit: "mg", refMin: 1, refMax: 2, refSource: "src" }, { key: "b", label: "Beta", type: "qualitative", choices: ["Yes", "No"] }] } });
+  o("oOrg", "TEST culture", { resultType: "organism", profile: { type: "organism", antibiotics: ["Abx1", "Abx2"], resultCodes: ["S", "R"], organisms: ["Org one"] } });
+  o("oTit", "TEST titer", { resultType: "titer", profile: { type: "titer", titerMode: "numeric" } });
+  o("oRecv", "TEST received", { resultType: "text", status: "received", receivedAt: Date.now() - 1000, receivedByName: "Lab Owner" });
+  o("oColl", "TEST collected", { resultType: "text", status: "collected", collectedAt: Date.now() - 1000 });
+  o("oV1", "TEST verified paid", { resultType: "text", status: "verified", price: 4000, verifiedAt: Date.now() - 60000, requestedAt: Date.now() - 3600000 });
+  o("oV2", "TEST verified credit", { resultType: "text", status: "reviewed", price: 6000 });
+  o("oV3", "TEST verified unbilled", { resultType: "text", status: "verified", price: 1500 });
+  put("pc_lab_bills", "oV1", { orderId: "oV1", businessId: B, facilityId: F, status: "paid", price: 4000, amountPaid: 4000, amountOutstanding: 0, amountWaived: 0 });
+  put("pc_lab_bills", "oV2", { orderId: "oV2", businessId: B, facilityId: F, status: "part_paid", price: 6000, amountPaid: 1000, amountOutstanding: 5000, amountWaived: 0 });
+  put("pc_inv_results", "oV1", { orderId: "oV1", businessId: B, facilityId: F, value: "x", status: "verified" });
+  put("pc_inv_results", "oV1b", { orderId: "oV1", businessId: B, facilityId: F, value: "y", status: "unverified", amends: "oV1", correctionReason: "typo" });
+  window.__db = { store: store, writes: writes, all: function (c) { var r = []; store.forEach(function (v, k) { if (k.indexOf(c + "/") === 0) r.push(Object.assign({ _id: k.slice(c.length + 1) }, JSON.parse(JSON.stringify(v)))); }); return r; },
+    get: function (c, i) { var v = store.get(c + "/" + i); return v ? JSON.parse(JSON.stringify(v)) : null; }, add: function (c, id, d) { put(c, id, d); notifyAll(); } };
+  function snapOf(q) {
+    var docs = [];
+    store.forEach(function (v, k) { var i = k.indexOf("/"), c = k.slice(0, i), id = k.slice(i + 1); if (c !== q.coll) return; for (var j = 0; j < q.wheres.length; j++) if (v[q.wheres[j].f] !== q.wheres[j].v) return;
+      docs.push({ id: id, data: function () { return JSON.parse(JSON.stringify(v)); }, exists: function () { return true; }, metadata: { hasPendingWrites: false } }); });
+    return { docs: docs, size: docs.length, empty: !docs.length, metadata: { fromCache: false }, forEach: function (f) { docs.forEach(f); } };
+  }
+  function notifyAll() { listeners.forEach(function (l) { setTimeout(function () { l.next(snapOf(l.q)); }, 0); }); }
+  function stampV(d) { return JSON.parse(JSON.stringify(d, function (k, v) { return v && v.__ts ? ++clock : v; })); }
+  function write(kind, r, d) { var v = stampV(d); if (kind === "update") { if (!store.has(r.path)) throw new Error("missing " + r.path); store.set(r.path, Object.assign(store.get(r.path), v)); } else if (kind === "set" && store.has(r.path) && r.coll === "pc_lab_bills") throw new Error("bill exists"); else store.set(r.path, v); writes.push({ kind: kind, path: r.path, data: v }); }
+  var api = {
+    initializeApp: function () { return {}; }, getAuth: function () { return { currentUser: { uid: "owner1" }, signOut: function () { return Promise.resolve(); } }; },
+    onAuthStateChanged: function (a, cb) { setTimeout(function () { cb({ uid: "owner1" }); }, 0); return function () {}; }, getFirestore: function () { return {}; },
+    doc: function (d, c, id) { if (d && d.type === "collection") { c = d.coll; id = "auto_" + Math.random().toString(36).slice(2); } return { type: "document", coll: c, id: id, path: c + "/" + id }; },
+    collection: function (d, c) { return { type: "collection", coll: c, wheres: [] }; },
+    where: function (f, op, v) { return { f: f, op: op, v: v }; }, limit: function (n) { return { limit: n }; }, orderBy: function () { return {}; },
+    query: function (c) { return { type: "query", coll: c.coll, wheres: Array.prototype.slice.call(arguments, 1).filter(function (x) { return x.f; }) }; },
+    serverTimestamp: function () { return { __ts: 1 }; },
+    getDoc: function (r) { var has = store.has(r.path), v = has ? JSON.parse(JSON.stringify(store.get(r.path))) : null; return Promise.resolve({ id: r.id, exists: function () { return has; }, data: function () { return v; } }); },
+    getDocFromCache: function (r) { return api.getDoc(r); }, getDocs: function (q) { return Promise.resolve(snapOf(q)); },
+    setDoc: function (r, d) { write("set", r, d); notifyAll(); return Promise.resolve(); }, updateDoc: function (r, d) { write("update", r, d); notifyAll(); return Promise.resolve(); },
+    onSnapshot: function (q) { var fn = Array.prototype.slice.call(arguments, 1).filter(function (x) { return typeof x === "function"; })[0]; var l = { q: q, next: fn }; listeners.push(l); setTimeout(function () { fn(snapOf(q)); }, 0); return function () { listeners = listeners.filter(function (x) { return x !== l; }); }; },
+    writeBatch: function () { var ops = [], w = {}; w.set = function (r, d) { ops.push(["set", r, d]); return w; }; w.update = function (r, d) { ops.push(["update", r, d]); return w; };
+      w.commit = function () { try { ops.forEach(function (x) { write(x[0], x[1], x[2]); }); } catch (e) { return Promise.reject(e); } notifyAll(); return Promise.resolve(); }; return w; }
+  };
+  window.MC = { api: function () { return api; }, go: function () {}, home: function () {} };
+  window.mcGo = function (u) { window.__went = u; };
+  document.getElementById("f").src = ({ reports: "/lab-reports.html", catalogue: "/investigations.html" })[new URLSearchParams(location.search).get("page")] || "/laboratory.html";
+})();
+</script></body></html>
