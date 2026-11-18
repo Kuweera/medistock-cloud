@@ -26,6 +26,10 @@ const users = {
   rev: { role: "operator", businessId: B, shopId: A, active: true, perms: { "dispense.view": true, "dispense.perform": true, "dispense.reverse": true } },
   cman: { role: "operator", businessId: B, shopId: A, active: true, perms: { "consumables.manage": true, "consumables.use": true } },
   cuse: { role: "operator", businessId: B, shopId: A, active: true, perms: { "consumables.use": true } },
+  labTech: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "lab.collect": true, "lab.process": true, "lab.result": true, "lab.verify": true } },
+  labColl: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "lab.collect": true } },
+  labCash: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "lab.payment": true } },
+  clin: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "investigation.request": true, "investigation.review": true } },
   rules0: { role: "operator", businessId: B, shopId: A, active: true, perms: { "treatment.prescribe": true } }
 };
 const db = uid => env.authenticatedContext(uid).firestore();
@@ -337,4 +341,67 @@ test("v17 consumables: use needs a movement; negative stock, other shops and non
   await assert.rejects(PCX.runConsumableUse(tools("pharmB"), { businessId: B, facilityId: A, uid: "pharmB", requestId: "u3", items: [{ itemId: c.id, qty: 1 }] }));
   await assertFails(updateDoc(doc(db("cman"), "consumable_items", c.id), { qtyOnHand: 999, updatedBy: "cman", updatedAt: serverTimestamp() }));
   await assertFails(deleteDoc(doc(db("owner"), "consumable_items", c.id)));
+});
+
+// =====================================================================================================================
+// v18 (Developer 4): laboratory specimen steps, corrections, critical notices and bills.  WRITTEN, NOT RUN (no emulator in the sandbox).
+// =====================================================================================================================
+const upd = (uid, extra) => Object.assign({ updatedAt: serverTimestamp(), updatedBy: uid }, extra);
+async function seedLab(status, extra) {
+  await env.withSecurityRulesDisabled(async ctx => { await setDoc(doc(ctx.firestore(), "pc_inv_orders", "L1"), Object.assign({ businessId: B, facilityId: A, patientId: "p1", encounterId: "enc1", status: status, name: "T", resultType: "number", price: 5000, priority: "routine" }, extra || {})); });
+}
+test("v18 lab: collected -> received -> accepted -> processing need lab.process; a collect-only user cannot receive", async () => {
+  await seedLab("collected");
+  await assertFails(updateDoc(doc(db("labColl"), "pc_inv_orders", "L1"), upd("labColl", { status: "received", receivedAt: serverTimestamp(), receivedBy: "labColl", receivedByName: "x" })));
+  await assertSucceeds(updateDoc(doc(db("labTech"), "pc_inv_orders", "L1"), upd("labTech", { status: "received", receivedAt: serverTimestamp(), receivedBy: "labTech", receivedByName: "x" })));
+  await assertSucceeds(updateDoc(doc(db("labTech"), "pc_inv_orders", "L1"), upd("labTech", { status: "accepted", acceptedAt: serverTimestamp(), acceptedBy: "labTech", acceptedByName: "x", specimenCondition: "ok" })));
+  await assertSucceeds(updateDoc(doc(db("labTech"), "pc_inv_orders", "L1"), upd("labTech", { status: "processing", processingAt: serverTimestamp(), processingBy: "labTech", processingByName: "x" })));
+});
+test("v18 lab: a specimen can be rejected only with a reason, and a rejected order cannot move on", async () => {
+  await seedLab("received");
+  await assertFails(updateDoc(doc(db("labTech"), "pc_inv_orders", "L1"), upd("labTech", { status: "rejected", rejectedAt: serverTimestamp(), rejectedBy: "labTech", rejectedByName: "x", rejectReason: "", rejectCode: "x" })));
+  await assertSucceeds(updateDoc(doc(db("labTech"), "pc_inv_orders", "L1"), upd("labTech", { status: "rejected", rejectedAt: serverTimestamp(), rejectedBy: "labTech", rejectedByName: "x", rejectReason: "Haemolysed", rejectCode: "Haemolysed" })));
+  await assertFails(updateDoc(doc(db("labTech"), "pc_inv_orders", "L1"), upd("labTech", { status: "processing", processingAt: serverTimestamp(), processingBy: "labTech", processingByName: "x" })));
+});
+test("v18 lab: a correction needs a reason and keeps the old result; a verified result is never edited", async () => {
+  await seedLab("processing");
+  const r = (id, extra) => Object.assign(stamp("labTech"), { orderId: "L1", patientId: "p1", value: 3, status: "unverified", enteredBy: "labTech" }, extra || {});
+  const b1 = writeBatch(db("labTech")); b1.set(doc(db("labTech"), "pc_inv_results", "L1"), r()); b1.update(doc(db("labTech"), "pc_inv_orders", "L1"), upd("labTech", { status: "resulted", resultedAt: serverTimestamp(), resultedBy: "labTech", resultedByName: "x", currentResultId: "L1" })); await assertSucceeds(b1.commit());
+  const b2 = writeBatch(db("labTech")); b2.set(doc(db("labTech"), "pc_inv_results", "L2"), r("L2", { amends: "L1" })); b2.update(doc(db("labTech"), "pc_inv_orders", "L1"), upd("labTech", { status: "resulted", resultedAt: serverTimestamp(), resultedBy: "labTech", resultedByName: "x", currentResultId: "L2" })); await assertFails(b2.commit());
+  const b3 = writeBatch(db("labTech")); b3.set(doc(db("labTech"), "pc_inv_results", "L2"), r("L2", { amends: "L1", correctionReason: "typo" })); b3.update(doc(db("labTech"), "pc_inv_orders", "L1"), upd("labTech", { status: "resulted", resultedAt: serverTimestamp(), resultedBy: "labTech", resultedByName: "x", currentResultId: "L2" })); await assertSucceeds(b3.commit());
+  await assertFails(updateDoc(doc(db("labTech"), "pc_inv_results", "L1"), upd("labTech", { value: 99 })));
+  await assertFails(deleteDoc(doc(db("owner"), "pc_inv_results", "L1")));
+});
+test("v18 lab: a critical notice can exist only with a critical result, is acknowledged by a clinician (not the lab), and is never deleted", async () => {
+  await seedLab("processing");
+  const res = (crit) => Object.assign(stamp("labTech"), { orderId: "L1", patientId: "p1", value: 3, status: "unverified", enteredBy: "labTech", critical: crit });
+  const alert = Object.assign(stamp("labTech"), { orderId: "L1", patientId: "p1", resultId: "L1", status: "open" });
+  const bad = writeBatch(db("labTech")); bad.set(doc(db("labTech"), "pc_inv_results", "L1"), res(false)); bad.update(doc(db("labTech"), "pc_inv_orders", "L1"), upd("labTech", { status: "resulted", resultedAt: serverTimestamp(), resultedBy: "labTech", resultedByName: "x", currentResultId: "L1" })); bad.set(doc(db("labTech"), "pc_lab_alerts", "L1"), alert);
+  await assertFails(bad.commit());
+  const good = writeBatch(db("labTech")); good.set(doc(db("labTech"), "pc_inv_results", "L1"), res(true)); good.update(doc(db("labTech"), "pc_inv_orders", "L1"), upd("labTech", { status: "resulted", resultedAt: serverTimestamp(), resultedBy: "labTech", resultedByName: "x", currentResultId: "L1" })); good.set(doc(db("labTech"), "pc_lab_alerts", "L1"), alert);
+  await assertSucceeds(good.commit());
+  await assertFails(updateDoc(doc(db("labTech"), "pc_lab_alerts", "L1"), upd("labTech", { status: "informed", informedBy: "labTech", informedByName: "x", informedAt: serverTimestamp(), informedPerson: "", informedHow: "phone" })));
+  await assertSucceeds(updateDoc(doc(db("labTech"), "pc_lab_alerts", "L1"), upd("labTech", { status: "informed", informedBy: "labTech", informedByName: "x", informedAt: serverTimestamp(), informedPerson: "Dr Test", informedHow: "phone" })));
+  await assertFails(updateDoc(doc(db("labTech"), "pc_lab_alerts", "L1"), upd("labTech", { status: "acknowledged", ackedBy: "labTech", ackedByName: "x", ackedAt: serverTimestamp(), ackNote: "" })));
+  await assertSucceeds(updateDoc(doc(db("clin"), "pc_lab_alerts", "L1"), upd("clin", { status: "acknowledged", ackedBy: "clin", ackedByName: "x", ackedAt: serverTimestamp(), ackNote: "" })));
+  await assertFails(deleteDoc(doc(db("owner"), "pc_lab_alerts", "L1")));
+});
+test("v18 lab bills: one per order, sums must match, no charge needs a reason, reversal needs a reason, lab-only staff cannot read bills, nothing is deleted", async () => {
+  await seedLab("verified");
+  const bill = Object.assign(stamp("labCash"), { orderId: "L1", patientId: "p1", price: 5000, amountPaid: 1000, amountOutstanding: 4000, amountWaived: 0, status: "part_paid", customerName: "x" });
+  await assertFails(setDoc(doc(db("labTech"), "pc_lab_bills", "L1"), bill));
+  await assertFails(setDoc(doc(db("labCash"), "pc_lab_bills", "L1"), Object.assign({}, bill, { amountOutstanding: 1 })));
+  await assertFails(setDoc(doc(db("labCash"), "pc_lab_bills", "L1"), Object.assign({}, bill, { price: 1, amountPaid: 1, amountOutstanding: 0 })));
+  await assertFails(setDoc(doc(db("labCash"), "pc_lab_bills", "L1"), Object.assign({}, bill, { amountPaid: 0, amountOutstanding: 0, amountWaived: 5000, status: "waived" })));
+  await assertSucceeds(setDoc(doc(db("labCash"), "pc_lab_bills", "L1"), bill));
+  await assertFails(setDoc(doc(db("labCash"), "pc_lab_bills", "L1"), Object.assign({}, bill, { amountPaid: 5000, amountOutstanding: 0, status: "paid" })));
+  await assertFails(getDoc(doc(db("labTech"), "pc_lab_bills", "L1")));
+  await assertSucceeds(getDoc(doc(db("labCash"), "pc_lab_bills", "L1")));
+  await assertFails(updateDoc(doc(db("labCash"), "pc_lab_bills", "L1"), upd("labCash", { status: "reversed", reverseReason: "", reversedBy: "labCash", reversedByName: "x", reversedAt: serverTimestamp() })));
+  await assertSucceeds(updateDoc(doc(db("labCash"), "pc_lab_bills", "L1"), upd("labCash", { status: "reversed", reverseReason: "wrong patient", reversedBy: "labCash", reversedByName: "x", reversedAt: serverTimestamp() })));
+  await assertFails(deleteDoc(doc(db("owner"), "pc_lab_bills", "L1")));
+});
+test("v18 lab: the cashier may look for a missing credit account, the lab technician may not", async () => {
+  await assertSucceeds(getDoc(doc(db("labCash"), "credit_accounts", "dspca_p1")));
+  await assertFails(getDoc(doc(db("labTech"), "credit_accounts", "dspca_p1")));
 });
