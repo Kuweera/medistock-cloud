@@ -14,7 +14,6 @@ let env;
 const P = { "patient.view": true };
 const users = {
   owner: { role: "owner", businessId: B, active: true },
-  owner2: { role: "owner", businessId: B, active: true },
   pharm: { role: "operator", businessId: B, shopId: A, active: true, perms: Object.assign({ "dispense.view": true, "dispense.perform": true }, P) },
   viewer: { role: "operator", businessId: B, shopId: A, active: true, perms: { "dispense.view": true } },
   nurse: { role: "operator", businessId: B, shopId: A, active: true, perms: Object.assign({ "treatment.administer": true }, P) },
@@ -231,10 +230,11 @@ const params = (uid, o) => Object.assign({ businessId: B, facilityId: A, uid, us
 
 test("v16 engine: the owner can dispense (first dispensing reads a prescription and record that do not exist yet)", async () => {
   await seedEngine();
-  const r = await PCD.runDispense(tools("owner2"), params("owner2"));
+  const r = await PCD.runDispense(tools("owner"), params("owner"));
   assert.equal(r.duplicate, false);
-  await env.withSecurityRulesDisabled(async c => { const rx = (await getDoc(doc(c.firestore(), "prescriptions", "e1"))).data(); assert.equal(rx.qtyDispensed, 12); assert.equal(rx.qtyOutstanding, 8);
-    assert.equal((await getDoc(doc(c.firestore(), "drugs", "d1"))).data().currentStockBase, 38); });
+  await env.withSecurityRulesDisabled(async c => { const f = c.firestore(); // one Firestore object per context: a second c.firestore() call throws "already started"
+    const rx = (await getDoc(doc(f, "prescriptions", "e1"))).data(); assert.equal(rx.qtyDispensed, 12); assert.equal(rx.qtyOutstanding, 8);
+    assert.equal((await getDoc(doc(f, "drugs", "d1"))).data().currentStockBase, 38); });
 });
 test("v16 engine: an operator with dispense permission (and NOT patient.view) can dispense, twice, and a retry is a no-op", async () => {
   await seedEngine();
