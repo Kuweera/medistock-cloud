@@ -14,6 +14,7 @@ let env;
 const P = { "patient.view": true };
 const users = {
   owner: { role: "owner", businessId: B, active: true },
+  owner2: { role: "owner", businessId: B, active: true },
   pharm: { role: "operator", businessId: B, shopId: A, active: true, perms: Object.assign({ "dispense.view": true, "dispense.perform": true }, P) },
   viewer: { role: "operator", businessId: B, shopId: A, active: true, perms: { "dispense.view": true } },
   nurse: { role: "operator", businessId: B, shopId: A, active: true, perms: Object.assign({ "treatment.administer": true }, P) },
@@ -230,7 +231,7 @@ const params = (uid, o) => Object.assign({ businessId: B, facilityId: A, uid, us
 
 test("v16 engine: the owner can dispense (first dispensing reads a prescription and record that do not exist yet)", async () => {
   await seedEngine();
-  const r = await PCD.runDispense(tools("owner"), params("owner"));
+  const r = await PCD.runDispense(tools("owner2"), params("owner2"));
   assert.equal(r.duplicate, false);
   await env.withSecurityRulesDisabled(async c => { const rx = (await getDoc(doc(c.firestore(), "prescriptions", "e1"))).data(); assert.equal(rx.qtyDispensed, 12); assert.equal(rx.qtyOutstanding, 8);
     assert.equal((await getDoc(doc(c.firestore(), "drugs", "d1"))).data().currentStockBase, 38); });
@@ -406,4 +407,10 @@ test("v18 lab bills: one per order, sums must match, no charge needs a reason, r
 test("v18 lab: the cashier may look for a missing credit account, the lab technician may not", async () => {
   await assertSucceeds(getDoc(doc(db("labCash"), "credit_accounts", "dspca_p1")));
   await assertFails(getDoc(doc(db("labTech"), "credit_accounts", "dspca_p1")));
+});
+
+test("v18: administration records are readable by a user with dispense.reverse, not by a plain dispenser", async () => {
+  await env.withSecurityRulesDisabled(async ctx => { await setDoc(doc(ctx.firestore(), "pc_mar_records", "m1"), { businessId: B, facilityId: A, orderId: "e1", patientId: "p1", outcome: "administered", status: "active" }); });
+  await assertSucceeds(getDoc(doc(db("rev"), "pc_mar_records", "m1")));
+  await assertFails(getDoc(doc(db("dispOnly"), "pc_mar_records", "m1")));
 });
