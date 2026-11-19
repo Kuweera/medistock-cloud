@@ -1150,7 +1150,10 @@ service cloud.firestore {
     }
 
     match /pc_mar_records/{marId} {
-      allow read: if childReadOk(resource.data);
+      // v18: a pharmacist who may reverse a dispensing (dispense.reverse) must be able to READ the administration records of their own facility, because
+      // the reversal first checks that no dose was already given. Without this, a reverser without patient.view was always refused. Read only.
+      allow read: if childReadOk(resource.data)
+        || (canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'dispense.reverse'));
       allow create: if pcCreateOk(request.resource.data)
         && hasPerm(request.resource.data.businessId, 'treatment.administer')
         && request.resource.data.status == 'active'
