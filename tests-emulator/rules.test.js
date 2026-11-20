@@ -130,7 +130,8 @@ test("prescriptions and records: facility isolation on reads", async () => {
   await assertSucceeds(dispense(db("pharm"), "pharm").commit());
   await assertSucceeds(getDoc(doc(db("pharm"), "prescriptions", "o1")));
   await assertSucceeds(getDoc(doc(db("viewer"), "dispense_records", "aa11_0")));
-  await assertFails(getDoc(doc(db("nurse"), "prescriptions", "o1")));
+  await assertSucceeds(getDoc(doc(db("nurse"), "prescriptions", "o1")));          // v19: clinicians (administer) may read dispensing
+  await assertFails(getDoc(doc(db("receptionist"), "prescriptions", "o1")));      // patient.view alone does not give dispensing
   await assertFails(getDoc(doc(db("pharmB"), "prescriptions", "o1")));
   await assertFails(getDoc(doc(db("stranger"), "dispense_records", "aa11_0")));
 });
@@ -268,13 +269,13 @@ test("v16 reads: a missing prescription or record can be probed only by dispense
   // (a dispenser of ANOTHER business can also probe a missing id: the rules cannot tell whose it would be. This reveals only that a guessed id does not exist; existing documents stay protected, tested below.)
   await PCD.runDispense(tools("pharm"), params("pharm"));
   const rxRead = u => getDoc(doc(db(u), "prescriptions", "e1"));
-  await assertSucceeds(rxRead("owner")); await assertSucceeds(rxRead("viewer")); await assertFails(rxRead("nurse")); await assertFails(rxRead("pharmB")); await assertFails(rxRead("stranger"));
+  await assertSucceeds(rxRead("owner")); await assertSucceeds(rxRead("viewer")); await assertSucceeds(rxRead("nurse")); await assertFails(rxRead("receptionist")); await assertFails(rxRead("pharmB")); await assertFails(rxRead("stranger"));
 });
 test("v16 reads: dispense.view can list its own facility's prescriptions and records but not another facility's", async () => {
   await seedEngine(); await PCD.runDispense(tools("pharm"), params("pharm"));
   const q = (u, c, fac) => getDocs(query(collection(db(u), c), where("businessId", "==", B), where("facilityId", "==", fac), limit(5)));
   await assertSucceeds(q("viewer", "prescriptions", A)); await assertSucceeds(q("viewer", "dispense_records", A));
-  await assertFails(q("viewer", "prescriptions", S)); await assertFails(q("nurse", "dispense_records", A)); await assertFails(q("pharmB", "prescriptions", A));
+  await assertFails(q("viewer", "prescriptions", S)); await assertSucceeds(q("nurse", "dispense_records", A)); await assertFails(q("receptionist", "dispense_records", A)); await assertFails(q("pharmB", "prescriptions", A));
 });
 test("v16 reads: dispense.view (without patient.view) can read MEDICINE orders, registration numbers and allergies of its facility, not procedure orders", async () => {
   await seedEngine();
@@ -466,7 +467,7 @@ test("v19: stopping the order cancels the pending prescription in the same commi
   ok.update(doc(f, "prescriptions", "n9"), Object.assign({ status: "cancelled", endedBy: "prescriber", endedAt: serverTimestamp(), endReason: "not needed" }, up));
   await assertSucceeds(ok.commit());
   // after something was dispensed the prescription can no longer be cancelled
-  await env.withSecurityRulesDisabled(async ctx => { await setDoc(doc(ctx.firestore(), "prescriptions", "n10"), Object.assign(rxPending("prescriber", "n10"), { status: "partially_dispensed", qtyDispensed: 5, qtyOutstanding: 15 })); await setDoc(doc(ctx.firestore(), "pc_treatment_orders", "n10"), { businessId: B, facilityId: A, kind: "medicine", status: "active", patientId: "p1", prescriberId: "prescriber" }); });
+  await env.withSecurityRulesDisabled(async ctx => { const g = ctx.firestore(); await setDoc(doc(g, "prescriptions", "n10"), Object.assign(rxPending("prescriber", "n10"), { status: "partially_dispensed", qtyDispensed: 5, qtyOutstanding: 15 })); await setDoc(doc(g, "pc_treatment_orders", "n10"), { businessId: B, facilityId: A, kind: "medicine", status: "active", patientId: "p1", prescriberId: "prescriber" }); });
   const late = writeBatch(f);
   late.update(doc(f, "pc_treatment_orders", "n10"), Object.assign({ status: "stopped", endedBy: "prescriber", endedAt: serverTimestamp(), endReason: "late stop" }, up));
   late.update(doc(f, "prescriptions", "n10"), Object.assign({ status: "cancelled", endedBy: "prescriber", endedAt: serverTimestamp(), endReason: "late stop" }, up));
