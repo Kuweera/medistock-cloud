@@ -519,3 +519,25 @@ test("v19 lab ledger: the lab cashier writes the bill and its `sales` rows in ON
   const again = writeBatch(f); again.set(doc(f, "pc_lab_bills", "L1"), bill);
   await assertFails(again.commit());
 });
+// ======================= v20 (Lead): visit journey hint =======================
+test("v20 journey: staff with an encounter permission can set a small valid journey hint; invalid values, extra keys, oversized notes and users without an encounter permission are refused", async () => {
+  await env.withSecurityRulesDisabled(async ctx => { await setDoc(doc(ctx.firestore(), "pc_encounters", "ej1"), { businessId: B, facilityId: A, patientId: "p1", status: "open", stage: "registered" }); });
+  const up = (u, journey, extra) => updateDoc(doc(db(u), "pc_encounters", "ej1"), Object.assign({ journey, updatedBy: u, updatedAt: serverTimestamp() }, extra || {}));
+  const good = { v: 1, next: "investigation", waiting: ["laboratory", "clinician"], note: "FBC and malaria test" };
+  await assertSucceeds(up("consultant", good));
+  await assertSucceeds(up("consultant", { v: 1, next: "none" }, { stage: "in_consultation" }));
+  await assertFails(up("consultant", Object.assign({}, good, { next: "teleport" })));
+  await assertFails(up("consultant", Object.assign({}, good, { secret: "x" })));
+  await assertFails(up("consultant", Object.assign({}, good, { v: 2 })));
+  await assertFails(up("consultant", Object.assign({}, good, { waiting: ["laboratory", "pharmacy", "treatment", "clinician", "patient"] })));
+  await assertFails(up("consultant", Object.assign({}, good, { waiting: ["bank"] })));
+  await assertFails(up("consultant", Object.assign({}, good, { note: "x".repeat(141) })));
+  await assertFails(up("consultant", "a string"));
+  await assertFails(up("receptionist", good));
+  await assertFails(up("prescriberB", good));
+});
+test("v20 journey: it cannot be set on a closed encounter, and no other field can ride along with it", async () => {
+  await env.withSecurityRulesDisabled(async ctx => { const g = ctx.firestore(); await setDoc(doc(g, "pc_encounters", "ej2"), { businessId: B, facilityId: A, patientId: "p1", status: "closed", stage: "registered" }); await setDoc(doc(g, "pc_encounters", "ej3"), { businessId: B, facilityId: A, patientId: "p1", status: "open", stage: "registered", reason: "x" }); });
+  await assertFails(updateDoc(doc(db("consultant"), "pc_encounters", "ej2"), { journey: { v: 1, next: "none" }, updatedBy: "consultant", updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(db("consultant"), "pc_encounters", "ej3"), { journey: { v: 1, next: "none" }, reason: "changed", updatedBy: "consultant", updatedAt: serverTimestamp() }));
+});
