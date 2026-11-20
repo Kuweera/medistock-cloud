@@ -88,13 +88,20 @@ const OUT = process.argv[2] || ".";
   const ct = (await db("all", "credit_transactions")); assert.equal(ct.length, 1); assert.equal(ct[0].type, "CREDIT_SALE"); assert.equal(ct[0].balanceChange, 2000);
   assert.equal((await db("all", "credit_accounts")).length, 1);
   assert.equal(await f.locator("#billBtn").count(), 0, "already billed: no second bill form");
+  { // v19: the main ledger (Cash Position reads `sales`): part paid = one PAID row + one CREDIT row, no stock effect
+    const sl = await db("all", "sales"); assert.deepEqual(sl.map(x => [x.paymentStatus, x.total]).sort(), [["CREDIT", 2000], ["PAID", 1000]]);
+    sl.forEach(x => { assert.equal(x.drugClass, "Laboratory"); assert.equal(x.baseQtyDeducted, 0); assert.equal(x.costOfGoods, 0); assert.equal(x.source, "laboratory"); });
+  }
   await f.locator("#reverseBillBtn").click(); await page.waitForTimeout(300);
   assert.equal((await db("get", "pc_lab_bills", "oQual")).status, "reversed");
+  { const sl = await db("all", "sales"); assert.equal(sl.length, 4, "two reversal rows added, none removed"); assert.equal(sl.reduce((t, x) => t + x.total, 0), 0, "lab revenue nets to zero after reversal");
+    assert.equal(sl.filter(x => x.paymentStatus === "PAID").reduce((t, x) => t + x.total, 0), 0, "cash drawer nets to zero"); }
   const ct2 = await db("all", "credit_transactions"); assert.equal(ct2.reduce((s, t) => s + t.balanceChange, 0), 0, "credit balance back to zero");
   // waiver needs a reason, and is recorded with who authorised it
   await tab("resulted"); await open("oMulti"); await f.locator("#bMode").selectOption("waive"); await f.locator("#billBtn").click(); await page.waitForTimeout(150);
   assert.match(await f.locator("#bMsg").innerText(), /reason/i); assert.equal(await db("get", "pc_lab_bills", "oMulti"), null);
   assert.equal((await db("all", "credit_transactions")).length, 2, "no extra financial records");
+  assert.equal((await db("all", "sales")).length, 4, "a refused waiver writes no sales rows");
   await page.screenshot({ path: OUT + "/lab-bill-mobile.png" });
   await page.setViewportSize({ width: 1280, height: 800 }); await page.waitForTimeout(200); await page.screenshot({ path: OUT + "/lab-desktop.png" });
   assert.deepEqual(errors, [], "no page errors");

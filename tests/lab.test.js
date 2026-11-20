@@ -94,3 +94,24 @@ test("Reports: a request is NOT revenue; only billed tests count; collected vs c
   assert.equal(r.rejected.length, 1); assert.equal(r.awaitingVerification.length, 1); assert.equal(r.correctedResults.length, 1); assert.equal(r.volume[0].name, "Malaria"); assert.equal(r.averageTurnaroundMinutes, 60);
   assert.equal(L.report(orders, [], bills, { from: "2026-01-01", to: "2026-01-02" }).total, 0);
 });
+
+test("Ledger (v19): paid and credit parts become sales rows with fixed ids, no stock effect; waived writes nothing", () => {
+  const ctx = { businessId: "b", shopId: "s", uid: "u", userName: "N", customerId: "dspca_p1" }, o = { id: "o1", name: "Malaria test", investigationId: "t1" };
+  const part = L.ledgerRows(o, L.bill({ price: 5000, amountPaid: 2000 }), ctx);
+  assert.deepEqual(part.map(r => [r.id, r.data.total, r.data.paymentStatus]), [["labsl_o1_p", 2000, "PAID"], ["labsl_o1_c", 3000, "CREDIT"]]);
+  part.forEach(r => { assert.equal(r.data.baseQtyDeducted, 0); assert.equal(r.data.costOfGoods, 0); assert.equal(r.data.drugClass, "Laboratory"); assert.equal(r.data.drugId, "lab_t1"); assert.equal(r.data.receiptId, null); });
+  assert.equal(part[1].data.customerId, "dspca_p1"); assert.equal(part[0].data.customerId, null);
+  assert.equal(L.ledgerRows(o, L.bill({ price: 5000, waived: true }), ctx).length, 0);
+  assert.equal(L.ledgerRows(o, L.bill({ price: 0 }), ctx).length, 0);
+});
+test("Ledger (v19): cash drawer reconciles: cash rows in = cash rows out after a reversal; credit part reverses on credit", () => {
+  const ctx = { businessId: "b", shopId: "s", uid: "u", userName: "N", customerId: "dspca_p1" }, o = { id: "o2", name: "FBC" };
+  const bl = L.bill({ price: 8000, amountPaid: 3000 });
+  const made = L.ledgerRows(o, bl, ctx);
+  const rev = L.reversalRows(o, { amountPaid: bl.paid, amountOutstanding: bl.outstanding, customerId: "dspca_p1" }, ctx, "wrong patient");
+  const cash = rows => rows.filter(r => r.data.paymentStatus !== "CREDIT").reduce((a, r) => a + r.data.total, 0);
+  assert.equal(cash(made) + cash(rev.rows), 0); assert.equal(rev.cashToReturn, 3000);
+  assert.deepEqual(rev.rows.map(r => r.id), ["labrvsl_o2_p", "labrvsl_o2_c"]);
+  assert.equal(made.concat(rev.rows).reduce((a, r) => a + r.data.total, 0), 0, "revenue nets to zero");
+  assert.equal(o.id, "o2"); assert.equal(made[0].data.drugId, "lab_o2", "falls back to the order id when the test has no catalogue id");
+});
