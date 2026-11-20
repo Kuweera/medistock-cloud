@@ -168,6 +168,17 @@
   details.more > summary::before { content: "+ "; font-weight: 800; }
   details.more[open] > summary::before { content: "\2212\00a0"; }
   details.more[open] { padding-bottom: 8px; }
+  /* ===== Stage 1 (Developer 2): patient list toolbar and rows ===== */
+  .toolbar{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; align-items:stretch;}
+  .toolbar input{flex:1 1 220px; min-width:0; padding:12px; font-size:15px;}
+  .toolbar .btn-primary{flex:0 0 auto; width:auto; margin:0; padding:12px 16px; white-space:nowrap;}
+  @media (max-width:479px){ .toolbar .btn-primary{flex:1 1 100%;} }
+  .pill-row .pill-btn{min-height:40px;}
+  .chip.local{color:var(--accent2); border:1px solid var(--accent2); background:transparent;}
+  .chip.shared{color:var(--warn); border:1px solid var(--warn); background:transparent;}
+  .pt{min-height:48px;}
+  .pt-from{font-size:12px; color:var(--warn); font-weight:600; margin-top:2px;}
+  @media (min-width:900px){ #results{display:grid; grid-template-columns:1fr 1fr; column-gap:24px;} #results .empty{grid-column:1/-1;} }
 </style>
 <script>
 (function(){
@@ -179,16 +190,6 @@
 })();
 </script>
 </head>
-<body>
-
-<body>
-
-<body>
-
-<body>
-
-<body>
-
 <body>
 
 <header class="app-header">
@@ -256,31 +257,17 @@
 <div class="card hidden" id="gateCard"><div id="gateMsg" class="empty"></div></div>
 
 <div id="mainArea" class="hidden">
-  <div class="card">
-    <h2>Find a patient</h2>
-    <input type="search" id="q" placeholder="Name, phone number or registration number" autocomplete="off">
-    <div class="hint2" id="listInfo"></div>
-    <div id="results" style="margin-top:8px;"></div>
-    <button class="btn-small btn-secondary hidden" id="moreBtn" style="width:100%; margin-top:10px;">Show more</button>
-    <button class="btn-small btn-secondary" id="dupScanBtn" style="width:100%; margin-top:10px;">Find possible duplicate patients</button>
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="Search name, phone or reg. no." autocomplete="off" aria-label="Search patients">
+    <button type="button" class="btn-primary hidden" id="showFormBtn">+ Register New Patient</button>
   </div>
-
-  <div class="card hidden" id="dupCard">
-    <h2>Possible duplicates</h2>
-    <div class="hint2" style="margin-top:0;">Pairs of patients at this facility that look like the same person. Open a pair to compare them. Only someone with merge permission can merge.</div>
-    <div id="dupList"></div>
-    <button class="btn-small btn-secondary" id="dupCloseBtn" style="width:100%; margin-top:10px;">Close</button>
+  <div class="pill-row" id="scopeTabs" role="tablist" aria-label="Show patients">
+    <button type="button" class="pill-btn selected" data-scope="all">All</button>
+    <button type="button" class="pill-btn" data-scope="local">Local</button>
+    <button type="button" class="pill-btn" data-scope="shared">Shared with us</button>
   </div>
-
-  <div class="card hidden" id="sharedCard">
-    <h2>Shared with this facility</h2>
-    <div class="hint2" style="margin-top:0;">Patients that other facilities have shared with you. You can read them but not change them.</div>
-    <div id="sharedList"></div>
-  </div>
-
-  <div class="card hidden" id="detailCard"></div>
-
-  <button class="btn-primary hidden" id="showFormBtn" style="margin-bottom:14px;">Register a new patient</button>
+  <div class="hint2" id="listInfo" style="margin:0 0 8px;"></div>
+  <div class="msg ok" id="doneMsg"></div>
 
   <div class="card hidden" id="formCard">
     <h2>Register a new patient</h2>
@@ -332,8 +319,22 @@
     <button class="btn-small btn-secondary" id="cancelBtn" style="width:100%; margin-top:8px;">Cancel</button>
     <div class="msg" id="formMsg"></div>
   </div>
-  <div class="msg ok" id="doneMsg"></div>
-  <datalist id="relList"><option value="Mother"><option value="Father"><option value="Wife"><option value="Husband"><option value="Son"><option value="Daughter"><option value="Brother"><option value="Sister"><option value="Grandmother"><option value="Grandfather"><option value="Aunt"><option value="Uncle"><option value="Guardian"><option value="Friend"><option value="Neighbour"><option value="Employer"><option value="Other"></datalist>
+  
+  <div class="card hidden" id="dupCard">
+    <h2>Possible duplicates</h2>
+    <div class="hint2" style="margin-top:0;">Pairs of patients at this facility that look like the same person. Open a pair to compare them. Only someone with merge permission can merge.</div>
+    <div id="dupList"></div>
+    <button class="btn-small btn-secondary" id="dupCloseBtn" style="width:100%; margin-top:10px;">Close</button>
+  </div>
+
+  <div class="card hidden" id="detailCard"></div>
+
+  <div class="card">
+    <div id="results"></div>
+    <button class="btn-small btn-secondary hidden" id="moreBtn" style="width:100%; margin-top:10px;">Show more</button>
+    <button class="btn-small btn-secondary" id="dupScanBtn" style="width:100%; margin-top:10px;">Find possible duplicate patients</button>
+  </div>
+    <datalist id="relList"><option value="Mother"><option value="Father"><option value="Wife"><option value="Husband"><option value="Son"><option value="Daughter"><option value="Brother"><option value="Sister"><option value="Grandmother"><option value="Grandfather"><option value="Aunt"><option value="Uncle"><option value="Guardian"><option value="Friend"><option value="Neighbour"><option value="Employer"><option value="Other"></datalist>
   <datalist id="villageList"></datalist>
   <datalist id="districtList"></datalist>
 </div>
@@ -499,41 +500,57 @@
     renderList();
   }
 
+  // ---------- one list: patients registered here (Local) and patients other facilities shared with us (Shared) ----------
+  let scope = "all";
+  function tsMs(t) { return t && t.toMillis ? t.toMillis() : (t && t.seconds ? t.seconds * 1000 : 0); }
+  // a shared patient that this facility has already registered as its own is shown once, as Local
+  function liveShares() {
+    const taken = {}; patients.forEach(p => { if (p.sharedFrom) taken[p.sharedFrom] = true; });
+    return shares.filter(x => !x.revokedAt && !taken[x.id]);
+  }
+  function shareAsPatient(x) { const sp = x.patientSnapshot || {}; return Object.assign({}, sp, { id: "share:" + x.id, phoneKey: sp.phoneKey || phoneKeyOf(sp.phone) }); }
+  function shareFrom(x) { return (x.sourceFacilityName || "another facility") + (x.sourceBusinessName ? " (" + x.sourceBusinessName + ")" : ""); }
+  function sexText(s) { return s === "female" ? "Female" : s === "male" ? "Male" : s === "other" ? "Other" : "Sex unknown"; }
+  function buildItems(q) {
+    const items = [];
+    patients.forEach(p => { if (p.status !== "merged" && matchesQuery(p, regsOf(p.id), q)) items.push({ kind: "local", p: p, t: p.clientCreatedAt || 0 }); });
+    liveShares().forEach(x => { const sp = shareAsPatient(x); if (matchesQuery(sp, [], q)) items.push({ kind: "shared", p: sp, x: x, t: tsMs(x.grantedAt) || x.clientCreatedAt || 0 }); });
+    return items;
+  }
   function renderList() {
     if (!$("mainArea") || $("mainArea").classList.contains("hidden")) return;
     if (patientsErr) { $("results").innerHTML = '<div class="empty">' + esc(patientsErr) + "</div>"; $("listInfo").textContent = ""; $("moreBtn").classList.add("hidden"); return; }
     if (!patientsReady || !linksReady) { $("results").innerHTML = '<div class="empty">Loading patients…</div>'; return; }
-    const q = $("q").value;
-    const now = new Date();
-    let list = patients.filter(p => p.status !== "merged" && matchesQuery(p, regsOf(p.id), q));
-    if (String(q).trim()) list.sort((a, b) => String(a.fullName).localeCompare(String(b.fullName)));
-    else list.sort((a, b) => (b.clientCreatedAt || 0) - (a.clientCreatedAt || 0));
+    const q = String($("q").value || "").trim(), now = new Date();
+    const all = buildItems(q);
+    const nLocal = all.filter(i => i.kind === "local").length, nShared = all.length - nLocal;
+    document.querySelectorAll("#scopeTabs [data-scope]").forEach(b => {
+      const k = b.dataset.scope, n = k === "all" ? all.length : k === "local" ? nLocal : nShared;
+      b.textContent = (k === "all" ? "All" : k === "local" ? "Local" : "Shared with us") + " (" + n + ")";
+      b.classList.toggle("selected", k === scope);
+    });
+    let list = all.filter(i => scope === "all" || i.kind === scope);
+    if (q) list.sort((a, b) => String(a.p.fullName).localeCompare(String(b.p.fullName))); else list.sort((a, b) => b.t - a.t);
     const total = list.length;
-    $("listInfo").textContent = String(q).trim() ? total + " found" : patients.length + " patient" + (patients.length === 1 ? "" : "s") + " in your business · newest first";
+    $("listInfo").textContent = q ? total + " found" : total + " patient" + (total === 1 ? "" : "s") + " · newest first";
     list = list.slice(0, shown);
     $("moreBtn").classList.toggle("hidden", total <= shown);
-    if (!total) { $("results").innerHTML = '<div class="empty">' + (String(q).trim() ? "No patient found. Check the spelling or register a new patient below." : "No patients yet.") + "</div>"; return; }
-    $("results").innerHTML = list.map(p => {
-      const ml = myLink(p.id);
-      const tag = ml ? '<span class="chip ok">' + esc(ml.localRegNo) + "</span>" : "";
-      return '<div class="pt" data-pid="' + esc(p.id) + '"><div class="pt-name">' + esc(p.fullName) + " " + tag + "</div>" +
-        '<div class="pt-meta">' + esc(p.sex === "female" ? "Female" : p.sex === "male" ? "Male" : p.sex === "other" ? "Other" : "Sex unknown") + " · " + esc(ageText(p, now)) +
-        (p.phone ? " · " + esc(p.phone) : "") + (p.village ? " · " + esc(p.village) : "") + "</div></div>";
+    if (!total) {
+      $("results").innerHTML = '<div class="empty">' + (q ? "No patient found. Check the spelling" + (can("patient.register") ? ", or tap Register New Patient above." : ".") : scope === "shared" ? "No patients have been shared with this facility." : "No patients yet." + (can("patient.register") ? " Tap Register New Patient above to add the first one." : "")) + "</div>";
+      return;
+    }
+    $("results").innerHTML = list.map(i => {
+      const p = i.p, meta = esc(sexText(p.sex)) + " · " + esc(ageText(p, now)) + (p.phone ? " · " + esc(p.phone) : "") + (p.village ? " · " + esc(p.village) : "");
+      if (i.kind === "shared") {
+        return '<div class="pt" data-share="' + esc(i.x.id) + '"><div class="pt-name">' + esc(p.fullName) + ' <span class="chip shared">Shared</span> <span class="chip">ID ' + esc(String(i.x.patientId || "").slice(-6).toUpperCase()) + "</span></div>" +
+          '<div class="pt-meta">' + meta + '</div><div class="pt-from">From ' + esc(shareFrom(i.x)) + (i.x.purpose ? " · " + esc(i.x.purpose) : "") + "</div></div>";
+      }
+      const ml = myLink(p.id), src = p.sharedFrom ? shares.find(x => x.id === p.sharedFrom) : null;
+      return '<div class="pt" data-pid="' + esc(p.id) + '"><div class="pt-name">' + esc(p.fullName) + ' <span class="chip local">Local</span> ' + (ml ? '<span class="chip ok">' + esc(ml.localRegNo) + "</span>" : "") + "</div>" +
+        '<div class="pt-meta">' + meta + "</div>" + (src ? '<div class="pt-meta">Originally shared by ' + esc(shareFrom(src)) + "</div>" : "") + "</div>";
     }).join("");
   }
-
-  // ---------- patients other facilities have shared with this facility ----------
-  function renderShared() {
-    const live = shares.filter(x => !x.revokedAt).sort((a, b) => String(a.patientSnapshot && a.patientSnapshot.fullName).localeCompare(String(b.patientSnapshot && b.patientSnapshot.fullName)));
-    $("sharedCard").classList.toggle("hidden", !live.length);
-    const now = new Date();
-    $("sharedList").innerHTML = live.map(x => {
-      const p = x.patientSnapshot || {};
-      return '<div class="pt" data-share="' + esc(x.id) + '"><div class="pt-name">' + esc(p.fullName) + ' <span class="chip">Shared</span></div>' +
-        '<div class="pt-meta">' + esc(p.sex || "") + " · " + esc(ageText(p, now)) + (p.phone ? " · " + esc(p.phone) : "") +
-        "<br>From " + esc(x.sourceFacilityName || "a facility") + (x.sourceBusinessName ? " (" + esc(x.sourceBusinessName) + ")" : "") + " · " + esc(x.purpose || "") + "</div></div>";
-    }).join("");
-  }
+  function renderShared() { renderList(); }
   function openDetail(pid) {
     const p = patients.find(x => x.id === pid); if (!p) return;
     openId = pid;
@@ -623,7 +640,9 @@
     if (bad) { setFormMsg(bad, true); return; }
     pendingForm = f;
     const inp = { tokens: nameTokens(f.fullName), phoneKey: phoneKeyOf(f.phone), dob: f.dobPrecision === "exact" ? f.dob : null, dobApprox: f.dobApprox, nokPhoneKey: phoneKeyOf(f.nextOfKin.phone) };
-    const cands = findDuplicates(inp, patients);
+    // local patients AND patients shared with us are checked, so a shared patient is not registered a second time by accident
+    const pool = patients.concat(liveShares().filter(x => x.id !== pendingShareId).map(shareAsPatient));
+    const cands = findDuplicates(inp, pool);
     if (!cands.length) { saveNew(f, "", []); return; }
     renderCandidates(cands);
   }
@@ -633,10 +652,10 @@
     const strong = cands.some(c => c.level === "strong");
     $("candBox").innerHTML = '<div class="cand-head">' + (strong ? "This patient may already be registered" : "Possible matches found") + "</div>" +
       cands.map(c => {
-        const p = c.patient;
-        return '<div class="cand ' + c.level + '"><div class="pt-name">' + esc(p.fullName) + ' <span class="chip ' + (c.level === "strong" ? "bad" : "warn") + '">' + (c.level === "strong" ? "Strong match" : "Possible") + "</span></div>" +
-          '<div class="pt-meta">' + esc(p.sex) + " · " + esc(ageText(p, now)) + (p.phone ? " · " + esc(p.phone) : "") + (p.village ? " · " + esc(p.village) : "") + "<br>Why: " + esc(c.why.join(", ")) + "</div>" +
-          '<div class="op-actions"><button class="btn-small btn-secondary" data-open="' + esc(p.id) + '">View</button></div></div>';
+        const p = c.patient, isSh = String(p.id).indexOf("share:") === 0, shx = isSh ? shares.find(x => "share:" + x.id === p.id) : null;
+        return '<div class="cand ' + c.level + '"><div class="pt-name">' + esc(p.fullName) + ' <span class="chip ' + (c.level === "strong" ? "bad" : "warn") + '">' + (c.level === "strong" ? "Strong match" : "Possible") + "</span>" + (isSh ? ' <span class="chip shared">Shared, not yet registered here</span>' : ' <span class="chip local">Local</span>') + "</div>" +
+          '<div class="pt-meta">' + esc(p.sex) + " · " + esc(ageText(p, now)) + (p.phone ? " · " + esc(p.phone) : "") + (p.village ? " · " + esc(p.village) : "") + (shx ? "<br>From " + esc(shareFrom(shx)) : "") + "<br>Why: " + esc(c.why.join(", ")) + "</div>" +
+          '<div class="op-actions"><button class="btn-small btn-secondary" data-open="' + esc(p.id) + '">View</button>' + (shx ? '<button class="btn-small btn-primary" data-regshare="' + esc(shx.id) + '">Use this shared record</button>' : "") + "</div></div>";
       }).join("") +
       '<label>Different person? Say why' + (strong ? " (required)" : " (optional)") + '</label><input type="text" id="dupReason" placeholder="e.g. Different village and age">' +
       '<button class="btn-small btn-primary" id="forceNewBtn" style="margin-top:8px; width:100%;" data-strong="' + (strong ? "1" : "0") + '">This is a different person — register as new</button>';
@@ -673,8 +692,8 @@
     ];
     Promise.all(jobs).catch(saveFailed);
     $("doneMsg").className = "msg ok"; $("doneMsg").textContent = "Saved on this phone: " + f.fullName + " · " + regNo + ". It will sync when you are online.";
-    pendingShareId = null; clearForm(); $("formCard").classList.add("hidden"); $("showFormBtn").classList.remove("hidden");
-    $("q").value = ""; renderList();
+    pendingShareId = null; clearForm(); $("formCard").classList.add("hidden");
+    $("q").value = ""; scope = "all"; renderList();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -702,15 +721,19 @@
   $("dupList").addEventListener("click", e => { const b = e.target.closest("[data-a]"); if (b) window.mcGo("patient.html?id=" + encodeURIComponent(b.dataset.a) + "&merge=" + encodeURIComponent(b.dataset.b)); });
   $("q").addEventListener("input", () => { shown = 30; renderList(); });
   $("moreBtn").onclick = () => { shown += 30; renderList(); };
-  $("sharedList").addEventListener("click", e => { const r = e.target.closest("[data-share]"); if (r) window.mcGo("patient.html?share=" + encodeURIComponent(r.dataset.share)); });
-  $("results").addEventListener("click", e => { const r = e.target.closest("[data-pid]"); if (r) openDetail(r.dataset.pid); });
-  $("showFormBtn").onclick = () => { $("doneMsg").textContent = ""; $("formCard").classList.remove("hidden"); $("showFormBtn").classList.add("hidden"); syncFormVisibility(); $("fName").focus(); };
-  $("cancelBtn").onclick = () => { pendingShareId = null; clearForm(); $("formCard").classList.add("hidden"); $("showFormBtn").classList.remove("hidden"); };
+  $("scopeTabs").addEventListener("click", e => { const b = e.target.closest("[data-scope]"); if (b) { scope = b.dataset.scope; shown = 30; renderList(); } });
+  $("results").addEventListener("click", e => {
+    const sh = e.target.closest("[data-share]"); if (sh) { window.mcGo("patient.html?share=" + encodeURIComponent(sh.dataset.share)); return; }
+    const r = e.target.closest("[data-pid]"); if (r) openDetail(r.dataset.pid);
+  });
+  $("showFormBtn").onclick = () => { $("doneMsg").textContent = ""; $("detailCard").classList.add("hidden"); $("formCard").classList.remove("hidden"); syncFormVisibility(); $("fName").focus(); $("formCard").scrollIntoView({ behavior: "smooth", block: "start" }); };
+  $("cancelBtn").onclick = () => { pendingShareId = null; clearForm(); $("formCard").classList.add("hidden"); };
   $("fAgeMode").onchange = syncFormVisibility; $("fSameEm").onchange = syncFormVisibility;
   $("saveBtn").onclick = startRegister;
   PCF.initDates();
   $("candBox").addEventListener("click", e => {
-    const o = e.target.closest("[data-open]"); if (o) { openDetail(o.dataset.open); return; }
+    const rs = e.target.closest("[data-regshare]"); if (rs) { window.mcGo("patients.html?fromShare=" + encodeURIComponent(rs.dataset.regshare)); return; }
+    const o = e.target.closest("[data-open]"); if (o) { if (String(o.dataset.open).indexOf("share:") === 0) window.mcGo("patient.html?share=" + encodeURIComponent(o.dataset.open.slice(6))); else openDetail(o.dataset.open); return; }
     const fb = e.target.closest("#forceNewBtn");
     if (fb) {
       const reason = ($("dupReason").value || "").trim();
