@@ -54,7 +54,7 @@ test("service worker: every local script/page used by the new and Patient Care p
 
 test("rules: Phase 5 collections exist, nothing can be deleted, dispense records are append-only", () => {
   const r = read("firestore.rules");
-  assert.match(r, /\(v19, PROPOSED/);
+  assert.match(r, /multi-shop roles & security \(v19 verified in CI run #68; v20 journey field proposed\)/);
   ["prescriptions", "dispense_records", "guidelines"].forEach(c => assert.match(r, new RegExp("match /" + c + "/\\{")));
   const block = n => { const i = r.indexOf("match /" + n + "/{"); return r.slice(i, r.indexOf("\n    }\n", i)); };
   assert.match(block("prescriptions"), /allow delete: if false/);
