@@ -44,3 +44,16 @@ Status: 142 offline file/logic tests pass (`node --test "tests/*.test.js"`).
 - Neither fix has been re-run (no emulator in the build sandbox).
 Document-lookup counts in the new rules were counted by hand only.
 Open: `credit_transactions` creation is shop-scoped only (an existing rule). Lab credit relies on it, as the pharmacy does; it is not permission-checked.
+
+## v19 (Lead Developer, 2026-11-20) - PROPOSED, NOT YET RUN
+CI baseline before v19: run #60 ("Add files via upload", seen by the Lead as a screenshot from the owner) had both `checks` and `rules` jobs green on the emulator. Test counts were not visible in the screenshot, so the exact number is unconfirmed.
+Rules changes (see header of `firestore.rules`, and `docs/DATA_CONTRACT_V19.md`): pending prescription create by the clinician (same commit as the order), clinician cancel/supersede while nothing is dispensed (same commit as the order stop), pharmacy first dispensing when quantity/drug were left open, clinician READ of `prescriptions` and `dispense_records`, `dispense_bills` read needs `dispense.report`/`dispense.perform`/`dispense.reverse`.
+Seven new emulator tests are appended to `tests-emulator/rules.test.js` (all names start "v19:"). **Written without an emulator; the first CI run decides.** If a v19 test fails, check the test fixture before the rule, as happened in the v18 runs. Offline suite: 142 pass. No page uses pending prescriptions yet, so nothing in the app changes until Developer 3 builds on this.
+
+### v19 first CI run (2026-11-20, owner's screenshots): 50 tests, 44 pass, 6 fail. Diagnosis and fixes (Lead)
+| Failed | Cause | Fix |
+|---|---|---|
+| 11, 26, 27 (older read tests) | They asserted a nurse (`treatment.administer`) cannot read prescriptions/records. Owner decision 2 (clinicians may read dispensing) changed that on purpose. **Rule behaved as designed; the tests were out of date.** | Tests now expect nurse = allowed; a receptionist (`patient.view` only) = refused |
+| 31, 32 (v17 reversal) | **Real regression caused by v19.** The two new `prescriptions` update rules were evaluated before the reversal rule and used up Firestore's 1000-expression budget (log: "maximum of 1000 expressions" at the update rules). A valid reversal was refused. | Every `prescriptions` update rule now starts with a cheap check that fails fast when the rule does not apply (`status`, `qtyDispensed` direction, substitution reason). Meaning unchanged; five rules edited (marked `v19: cheap check`) |
+| 46 (v19 stop/cancel) | Test bug: `ctx.firestore()` called twice in one context ("Firestore has already been started") | One variable per context |
+Tests 47-50 (pending first dispensing, clinician reads, bill read, lab ledger) **passed** in this run. The reversal fix is **not yet confirmed**: it needs the next CI run. Expression budget is still tight on `prescriptions`; any new update rule there must start with a cheap check and be re-run in CI.
