@@ -30,6 +30,11 @@ const users = {
   labColl: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "lab.collect": true } },
   labCash: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "lab.payment": true } },
   clin: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "investigation.request": true, "investigation.review": true } },
+  prescriber: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "treatment.prescribe": true } },
+  prescriberB: { role: "operator", businessId: B, shopId: S, active: true, perms: { "patient.view": true, "treatment.prescribe": true } },
+  consultant: { role: "operator", businessId: B, shopId: A, active: true, perms: { "consult.record": true } },
+  receptionist: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "patient.register": true } },
+  dispReport: { role: "operator", businessId: B, shopId: A, active: true, perms: { "dispense.view": true, "dispense.report": true } },
   rules0: { role: "operator", businessId: B, shopId: A, active: true, perms: { "treatment.prescribe": true } }
 };
 // one Firestore object per user for the whole run: building a new one on every call made the SDK refuse to mix documents ("different Firestore instance")
@@ -413,4 +418,103 @@ test("v18: administration records are readable by a user with dispense.reverse, 
   await env.withSecurityRulesDisabled(async ctx => { await setDoc(doc(ctx.firestore(), "pc_mar_records", "m1"), { businessId: B, facilityId: A, orderId: "e1", patientId: "p1", outcome: "administered", status: "active" }); });
   await assertSucceeds(getDoc(doc(db("rev"), "pc_mar_records", "m1")));
   await assertFails(getDoc(doc(db("dispOnly"), "pc_mar_records", "m1")));
+});
+
+// ======================= v19 (Lead Developer): pending prescriptions, clinician read of dispensing, bill read =======================
+const rxPending = (uid, id, extra) => Object.assign(stamp(uid), { id, orderId: id, patientId: "p1", encounterId: "e1", planId: "pl1", patientName: "Test", medicineName: "TEST drug",
+  drugId: "d1", status: "pending", qtyPrescribed: 20, qtyDispensed: 0, qtyOutstanding: 20, qtySetBy: "prescriber" }, extra || {});
+const orderDoc = (uid, extra) => Object.assign(stamp(uid), { kind: "medicine", status: "active", patientId: "p1", encounterId: "e1", planId: "pl1", prescriberId: uid, scheduleType: "once", version: 1, medicineName: "TEST drug", doseValue: 1 }, extra || {});
+async function seedV19() {
+  await env.withSecurityRulesDisabled(async ctx => {
+    const f = ctx.firestore();
+    await setDoc(doc(f, "pc_encounters", "e1"), { businessId: B, facilityId: A, patientId: "p1", status: "open" });
+    await setDoc(doc(f, "pc_treatment_plans", "pl1"), { businessId: B, facilityId: A, patientId: "p1", status: "active" });
+  });
+}
+function prescribeBatch(f, uid, id, orderExtra, rxExtra) {
+  const b = writeBatch(f);
+  b.set(doc(f, "pc_treatment_orders", id), orderDoc(uid, orderExtra));
+  b.set(doc(f, "prescriptions", id), rxPending(uid, id, rxExtra));
+  return b;
+}
+test("v19: a clinician creates the order and its PENDING prescription in one commit", async () => {
+  await seedV19();
+  await assertSucceeds(prescribeBatch(db("prescriber"), "prescriber", "n1").commit());
+});
+test("v19: a pending prescription with no quantity (qtyUnknown) and no drug is accepted; with neither a quantity nor the flag it is refused", async () => {
+  await seedV19();
+  await assertSucceeds(prescribeBatch(db("prescriber"), "prescriber", "n2", {}, { qtyPrescribed: 0, qtyOutstanding: 0, qtyUnknown: true, drugId: null }).commit());
+  await assertFails(prescribeBatch(db("prescriber"), "prescriber", "n3", {}, { qtyPrescribed: 0, qtyOutstanding: 0, drugId: null }).commit());
+});
+test("v19: a pending prescription cannot be created without its order, for another patient, dispensed, by a non-prescriber, or in another facility", async () => {
+  await seedV19();
+  const alone = writeBatch(db("prescriber")); alone.set(doc(db("prescriber"), "prescriptions", "n4"), rxPending("prescriber", "n4"));
+  await assertFails(alone.commit());
+  await assertFails(prescribeBatch(db("prescriber"), "prescriber", "n5", {}, { patientId: "other" }).commit());
+  await assertFails(prescribeBatch(db("prescriber"), "prescriber", "n6", {}, { qtyDispensed: 5, qtyOutstanding: 15, status: "partially_dispensed" }).commit());
+  await assertFails(prescribeBatch(db("viewer"), "viewer", "n7").commit());
+  await assertFails(prescribeBatch(db("prescriberB"), "prescriberB", "n8").commit());
+});
+test("v19: stopping the order cancels the pending prescription in the same commit; a cancel on its own, or after dispensing, is refused", async () => {
+  await seedV19();
+  await assertSucceeds(prescribeBatch(db("prescriber"), "prescriber", "n9").commit());
+  const f = db("prescriber"), up = { updatedBy: "prescriber", updatedAt: serverTimestamp() };
+  const alone = writeBatch(f); alone.update(doc(f, "prescriptions", "n9"), Object.assign({ status: "cancelled", endedBy: "prescriber", endedAt: serverTimestamp(), endReason: "stopped" }, up));
+  await assertFails(alone.commit());
+  const ok = writeBatch(f);
+  ok.update(doc(f, "pc_treatment_orders", "n9"), Object.assign({ status: "stopped", endedBy: "prescriber", endedAt: serverTimestamp(), endReason: "not needed" }, up));
+  ok.update(doc(f, "prescriptions", "n9"), Object.assign({ status: "cancelled", endedBy: "prescriber", endedAt: serverTimestamp(), endReason: "not needed" }, up));
+  await assertSucceeds(ok.commit());
+  // after something was dispensed the prescription can no longer be cancelled
+  await env.withSecurityRulesDisabled(async ctx => { await setDoc(doc(ctx.firestore(), "prescriptions", "n10"), Object.assign(rxPending("prescriber", "n10"), { status: "partially_dispensed", qtyDispensed: 5, qtyOutstanding: 15 })); await setDoc(doc(ctx.firestore(), "pc_treatment_orders", "n10"), { businessId: B, facilityId: A, kind: "medicine", status: "active", patientId: "p1", prescriberId: "prescriber" }); });
+  const late = writeBatch(f);
+  late.update(doc(f, "pc_treatment_orders", "n10"), Object.assign({ status: "stopped", endedBy: "prescriber", endedAt: serverTimestamp(), endReason: "late stop" }, up));
+  late.update(doc(f, "prescriptions", "n10"), Object.assign({ status: "cancelled", endedBy: "prescriber", endedAt: serverTimestamp(), endReason: "late stop" }, up));
+  await assertFails(late.commit());
+});
+test("v19: the pharmacy can dispense a pending prescription whose quantity and drug were open, stating them itself; a drug already set cannot be changed this way", async () => {
+  await seedV19();
+  await env.withSecurityRulesDisabled(async ctx => { await setDoc(doc(ctx.firestore(), "prescriptions", "o1"), rxPending("pharm", "o1", { qtyPrescribed: 0, qtyOutstanding: 0, qtyUnknown: true, drugId: null })); });
+  const f = db("pharm"), b = writeBatch(f), id = "zz11_0";
+  b.set(doc(f, "dispense_records", id), Object.assign(stamp("pharm"), { id, prescriptionId: "o1", patientId: "p1", drugId: "d1", batchId: "bA", qtyDispensed: 12, groupQty: 12, dispensedBy: "pharm", dispensedAt: serverTimestamp(), isSynced: true, requestId: "zz11", lineNo: 0 }));
+  b.set(doc(f, "stock_transactions", "dsp_" + id), { businessId: B, shopId: A, drugId: "d1", type: "DISPENSE", baseUnitsChange: -12, dispenseRequestId: "zz11", prescriptionId: "o1" });
+  b.update(doc(f, "prescriptions", "o1"), { qtyPrescribed: 12, qtyUnknown: false, qtySetBy: "pharmacy", drugId: "d1", drugName: "TEST", qtyDispensed: 12, qtyOutstanding: 0, status: "completed", lastDispensedAt: serverTimestamp(), lastDispensedBy: "pharm", lastRequestId: "zz11", updatedBy: "pharm", updatedAt: serverTimestamp() });
+  await assertSucceeds(b.commit());
+});
+test("v19: clinicians (prescribe, administer, consult) can read prescriptions and dispense records of their facility; a receptionist and another facility cannot", async () => {
+  await seedV19();
+  await env.withSecurityRulesDisabled(async ctx => {
+    const f = ctx.firestore();
+    await setDoc(doc(f, "prescriptions", "r1"), { businessId: B, facilityId: A, status: "pending", qtyDispensed: 0 });
+    await setDoc(doc(f, "dispense_records", "r1_0"), { businessId: B, facilityId: A, prescriptionId: "r1" });
+    await setDoc(doc(f, "dispense_bills", "r1"), { businessId: B, facilityId: A, total: 100 });
+  });
+  for (const u of ["prescriber", "nurse", "consultant"]) {
+    if (u === "nurse") { await assertSucceeds(getDoc(doc(db(u), "prescriptions", "r1"))); } else { await assertSucceeds(getDoc(doc(db(u), "prescriptions", "r1"))); await assertSucceeds(getDoc(doc(db(u), "dispense_records", "r1_0"))); }
+    await assertFails(getDoc(doc(db(u), "dispense_bills", "r1")));
+  }
+  await assertFails(getDoc(doc(db("receptionist"), "prescriptions", "r1")));
+  await assertFails(getDoc(doc(db("prescriberB"), "prescriptions", "r1")));
+  await assertFails(getDoc(doc(db("stranger"), "prescriptions", "r1")));
+  const q = query(collection(db("prescriber"), "prescriptions"), where("businessId", "==", B), where("facilityId", "==", A));
+  await assertSucceeds(getDocs(q));
+});
+test("v19: dispensing bills (money) are readable with dispense.report or dispense.perform, not by a view-only user", async () => {
+  await env.withSecurityRulesDisabled(async ctx => { await setDoc(doc(ctx.firestore(), "dispense_bills", "b1"), { businessId: B, facilityId: A, total: 100 }); });
+  await assertSucceeds(getDoc(doc(db("dispReport"), "dispense_bills", "b1")));
+  await assertSucceeds(getDoc(doc(db("pharm"), "dispense_bills", "b1")));
+  await assertFails(getDoc(doc(db("viewer"), "dispense_bills", "b1")));
+  await assertSucceeds(getDoc(doc(db("owner"), "dispense_bills", "b1")));
+});
+test("v19 lab ledger: the lab cashier writes the bill and its `sales` rows in ONE commit; rows of another shop are refused; the same rows cannot be rewritten by a retry (fixed ids)", async () => {
+  await seedLab("verified");
+  const f = db("labCash"), bill = Object.assign(stamp("labCash"), { orderId: "L1", patientId: "p1", price: 5000, amountPaid: 2000, amountOutstanding: 3000, amountWaived: 0, status: "part_paid", customerName: "x" });
+  const row = (id, total, status, shop) => ({ businessId: B, shopId: shop || A, ownerUid: "labCash", drugId: "lab_t1", drugName: "Test", drugClass: "Laboratory", unitLevel: "base", qty: 1, baseQtyDeducted: 0, pricePerUnit: Math.abs(total), total, costOfGoods: 0, receiptId: null, cashier: "x", paymentStatus: status, source: "laboratory", labOrderId: "L1", createdAt: serverTimestamp() });
+  const wrong = writeBatch(f); wrong.set(doc(f, "pc_lab_bills", "L1"), bill); wrong.set(doc(f, "sales", "labsl_L1_p"), row("p", 2000, "PAID", S));
+  await assertFails(wrong.commit());
+  const ok = writeBatch(f); ok.set(doc(f, "pc_lab_bills", "L1"), bill); ok.set(doc(f, "sales", "labsl_L1_p"), row("p", 2000, "PAID")); ok.set(doc(f, "sales", "labsl_L1_c"), row("c", 3000, "CREDIT"));
+  await assertSucceeds(ok.commit());
+  // the shop-wide rule for `sales` lets a shop member update rows, so the fixed id only blocks a second CREATE through the bill rule: a repeat bill for the same order is refused
+  const again = writeBatch(f); again.set(doc(f, "pc_lab_bills", "L1"), bill);
+  await assertFails(again.commit());
 });
