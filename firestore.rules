@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// MediStock Cloud — multi-shop roles & security (v19, PROPOSED, not yet run in the emulator)
+// MediStock Cloud — multi-shop roles & security (v19 verified in CI run #68; v20 journey field proposed)
 // v19 (Lead Developer, owner decisions 2026-11-20; see docs/DATA_CONTRACT_V19.md): (1) the clinician may create a PENDING prescription document in the same
 //   commit as the medicine order, and cancel/supersede it (only while nothing is dispensed) in the same commit that stops/replaces the order; the pharmacy
 //   fills an unknown quantity/medicine at first dispensing; (2) clinicians (treatment.prescribe, treatment.administer, consult.record) of the facility can
@@ -576,6 +576,17 @@ service cloud.firestore {
         && (!('glucoseUnit' in d) || d.glucoseUnit == null || d.glucoseUnit in ['mmol/L', 'mg/dL']);
     }
 
+    // v20 (Lead): optional, additive visit "journey" hint written by the staff who finish a step. It is a CACHE of where the patient goes next, never the source of truth
+    // (the real records stay in triage, orders, results and prescriptions). Small and closed: unknown keys, values and sizes are refused.
+    function journeyOk(j) {
+      return j == null
+        || (j is map && j.keys().hasOnly(['v', 'next', 'waiting', 'note'])
+            && j.get('v', 0) == 1
+            && j.get('next', '') in ['triage', 'consultation', 'investigation', 'results_review', 'pharmacy', 'treatment', 'follow_up', 'discharge', 'none']
+            && (j.get('waiting', []) is list && j.get('waiting', []).size() <= 4
+                && j.get('waiting', []).hasOnly(['laboratory', 'pharmacy', 'treatment', 'clinician', 'patient']))
+            && (j.get('note', '') is string && j.get('note', '').size() <= 140));
+    }
     match /pc_encounters/{encId} {
       allow read: if canAccessShop(resource.data.businessId, resource.data.facilityId)
         && hasPerm(resource.data.businessId, 'patient.view');
@@ -588,14 +599,16 @@ service cloud.firestore {
         && request.resource.data.type in ['outpatient', 'emergency', 'followup', 'procedure', 'pharmacy']
         && request.resource.data.encounterNo is string && request.resource.data.encounterNo.size() > 0
         && request.resource.data.reason is string
-        && request.resource.data.openedBy == request.auth.uid;
+        && request.resource.data.openedBy == request.auth.uid
+        && journeyOk(request.resource.data.get('journey', null));
       allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
         && pcUpdateStamped()
         && resource.data.status == 'open'
+        && journeyOk(request.resource.data.get('journey', null))
         && (
           (anyEncounterPerm(resource.data.businessId)
             && request.resource.data.status == 'open'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stage', 'triageCategory', 'updatedAt', 'updatedBy'])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stage', 'triageCategory', 'journey', 'updatedAt', 'updatedBy'])
             && request.resource.data.stage in ['registered', 'triaged', 'in_consultation']
             && (request.resource.data.get('triageCategory', null) == null
                 || request.resource.data.triageCategory in ['emergency', 'urgent', 'standard', 'low']))
@@ -604,7 +617,7 @@ service cloud.firestore {
             && request.resource.data.status in ['closed', 'cancelled']
             && request.resource.data.closedBy == request.auth.uid
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['status', 'closedAt', 'closedBy', 'closeNote', 'cancelReason', 'updatedAt', 'updatedBy'])
+                 .hasOnly(['status', 'closedAt', 'closedBy', 'closeNote', 'cancelReason', 'journey', 'updatedAt', 'updatedBy'])
             && (request.resource.data.status == 'closed'
                 || (request.resource.data.get('cancelReason', null) is string && request.resource.data.cancelReason.size() >= 3)))
         );
