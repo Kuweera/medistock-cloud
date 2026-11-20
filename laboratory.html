@@ -649,6 +649,9 @@
       b.set(doc(db, "credit_transactions", rec.creditTxnId), Object.assign({}, money, { customerId: credId, customerName: custName, type: "CREDIT_SALE", amount: bl.outstanding, paidAmount: 0, balanceChange: bl.outstanding, dueDate: ($("bDue") && $("bDue").value) || null, description: "Laboratory test: " + o.name, createdAt: serverTimestamp(), cashier: myName }));
     }
     b.set(doc(db, "pc_lab_bills", o.id), rec);
+    // main ledger: Cash Position and Sales reports read `sales`; fixed ids, so the same bill can never post twice (see PCL.ledgerRows)
+    PCL.ledgerRows(o, bl, { businessId: businessId, shopId: facilityId, uid: me.id, userName: myName, customerId: bl.outstanding > 0 ? credId : null })
+      .forEach(r => b.set(doc(db, "sales", r.id), Object.assign({}, r.data, { createdAt: serverTimestamp() })));
     b.set(doc(collection(db, "pc_audit_logs")), audit(o, "lab.bill", { status: bl.status, price: bl.price, paid: bl.paid, outstanding: bl.outstanding }));
     b.commit().catch(saveFailed); ok("Payment saved on this phone.");
   }
@@ -659,8 +662,10 @@
     const b = writeBatch(db);
     b.update(doc(db, "pc_lab_bills", o.id), { status: "reversed", reverseReason: reason, reversedBy: me.id, reversedByName: myName, reversedAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: me.id });
     if (billDoc.amountOutstanding > 0) b.set(doc(db, "credit_transactions", "labrv_" + o.id), { businessId: businessId, shopId: facilityId, customerId: billDoc.customerId, customerName: billDoc.customerName || "", type: "LAB_REVERSAL", amount: billDoc.amountOutstanding, paidAmount: 0, balanceChange: -billDoc.amountOutstanding, description: "Laboratory bill reversed: " + o.name + " — " + reason, createdAt: serverTimestamp(), cashier: myName });
-    b.set(doc(collection(db, "pc_audit_logs")), audit(o, "lab.bill_reverse", { reason: reason }));
-    b.commit().catch(saveFailed); ok("Bill reversed. Saved on this phone.");
+    const rv = PCL.reversalRows(o, billDoc, { businessId: businessId, shopId: facilityId, uid: me.id, userName: myName }, reason);
+    rv.rows.forEach(r => b.set(doc(db, "sales", r.id), Object.assign({}, r.data, { createdAt: serverTimestamp() })));
+    b.set(doc(collection(db, "pc_audit_logs")), audit(o, "lab.bill_reverse", { reason: reason, cashToReturn: rv.cashToReturn }));
+    b.commit().catch(saveFailed); ok("Bill reversed. Saved on this phone." + (rv.cashToReturn > 0 ? " Hand back " + rv.cashToReturn + " in cash to the patient: it has been taken off the cash position." : ""));
   }
 
   // ---------- wiring ----------

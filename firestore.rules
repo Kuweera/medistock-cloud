@@ -1,6 +1,11 @@
 rules_version = '2';
 
-// MediStock Cloud — multi-shop roles & security (v18)
+// MediStock Cloud — multi-shop roles & security (v19, PROPOSED, not yet run in the emulator)
+// v19 (Lead Developer, owner decisions 2026-11-20; see docs/DATA_CONTRACT_V19.md): (1) the clinician may create a PENDING prescription document in the same
+//   commit as the medicine order, and cancel/supersede it (only while nothing is dispensed) in the same commit that stops/replaces the order; the pharmacy
+//   fills an unknown quantity/medicine at first dispensing; (2) clinicians (treatment.prescribe, treatment.administer, consult.record) of the facility can
+//   READ prescriptions and dispense_records; (3) dispense_bills (money) can be read only with dispense.report, dispense.perform or dispense.reverse.
+//   Nothing else changed. Existing orders without a prescription document keep working through the v15 create rule.
 // v18 (laboratory, Developer 4): result types qualitative / semiquant / categorical / multi / titer / organism (older number / text / choice unchanged);
 //   specimen steps received / accepted / rejected (rejection needs a reason; rejected is final); a correction of a result now needs a written reason;
 //   a test can be requested only if it is active and approved in the facility catalogue; NEW pc_lab_alerts (critical results: lab informs, clinician
@@ -1231,11 +1236,75 @@ service cloud.firestore {
         && ((d.qtyOutstanding <= 0.0001) == (d.status == 'completed'));
     }
 
+    // v19: clinicians of the facility may READ dispensing (information only; they cannot write it)
+    function rxReadOk(d) {
+      return canAccessShop(d.businessId, d.facilityId)
+        && (hasPerm(d.businessId, 'dispense.view') || hasPerm(d.businessId, 'treatment.prescribe')
+            || hasPerm(d.businessId, 'treatment.administer') || hasPerm(d.businessId, 'consult.record'));
+    }
+    // v19: money documents of dispensing
+    function billReadOk(d) {
+      return canAccessShop(d.businessId, d.facilityId) && hasPerm(d.businessId, 'dispense.view')
+        && (hasPerm(d.businessId, 'dispense.report') || hasPerm(d.businessId, 'dispense.perform') || hasPerm(d.businessId, 'dispense.reverse'));
+    }
+
     match /prescriptions/{rxId} {
       allow get: if (resource == null && dispenserMayProbe())
-        || (resource != null && canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'dispense.view'));
-      allow list: if canAccessShop(resource.data.businessId, resource.data.facilityId)
-        && hasPerm(resource.data.businessId, 'dispense.view');
+        || (resource != null && rxReadOk(resource.data));
+      allow list: if rxReadOk(resource.data);
+
+      // v19 PENDING PRESCRIPTION: created by the clinician in the same commit as the active medicine order (same id). Quantity 0 + qtyUnknown means
+      // "the prescriber gave no quantity"; drugId may be null when the medicine is not matched to stock. The pharmacy completes both at first dispensing.
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'treatment.prescribe')
+        && request.resource.data.id == rxId && request.resource.data.orderId == rxId
+        && request.resource.data.patientId is string
+        && request.resource.data.status == 'pending'
+        && request.resource.data.qtyDispensed == 0
+        && request.resource.data.qtyPrescribed is number && request.resource.data.qtyPrescribed >= 0
+        && qtyClose(request.resource.data.qtyOutstanding, request.resource.data.qtyPrescribed)
+        && (request.resource.data.qtyPrescribed > 0 || request.resource.data.get('qtyUnknown', false) == true)
+        && (request.resource.data.get('drugId', null) == null || request.resource.data.drugId is string)
+        && existsAfter(ordPath(rxId))
+        && getAfter(ordPath(rxId)).data.status == 'active'
+        && getAfter(ordPath(rxId)).data.kind == 'medicine'
+        && getAfter(ordPath(rxId)).data.businessId == request.resource.data.businessId
+        && getAfter(ordPath(rxId)).data.facilityId == request.resource.data.facilityId
+        && getAfter(ordPath(rxId)).data.patientId == request.resource.data.patientId
+        && getAfter(ordPath(rxId)).data.prescriberId == request.auth.uid;
+
+      // v19: the clinician may cancel or supersede a prescription that has NOTHING dispensed, only in the same commit that stops/replaces its order
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && hasPerm(resource.data.businessId, 'treatment.prescribe')
+        && pcUpdateStamped()
+        && resource.data.status == 'pending' && resource.data.qtyDispensed == 0
+        && request.resource.data.status in ['cancelled', 'superseded']
+        && request.resource.data.endedBy == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'endedAt', 'endedBy', 'endReason', 'supersededBy', 'updatedBy', 'updatedAt'])
+        && existsAfter(ordPath(rxId))
+        && getAfter(ordPath(rxId)).data.status in ['stopped', 'completed', 'superseded'];
+
+      // v19: first dispensing of a pending prescription whose quantity and/or medicine the prescriber left open: the pharmacy states them now
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && hasPerm(resource.data.businessId, 'dispense.perform')
+        && pcUpdateStamped()
+        && resource.data.status == 'pending' && resource.data.qtyDispensed == 0
+        && (resource.data.get('qtyUnknown', false) == true || resource.data.get('drugId', null) == null)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qtyPrescribed', 'qtyUnknown', 'qtySetBy', 'drugId', 'drugName', 'qtyDispensed', 'qtyOutstanding', 'status',
+            'lastDispensedAt', 'lastDispensedBy', 'lastRequestId', 'updatedBy', 'updatedAt'])
+        && (resource.data.get('qtyUnknown', false) == true
+            ? (request.resource.data.qtyPrescribed > 0 && request.resource.data.qtySetBy == 'pharmacy' && request.resource.data.get('qtyUnknown', false) == false)
+            : request.resource.data.qtyPrescribed == resource.data.qtyPrescribed)
+        && (resource.data.get('drugId', null) == null ? request.resource.data.drugId is string : request.resource.data.drugId == resource.data.drugId)
+        && request.resource.data.qtyDispensed > 0 && request.resource.data.qtyDispensed <= request.resource.data.qtyPrescribed
+        && qtyClose(request.resource.data.qtyOutstanding, request.resource.data.qtyPrescribed - request.resource.data.qtyDispensed)
+        && rxStatusOk(request.resource.data)
+        && request.resource.data.lastDispensedBy == request.auth.uid
+        && request.resource.data.lastRequestId is string
+        && existsAfter(dspPath(request.resource.data.lastRequestId + '_0'))
+        && getAfter(dspPath(request.resource.data.lastRequestId + '_0')).data.prescriptionId == rxId
+        && getAfter(dspPath(request.resource.data.lastRequestId + '_0')).data.drugId == request.resource.data.drugId
+        && qtyClose(getAfter(dspPath(request.resource.data.lastRequestId + '_0')).data.groupQty, request.resource.data.qtyDispensed);
 
       // created by the first dispensing: id = the medicine order's id, the order must be an active medicine order of this
       // facility and patient, and the same commit must write the first dispense record for exactly the quantity stated
@@ -1317,9 +1386,8 @@ service cloud.firestore {
 
     match /dispense_records/{dspId} {
       allow get: if (resource == null && dispenserMayProbe())
-        || (resource != null && canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'dispense.view'));
-      allow list: if canAccessShop(resource.data.businessId, resource.data.facilityId)
-        && hasPerm(resource.data.businessId, 'dispense.view');
+        || (resource != null && rxReadOk(resource.data));
+      allow list: if rxReadOk(resource.data);
 
       // one record per batch used; id = requestId_lineNo, so a repeated submission can never create a second record
       allow create: if pcCreateOk(request.resource.data)
@@ -1349,8 +1417,8 @@ service cloud.firestore {
     // =====================================================================================
     match /dispense_bills/{billId} {
       allow get: if (resource == null && dispenserMayProbe())
-        || (resource != null && canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'dispense.view'));
-      allow list: if canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'dispense.view');
+        || (resource != null && billReadOk(resource.data));
+      allow list: if billReadOk(resource.data);
       allow create: if pcCreateOk(request.resource.data)
         && hasPerm(request.resource.data.businessId, 'dispense.perform')
         && request.resource.data.requestId is string && billId == request.resource.data.requestId && request.resource.data.id == billId

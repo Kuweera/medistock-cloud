@@ -242,6 +242,34 @@
     return { price: price, paid: paid, outstanding: out, waived: 0, status: price <= 0 ? "no_charge" : out <= 0 ? "paid" : paid > 0 ? "part_paid" : "credit" };
   }
 
+  // ---------------------------------------------------------------- main ledger (v19, owner decision 2026-11-20)
+  /* Cash Position and the Sales reports read the `sales` collection. Laboratory money was only in pc_lab_bills, so the cash drawer could not reconcile.
+     These rows mirror what the pharmacy writes: one `sales` row per part (PAID / CREDIT), no stock effect (baseQtyDeducted 0, costOfGoods 0), class "Laboratory".
+     Document ids are fixed (labsl_{orderId}_p|_c, labrvsl_{orderId}_p|_c), so a retry or a second phone cannot post them twice. No `receipts` are written on purpose
+     (the Returns/Exchange screens work from receipts and would try to restock a medicine that does not exist). createdAt is added by the caller (server time). */
+  function saleRow(o, ctx, id, amount, status, note) {
+    var key = o.investigationId || o.id;
+    var d = { businessId: ctx.businessId, shopId: ctx.shopId, ownerUid: ctx.uid, drugId: "lab_" + key, drugName: o.name || o.testName || "Laboratory test", drugClass: "Laboratory",
+      unitLevel: "base", qty: amount < 0 ? -1 : 1, baseQtyDeducted: 0, pricePerUnit: Math.abs(amount), total: amount, costOfGoods: 0, receiptId: null, cashier: ctx.userName || "",
+      paymentStatus: status, customerId: status === "CREDIT" ? (ctx.customerId || null) : null, source: "laboratory", labOrderId: o.id };
+    if (note) d.note = note;
+    return { id: id, data: d };
+  }
+  function ledgerRows(o, bl, ctx) {
+    var rows = [];
+    if (bl.paid > 0) rows.push(saleRow(o, ctx, "labsl_" + o.id + "_p", r2(bl.paid), "PAID"));
+    if (bl.outstanding > 0) rows.push(saleRow(o, ctx, "labsl_" + o.id + "_c", r2(bl.outstanding), "CREDIT"));
+    return rows;
+  }
+  /* bill: the saved pc_lab_bills document. Returns the negative rows and the cash to hand back (the paid part: the bill was paid, so the drawer must be reduced). */
+  function reversalRows(o, bill, ctx, reason) {
+    var rows = [], note = "Laboratory bill reversed: " + (reason || "");
+    var paid = r2(num(bill.amountPaid) || 0), out = r2(num(bill.amountOutstanding) || 0);
+    if (paid > 0) rows.push(saleRow(o, ctx, "labrvsl_" + o.id + "_p", -paid, "PAID", note));
+    if (out > 0) rows.push(saleRow(o, Object.assign({}, ctx, { customerId: bill.customerId }), "labrvsl_" + o.id + "_c", -out, "CREDIT", note));
+    return { rows: rows, cashToReturn: paid };
+  }
+
   // ---------------------------------------------------------------- reports
   function dayOf(ms) { var d = new Date(ms || 0); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
   function ms(ts) { return ts && ts.toDate ? ts.toDate().getTime() : (ts && ts.seconds ? ts.seconds * 1000 : (typeof ts === "number" ? ts : 0)); }
@@ -297,6 +325,6 @@
 
   var api = { TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PARAM_TYPES: PARAM_TYPES, normType: normType, parseList: parseList, scaleTerms: scaleTerms, validateTest: validateTest, validateParam: validateParam, validateCritical: validateCritical,
     profileOf: profileOf, orderFields: orderFields, profileFromOrder: profileFromOrder, buildResult: buildResult, describeResult: describeResult, flagNumber: flagNumber,
-    STATUS_LABEL: STATUS_LABEL, STEPS: STEPS, NEXT: NEXT, canMove: canMove, REJECT_REASONS: REJECT_REASONS, OPEN_STATES: OPEN_STATES, PAY_LABEL: PAY_LABEL, bill: bill, report: report, dayOf: dayOf, TEMPLATES: TEMPLATES };
+    STATUS_LABEL: STATUS_LABEL, STEPS: STEPS, NEXT: NEXT, canMove: canMove, REJECT_REASONS: REJECT_REASONS, OPEN_STATES: OPEN_STATES, PAY_LABEL: PAY_LABEL, bill: bill, ledgerRows: ledgerRows, reversalRows: reversalRows, report: report, dayOf: dayOf, TEMPLATES: TEMPLATES };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.PCL = api;
 })(typeof window !== "undefined" ? window : this);
