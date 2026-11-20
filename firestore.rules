@@ -1274,21 +1274,22 @@ service cloud.firestore {
         && getAfter(ordPath(rxId)).data.prescriberId == request.auth.uid;
 
       // v19: the clinician may cancel or supersede a prescription that has NOTHING dispensed, only in the same commit that stops/replaces its order
-      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+      allow update: if request.resource.data.status in ['cancelled', 'superseded'] && resource.data.status == 'pending'   // v19: cheap checks first (expression budget)
+        && canAccessShop(resource.data.businessId, resource.data.facilityId)
         && hasPerm(resource.data.businessId, 'treatment.prescribe')
         && pcUpdateStamped()
-        && resource.data.status == 'pending' && resource.data.qtyDispensed == 0
-        && request.resource.data.status in ['cancelled', 'superseded']
+        && resource.data.qtyDispensed == 0
         && request.resource.data.endedBy == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'endedAt', 'endedBy', 'endReason', 'supersededBy', 'updatedBy', 'updatedAt'])
         && existsAfter(ordPath(rxId))
         && getAfter(ordPath(rxId)).data.status in ['stopped', 'completed', 'superseded'];
 
       // v19: first dispensing of a pending prescription whose quantity and/or medicine the prescriber left open: the pharmacy states them now
-      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+      allow update: if resource.data.status == 'pending' && request.resource.data.status in ['partially_dispensed', 'completed']   // v19: cheap checks first (expression budget)
+        && canAccessShop(resource.data.businessId, resource.data.facilityId)
         && hasPerm(resource.data.businessId, 'dispense.perform')
         && pcUpdateStamped()
-        && resource.data.status == 'pending' && resource.data.qtyDispensed == 0
+        && resource.data.qtyDispensed == 0
         && (resource.data.get('qtyUnknown', false) == true || resource.data.get('drugId', null) == null)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qtyPrescribed', 'qtyUnknown', 'qtySetBy', 'drugId', 'drugName', 'qtyDispensed', 'qtyOutstanding', 'status',
             'lastDispensedAt', 'lastDispensedBy', 'lastRequestId', 'updatedBy', 'updatedAt'])
@@ -1330,11 +1331,11 @@ service cloud.firestore {
         && qtyClose(getAfter(dspPath(request.resource.data.lastRequestId + '_0')).data.groupQty, request.resource.data.qtyDispensed);
 
       // later dispensing: only the quantity/status fields move, only upwards, and only with a new dispense record in the same commit
-      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+      allow update: if request.resource.data.qtyDispensed > resource.data.qtyDispensed && resource.data.status != 'completed'   // v19: cheap checks first (same meaning)
+        && canAccessShop(resource.data.businessId, resource.data.facilityId)
         && hasPerm(resource.data.businessId, 'dispense.perform')
         && pcUpdateStamped()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qtyDispensed', 'qtyOutstanding', 'status', 'lastDispensedAt', 'lastDispensedBy', 'lastRequestId', 'updatedBy', 'updatedAt'])
-        && request.resource.data.qtyDispensed > resource.data.qtyDispensed
         && request.resource.data.qtyDispensed <= resource.data.qtyPrescribed
         && qtyClose(request.resource.data.qtyOutstanding, resource.data.qtyPrescribed - request.resource.data.qtyDispensed)
         && rxStatusOk(request.resource.data)
@@ -1346,10 +1347,10 @@ service cloud.firestore {
         && qtyClose(getAfter(dspPath(request.resource.data.lastRequestId + '_0')).data.groupQty, request.resource.data.qtyDispensed - resource.data.qtyDispensed);
 
       // v17 SUBSTITUTION: while NOTHING is dispensed, the medicine may change, with a written reason and the person who agreed. Same commit writes the record.
-      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+      allow update: if resource.data.qtyDispensed == 0 && request.resource.data.qtyDispensed > 0 && request.resource.data.get('substitutionReason', null) != null   // v19: cheap checks first (same meaning)
+        && canAccessShop(resource.data.businessId, resource.data.facilityId)
         && hasPerm(resource.data.businessId, 'dispense.perform')
         && pcUpdateStamped()
-        && resource.data.qtyDispensed == 0
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qtyDispensed', 'qtyOutstanding', 'status', 'lastDispensedAt', 'lastDispensedBy', 'lastRequestId', 'updatedBy', 'updatedAt',
             'drugId', 'drugName', 'substitutedForId', 'substitutedForName', 'substitutionReason', 'substitutionAuthorisedBy', 'substitutedBy'])
         && request.resource.data.qtyDispensed > 0 && request.resource.data.qtyDispensed <= resource.data.qtyPrescribed
@@ -1366,7 +1367,8 @@ service cloud.firestore {
         && qtyClose(getAfter(dspPath(request.resource.data.lastRequestId + '_0')).data.groupQty, request.resource.data.qtyDispensed);
 
       // v17 REVERSAL: the quantity may go DOWN only together with a dispense_returns record for exactly that quantity (and its ledger, see below)
-      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+      allow update: if request.resource.data.qtyDispensed < resource.data.qtyDispensed   // v19: cheap check first (same meaning)
+        && canAccessShop(resource.data.businessId, resource.data.facilityId)
         && hasPerm(resource.data.businessId, 'dispense.reverse')
         && pcUpdateStamped()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qtyDispensed', 'qtyOutstanding', 'status', 'qtyReturned', 'lastReturnRequestId', 'lastReturnedBy', 'lastReturnedAt', 'updatedBy', 'updatedAt'])
