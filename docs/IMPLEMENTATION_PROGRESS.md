@@ -127,3 +127,7 @@ Developer 1, 2026-11-16. Added `pc-dispense-ext.js` (billing hook, reversals, ha
 
 ## Developer 4: laboratory (rules v18)
 Built and tested on in-memory stand-ins only: flexible catalogue (9 result types, templates, approval, critical limits with source), specimen workflow (receive, accept, reject), type-specific result entry, corrections with reason, critical notices, bills with credit and no-charge, laboratory reports. **Rules v18 not run on an emulator; real Firebase and phones not tested.** See `docs/LABORATORY_SPEC.md` and `docs/DEVELOPER_4_HANDOVER.md`.
+
+## Update: Lead Developer audit and rules v19 (2026-11-20)
+Audit: see the Lead's report, `docs/DATA_CONTRACT_V19.md`, `docs/STAGE0_FINDINGS.md`. Rules v19 (pending prescriptions, clinician read of dispensing, bill read restriction): emulator CI run #68 = 50 of 50 pass (2026-11-20). Not yet on the real Firebase project. Stale root test copies moved to `tests/archive/` (nothing deleted). Lab revenue into Sales/Cash Position: approved by the owner, **not built**.
+Lab ledger (Lead, 2026-11-20): laboratory payments and reversals now also write `sales` rows so Cash Position and Sales reports include them. Offline tests 144 pass; one new emulator test written, **not run**; Reports/Dashboard/Cash Position screens **not checked in a browser or on a phone**. See DATA_CONTRACT_V19.md section 6.
