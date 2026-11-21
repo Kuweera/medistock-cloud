@@ -234,7 +234,7 @@
   const num = v => { const n = Number(v); return isFinite(n) ? n : 0; };
 
   let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
-  let orders = new Map(), rxPartial = new Map(), rxDone = new Map(), stoppedOrders = new Map(), allergies = [], drugs = [];
+  let orders = new Map(), rxPartial = new Map(), rxDone = new Map(), rxPending = new Map(), stoppedOrders = new Map(), allergies = [], drugs = [];
   let regNos = {}, regAsked = {}, filter = "waiting", tab = "queue", D = null, queue = null, syncing = false, doneLoaded = false, stoppedLoaded = false;
   let hRecords = [], hMonthLoaded = "", unsubHist = null, creditAccounts = [], consItems = [], consBundles = [], consSel = {}, consCtx = { orderId: "", procedure: "" }, consMsg = null, consBusy = false, consReq = null;
   const can = k => role === "owner" || perms[k] === true;
@@ -255,7 +255,7 @@
   }
 
   // ---------------------------------------------------------------- rows for the queue
-  function rxOf(id) { return rxPartial.get(id) || rxDone.get(id) || null; }
+  function rxOf(id) { return rxPartial.get(id) || rxDone.get(id) || rxPending.get(id) || null; }
   function info(r) {
     const o = r.order || {}, x = r.rx || {};
     const pick = k => (o[k] != null && o[k] !== "") ? o[k] : x[k];
@@ -282,10 +282,12 @@
     const qi = queuedItems(r.id); if (qi.some(x => x.status === "conflict")) c += '<span class="chip bad">Sync problem</span>'; else if (qi.length) c += '<span class="chip warn">Pending sync</span>';
     return c;
   }
+  // a stopped or replaced prescription that still has an unsupplied quantity must say clearly that the rest is NOT to be dispensed
+  function statusOf(r) { const st = STATUS[r.group]; return r.group === "stopped" && r.q && r.q.known && r.q.dispensed > 0 && r.q.outstanding > 0 ? ["Stopped, do not dispense", "bad"] : st; }
   const STATUS = { waiting: ["Waiting", "warn"], partial: ["Partly dispensed", "warn"], done: ["Fully dispensed", "ok"], stopped: ["Stopped", "bad"] };
   // One medicine line inside a prescription. The patient is named once, in the prescription header (groupHtml).
   function cardHtml(r) {
-    const i = info(r), st = STATUS[r.group], u = (r.rx && r.rx.qtyUnit) || "";
+    const i = info(r), st = statusOf(r), u = (r.rx && r.rx.qtyUnit) || "";
     const q = r.q;
     return '<div class="pt' + (D && D.id === r.id ? " sel" : "") + '" data-id="' + esc(r.id) + '">' +
       '<div class="pt-name">' + esc(i.medicine) + ' <span class="chip ' + st[1] + '">' + esc(st[0]) + "</span>" + chipsOf(r) + "</div>" +
@@ -514,7 +516,7 @@
     if (D.result) return renderResult(card);
     const r = D.row, i = info(r), dr = D.drug, now = new Date();
     const closed = r.group === "stopped" || r.group === "done";
-    let h = '<h2>' + esc(i.medicine) + ' <span class="chip ' + STATUS[r.group][1] + '">' + esc(STATUS[r.group][0]) + '</span></h2>';
+    let h = '<h2>' + esc(i.medicine) + ' <span class="chip ' + statusOf(r)[1] + '">' + esc(statusOf(r)[0]) + '</span></h2>';
     h += '<div class="pt-meta">' + esc(i.patientName) + (regNos[i.patientId] ? " · " + esc(regNos[i.patientId]) : "") + (i.encounterNo ? " · Visit " + esc(i.encounterNo) : "") + "</div>";
     const al = i.patientId ? PCS.allergyMatches([i.medicine], allergies.filter(a => a.patientId === i.patientId)) : [];
     if (al.length) h += '<div class="alert-box">Allergy warning: this patient has a recorded allergy that matches this medicine. Check with the prescriber before dispensing.</div>';
@@ -524,7 +526,11 @@
     if (qi.length) h += '<div class="warn-box">' + qi.length + " dispensing on this phone is waiting to sync" + (qi.some(x => x.status === "conflict") ? " and has a problem (see the box at the top)" : "") + ". Those quantities are already taken off what can be dispensed here.</div>";
     if (closed) {
       h += revHtml();
-      h += r.group === "stopped" ? '<div class="alert-box">This prescription was stopped or replaced. It cannot be dispensed.</div>' : '<div class="info-box">This prescription has been fully dispensed.</div>';
+      if (r.group === "stopped") {
+        const o = r.order || {}, replaced = o.status === "superseded", n = r.q.dispensed, left = r.q.outstanding;
+        h += '<div class="alert-box">This prescription was ' + (replaced ? "replaced by a newer version" : "STOPPED by the prescriber") + (o.endedByName ? " (" + esc(o.endedByName) + ")" : "") + (o.endReason ? ". Reason: " + esc(o.endReason) : "") + ". It cannot be dispensed." +
+          (n > 0 ? " <b>" + esc(n) + "</b> " + esc((r.rx && r.rx.qtyUnit) || "") + " already dispensed stays on record." + (left > 0 ? " <b>Do not dispense the remaining " + esc(left) + ".</b>" : "") : " Nothing had been dispensed.") + "</div>";
+      } else h += '<div class="info-box">This prescription has been fully dispensed.</div>';
       h += '<button type="button" class="btn-primary" data-act="close">Close</button>'; card.innerHTML = h; return;
     }
     if (!closed && D.rx && num(D.rx.qtyDispensed) > 0) h += revHtml();
@@ -860,6 +866,8 @@
     const denied = err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view prescriptions, or the Phase 5 security rules are not published yet." : "Could not load prescriptions. Check your internet connection.") + "</div>"; };
     onSnapshot(query(collection(db, "pc_treatment_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("kind", "==", "medicine"), where("status", "==", "active"), limit(500)), { includeMetadataChanges: true }, s => { orders = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); mark(s); renderList(); if (D && !D.result) { D.order = orders.get(D.id) || D.order; D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row; } }, denied);
     onSnapshot(query(collection(db, "prescriptions"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "partially_dispensed"), limit(500)), s => { rxPartial = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); renderList(); if (D && !D.result) { D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row; renderAct(); } }, () => {});
+    // Stage 3: prescriptions the clinician created at prescribing (status pending, nothing dispensed yet): they tell the pharmacy whether the quantity or the medicine was left open
+    onSnapshot(query(collection(db, "prescriptions"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "pending"), limit(500)), s => { rxPending = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); renderList(); if (D && !D.result) { D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row; renderAct(); } }, () => {});
     onSnapshot(query(collection(db, "pc_allergies"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "active"), limit(1000)), s => { allergies = s.docs.map(x => ({ id: x.id, ...x.data() })); renderList(); }, () => {});
     onSnapshot(query(collection(db, "drugs"), where("businessId", "==", businessId), where("shopId", "==", facilityId)), s => { drugs = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.name && d.active !== false).sort((a, b) => String(a.name).localeCompare(String(b.name))); }, () => {});
     onSnapshot(query(collection(db, "credit_accounts"), where("businessId", "==", businessId), where("shopId", "==", facilityId)), s => { creditAccounts = s.docs.map(d => ({ id: d.id, ...d.data() })); }, () => {});

@@ -147,7 +147,7 @@
   }
   // quantity state of one queue row. rx = prescriptions doc or null; order = pc_treatment_orders doc
   function qtyState(order, rx) {
-    if (rx) return { prescribed: num(rx.qtyPrescribed), dispensed: num(rx.qtyDispensed), outstanding: r4(Math.max(0, num(rx.qtyPrescribed) - num(rx.qtyDispensed))), known: true, setBy: rx.qtySetBy || "prescriber" };
+    if (rx && rx.qtyUnknown !== true) return { prescribed: num(rx.qtyPrescribed), dispensed: num(rx.qtyDispensed), outstanding: r4(Math.max(0, num(rx.qtyPrescribed) - num(rx.qtyDispensed))), known: true, setBy: rx.qtySetBy || "prescriber" };
     var q = order && order.quantityPrescribed;
     if (q == null || q === "" || !(Number(q) > 0)) return { prescribed: 0, dispensed: 0, outstanding: 0, known: false, setBy: null };
     return { prescribed: Number(q), dispensed: 0, outstanding: Number(q), known: true, setBy: "prescriber" };
