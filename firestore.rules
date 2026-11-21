@@ -1,6 +1,7 @@
 rules_version = '2';
 
 // MediStock Cloud — multi-shop roles & security (v19 verified in CI run #68; v20 journey field proposed)
+// v21 (Lead, PROPOSED, not yet run in CI): patient identity corrections need a correction record (pc_patient_corrections); an active share's snapshot can be refreshed; optional share expiry (consentExpiresAt) enforced on reads.
 // v19 (Lead Developer, owner decisions 2026-11-20; see docs/DATA_CONTRACT_V19.md): (1) the clinician may create a PENDING prescription document in the same
 //   commit as the medicine order, and cancel/supersede it (only while nothing is dispensed) in the same commit that stops/replaces the order; the pharmacy
 //   fills an unknown quantity/medicine at first dispensing; (2) clinicians (treatment.prescribe, treatment.administer, consult.record) of the facility can
@@ -293,6 +294,37 @@ service cloud.firestore {
     }
 
     // ---- Patient identity (shared inside one business) ----
+    // v21: changing name, sex or date of birth needs a correction record (reason + before/after) written in the same commit; identityVersion counts the corrections
+    function corrPath(patientId, n) {
+      return /databases/$(database)/documents/pc_patient_corrections/$(patientId + '_' + string(n));
+    }
+    function identityEditOk(patientId) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['fullName', 'nameKey', 'sex', 'dob', 'dobApprox', 'dobPrecision'])
+        || (request.resource.data.get('identityVersion', 0) is int
+            && request.resource.data.identityVersion == resource.data.get('identityVersion', 0) + 1
+            && existsAfter(corrPath(patientId, request.resource.data.identityVersion))
+            && getAfter(corrPath(patientId, request.resource.data.identityVersion)).data.patientId == patientId
+            && getAfter(corrPath(patientId, request.resource.data.identityVersion)).data.correctedBy == request.auth.uid);
+    }
+    match /pc_patient_corrections/{corrId} {
+      allow read: if canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'patient.view');
+      allow create: if pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'patient.edit')
+        && request.resource.data.patientId is string
+        && request.resource.data.version is int && request.resource.data.version >= 1
+        && corrId == request.resource.data.patientId + '_' + string(request.resource.data.version)
+        && patientInBusiness(request.resource.data.patientId, request.resource.data.businessId)
+        && get(patientPath(request.resource.data.patientId)).data.registeredFacilityId == request.resource.data.facilityId
+        && request.resource.data.reason is string && request.resource.data.reason.size() >= 3 && request.resource.data.reason.size() <= 300
+        && request.resource.data.before is map && request.resource.data.after is map
+        && request.resource.data.before.keys().hasOnly(['fullName', 'nameKey', 'sex', 'dob', 'dobApprox', 'dobPrecision'])
+        && request.resource.data.after.keys().hasOnly(['fullName', 'nameKey', 'sex', 'dob', 'dobApprox', 'dobPrecision'])
+        && request.resource.data.correctedBy == request.auth.uid
+        && existsAfter(patientPath(request.resource.data.patientId))
+        && getAfter(patientPath(request.resource.data.patientId)).data.get('identityVersion', 0) == request.resource.data.version;
+      allow update, delete: if false;
+    }
+
     match /pc_patients/{patientId} {
       // only the facility that registered the patient (or the owner) can read it; other facilities get a share (pc_shares)
       allow read: if hasPerm(resource.data.businessId, 'patient.view')
@@ -316,6 +348,7 @@ service cloud.firestore {
           && !request.resource.data.diff(resource.data).affectedKeys()
                .hasAny(pcLocked().concat(['registeredFacilityId', 'status', 'mergedInto']))
           && pcUpdateStamped()
+          && identityEditOk(patientId)
         ) || (
           // merge: only together with a merge record whose id is this patient's id
           hasPerm(resource.data.businessId, 'patient.merge')
@@ -363,6 +396,8 @@ service cloud.firestore {
         && hasPerm(myProfile().businessId, 'patient.view')
         && exists(sharePath(patientId, sourceFacilityId, myProfile().businessId))
         && get(sharePath(patientId, sourceFacilityId, myProfile().businessId)).data.get('revokedAt', null) == null
+        && (get(sharePath(patientId, sourceFacilityId, myProfile().businessId)).data.get('consentExpiresAt', null) == null
+            || get(sharePath(patientId, sourceFacilityId, myProfile().businessId)).data.consentExpiresAt > request.time)
         && (myProfile().role == 'owner'
             || get(sharePath(patientId, sourceFacilityId, myProfile().businessId)).data.granteeFacilityId == myProfile().shopId);
     }
@@ -386,6 +421,7 @@ service cloud.firestore {
         && d.patientSnapshot is map
         && d.granteeFacilityId is string && d.granteeBusinessId is string
         && !(d.granteeBusinessId == d.businessId && d.granteeFacilityId == d.facilityId)
+        && (d.get('consentExpiresAt', null) == null || (d.consentExpiresAt is timestamp && d.consentExpiresAt > request.time))
         && granteeOk(d);
     }
 
@@ -423,7 +459,21 @@ service cloud.firestore {
             && shareFieldsOk(request.resource.data)
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['revokedAt', 'revokedBy', 'grantedAt', 'grantedBy', 'purpose', 'consentMethod', 'consentGivenBy',
-                           'granteeFacilityId', 'granteeFacilityName', 'patientSnapshot', 'updatedAt', 'updatedBy']))
+                           'granteeFacilityId', 'granteeFacilityName', 'patientSnapshot', 'snapshotAt', 'consentExpiresAt', 'updatedAt', 'updatedBy']))
+          ||
+          // v21: refresh the patient snapshot of an ACTIVE share (the receiving side shows "details as of snapshotAt")
+          (resource.data.get('revokedAt', null) == null
+            && request.resource.data.get('revokedAt', null) == null
+            && request.resource.data.patientSnapshot is map
+            && request.resource.data.snapshotAt == request.time
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['patientSnapshot', 'snapshotAt', 'updatedAt', 'updatedBy']))
+          ||
+          // v21: set, extend or clear the expiry of an ACTIVE share (a new date must be in the future; null = no expiry)
+          (resource.data.get('revokedAt', null) == null
+            && request.resource.data.get('revokedAt', null) == null
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['consentExpiresAt', 'updatedAt', 'updatedBy'])
+            && (request.resource.data.get('consentExpiresAt', null) == null
+                || (request.resource.data.consentExpiresAt is timestamp && request.resource.data.consentExpiresAt > request.time)))
         );
       allow delete: if false;
     }
