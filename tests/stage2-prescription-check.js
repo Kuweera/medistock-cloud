@@ -19,6 +19,7 @@ const OUT = process.argv[2] || ".", URL = "http://localhost:8765/tests/encounter
       if (qty != null) await f.locator("#obQty").fill(String(qty));
       await f.locator("#obSaveBtn").click(); await page.waitForTimeout(500);
     };
+    const expand = async id => { const b = f.locator('[data-oxp="' + id + '"]'); if ((await b.getAttribute("aria-expanded")) !== "true") await b.click(); };
     const orderId = async n => (await all("pc_treatment_orders")).find(o => o.medicineName === n)._id;
     const rx = async id => (await all("prescriptions")).find(r => r._id === id);
 
@@ -31,14 +32,14 @@ const OUT = process.argv[2] || ".", URL = "http://localhost:8765/tests/encounter
     // 2. No quantity given: qtyUnknown, quantity 0, the pharmacy states it later
     await addMed("Zentel"); const idB = await orderId("Zentel"), rB = await rx(idB); assert.equal(rB.qtyUnknown, true); assert.equal(rB.qtyPrescribed, 0); assert.equal(rB.status, "pending");
     // 3. STOP needs a reason, cancels the undispensed prescription and says STOPPED
-    promptText = ""; dialogs = []; await f.locator('[data-ostop="' + id + '"]').click(); await page.waitForTimeout(300);
+    promptText = ""; dialogs = []; await expand(id); await f.locator('[data-ostop="' + id + '"]').click(); await page.waitForTimeout(300);
     assert.equal((await all("pc_treatment_orders")).find(o => o._id === id).status, "active", "no reason: nothing changes");
-    promptText = "Patient had a rash"; await f.locator('[data-ostop="' + id + '"]').click(); await page.waitForTimeout(500);
+    promptText = "Patient had a rash"; await expand(id); await f.locator('[data-ostop="' + id + '"]').click(); await page.waitForTimeout(500);
     let o = (await all("pc_treatment_orders")).find(x => x._id === id), r2 = await rx(id);
     assert.equal(o.status, "stopped"); assert.equal(o.endReason, "Patient had a rash"); assert.equal(o.endedBy, "owner1"); assert.equal(r2.status, "cancelled"); assert.equal(r2.endReason, "Patient had a rash"); assert.equal(r2.qtyDispensed, 0);
     const stopMsg = await done(); assert.match(stopMsg, /^STOPPED before the course finished/); assert.match(stopMsg, /pharmacy prescription is cancelled/); assert.doesNotMatch(stopMsg, /COMPLETED/);
     // 4. COMPLETE has a different message and states what it means; a single medicine does not complete the plan
-    await f.locator('[data-odone="' + idB + '"]').click(); await page.waitForTimeout(500);
+    await expand(idB); await f.locator('[data-odone="' + idB + '"]').click(); await page.waitForTimeout(500);
     assert.ok(dialogs.some(m => /COMPLETED.*intended course has finished/s.test(m) && /does not complete the whole plan/.test(m) && /Nothing has been dispensed/.test(m)), "complete confirm text");
     const oB = (await all("pc_treatment_orders")).find(x => x._id === idB); assert.equal(oB.status, "completed"); assert.equal((await rx(idB)).status, "cancelled");
     const doneMsg = await done(); assert.match(doneMsg, /^COMPLETED, the course has finished/); assert.notEqual(doneMsg.split(".")[0], stopMsg.split(".")[0]);
@@ -46,17 +47,17 @@ const OUT = process.argv[2] || ".", URL = "http://localhost:8765/tests/encounter
     // 5. STOP after PARTIAL dispensing: the order stops, the prescription and dispensed quantity are kept, message says so
     await addMed("Cefix", 10); const idC = await orderId("Cefix");
     await page.evaluate(i => { const d = window.__db.all("prescriptions").find(x => x._id === i); delete d._id; Object.assign(d, { status: "partially_dispensed", qtyDispensed: 4, qtyOutstanding: 6, lastRequestId: "req1", qtyUnit: "Tablet" }); window.__db.add("prescriptions", i, d); }, idC);
-    await page.waitForTimeout(300); promptText = "Allergic reaction"; await f.locator('[data-ostop="' + idC + '"]').click(); await page.waitForTimeout(500);
+    await page.waitForTimeout(300); promptText = "Allergic reaction"; await expand(idC); await f.locator('[data-ostop="' + idC + '"]').click(); await page.waitForTimeout(500);
     const rC = await rx(idC); assert.equal(rC.status, "partially_dispensed"); assert.equal(rC.qtyDispensed, 4); assert.equal((await all("pc_treatment_orders")).find(x => x._id === idC).status, "stopped");
     assert.match(await done(), /4 Tablet of 10 had already been dispensed/); assert.match(await done(), /stopped, do not dispense/);
     // 6. The pharmacy started dispensing in the meantime (server refuses the prescription update): the order is STILL stopped (retry without it)
     await addMed("Doxyfel", 8); const idD = await orderId("Doxyfel"); await page.evaluate(() => { window.__denyRxUpdate = true; });
-    promptText = "Wrong drug"; await f.locator('[data-ostop="' + idD + '"]').click(); await page.waitForTimeout(800);
+    promptText = "Wrong drug"; await expand(idD); await f.locator('[data-ostop="' + idD + '"]').click(); await page.waitForTimeout(800);
     assert.equal((await all("pc_treatment_orders")).find(x => x._id === idD).status, "stopped"); assert.equal((await rx(idD)).status, "pending", "prescription left for the pharmacy");
     assert.match(await done(), /pharmacy had already started dispensing/); assert.ok(!/NOT SAVED/.test(await done())); await page.evaluate(() => { window.__denyRxUpdate = false; });
     // 7. CHANGE (new version): the old pending prescription is superseded, the new one is pending, one batch
     await addMed("Loratex", 6); const idE = await orderId("Loratex");
-    await f.locator('[data-ochg="' + idE + '"]').click(); await f.locator("#obCard:not(.hidden)").waitFor(); await f.locator("#obQty").fill("12"); await f.locator("#obChangeReason").fill("Dose too low"); await f.locator("#obSaveBtn").click(); await page.waitForTimeout(600);
+    await expand(idE); await f.locator('[data-ochg="' + idE + '"]').click(); await f.locator("#obCard:not(.hidden)").waitFor(); await f.locator("#obQty").fill("12"); await f.locator("#obChangeReason").fill("Dose too low"); await f.locator("#obSaveBtn").click(); await page.waitForTimeout(600);
     const orders = await all("pc_treatment_orders"), newE = orders.find(x => x.supersedes === idE); assert.ok(newE, "new version"); assert.equal(orders.find(x => x._id === idE).status, "superseded");
     assert.equal((await rx(idE)).status, "superseded"); assert.equal((await rx(idE)).supersededBy, newE._id); const rN = await rx(newE._id); assert.equal(rN.status, "pending"); assert.equal(rN.qtyPrescribed, 12);
     // 8. PLAN complete vs plan stop: different words, counts, undispensed prescriptions cancelled, dispensed kept
