@@ -35,6 +35,8 @@ const users = {
   consultant: { role: "operator", businessId: B, shopId: A, active: true, perms: { "consult.record": true } },
   receptionist: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "patient.register": true } },
   dispReport: { role: "operator", businessId: B, shopId: A, active: true, perms: { "dispense.view": true, "dispense.report": true } },
+  p21editor: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "patient.edit": true } },
+  p21consent: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "patient.consent": true } },
   rules0: { role: "operator", businessId: B, shopId: A, active: true, perms: { "treatment.prescribe": true } }
 };
 // one Firestore object per user for the whole run: building a new one on every call made the SDK refuse to mix documents ("different Firestore instance")
@@ -540,4 +542,64 @@ test("v20 journey: it cannot be set on a closed encounter, and no other field ca
   await env.withSecurityRulesDisabled(async ctx => { const g = ctx.firestore(); await setDoc(doc(g, "pc_encounters", "ej2"), { businessId: B, facilityId: A, patientId: "p1", status: "closed", stage: "registered" }); await setDoc(doc(g, "pc_encounters", "ej3"), { businessId: B, facilityId: A, patientId: "p1", status: "open", stage: "registered", reason: "x" }); });
   await assertFails(updateDoc(doc(db("consultant"), "pc_encounters", "ej2"), { journey: { v: 1, next: "none" }, updatedBy: "consultant", updatedAt: serverTimestamp() }));
   await assertFails(updateDoc(doc(db("consultant"), "pc_encounters", "ej3"), { journey: { v: 1, next: "none" }, reason: "changed", updatedBy: "consultant", updatedAt: serverTimestamp() }));
+});
+
+// ======================= v21 (Lead): identity corrections, snapshot refresh, share expiry =======================
+const seedPatient21 = async id => env.withSecurityRulesDisabled(async ctx => { await setDoc(doc(ctx.firestore(), "pc_patients", id), { businessId: B, facilityId: A, registeredFacilityId: A, status: "active", fullName: "Old Name", nameKey: "old name", sex: "male", phone: "0700", schemaVersion: 1, createdBy: "x" }); });
+const corr21 = (uid, id, n, extra) => Object.assign({ businessId: B, facilityId: A, schemaVersion: 1, createdBy: uid, createdAt: serverTimestamp(), patientId: id, version: n, reason: "Misspelt at registration", before: { fullName: "Old Name", nameKey: "old name" }, after: { fullName: "New Name", nameKey: "new name" }, correctedBy: uid }, extra || {});
+const upd21 = uid => ({ updatedBy: uid, updatedAt: serverTimestamp() });
+test("v21 corrections: a name/sex/date-of-birth change needs a correction record in the same commit; other edits stay as before", async () => {
+  await seedPatient21("px");
+  const f = db("p21editor"), pref = doc(f, "pc_patients", "px");
+  await assertFails(updateDoc(pref, Object.assign({ fullName: "New Name", nameKey: "new name" }, upd21("p21editor"))));
+  await assertFails(updateDoc(pref, Object.assign({ fullName: "New Name", nameKey: "new name", identityVersion: 1 }, upd21("p21editor"))));
+  const alone = writeBatch(f); alone.set(doc(f, "pc_patient_corrections", "px_1"), corr21("p21editor", "px", 1)); await assertFails(alone.commit());
+  const skip = writeBatch(f); skip.update(pref, Object.assign({ fullName: "New Name", nameKey: "new name", identityVersion: 3 }, upd21("p21editor"))); skip.set(doc(f, "pc_patient_corrections", "px_3"), corr21("p21editor", "px", 3)); await assertFails(skip.commit());
+  const short = writeBatch(f); short.update(pref, Object.assign({ fullName: "New Name", nameKey: "new name", identityVersion: 1 }, upd21("p21editor"))); short.set(doc(f, "pc_patient_corrections", "px_1"), corr21("p21editor", "px", 1, { reason: "x" })); await assertFails(short.commit());
+  const foreign = writeBatch(db("viewer")); foreign.update(doc(db("viewer"), "pc_patients", "px"), Object.assign({ fullName: "New Name", nameKey: "new name", identityVersion: 1 }, upd21("viewer"))); foreign.set(doc(db("viewer"), "pc_patient_corrections", "px_1"), corr21("viewer", "px", 1)); await assertFails(foreign.commit());
+  await assertSucceeds(updateDoc(pref, Object.assign({ phone: "0711" }, upd21("p21editor"))));   // not an identity field
+  const ok = writeBatch(f); ok.update(pref, Object.assign({ fullName: "New Name", nameKey: "new name", identityVersion: 1 }, upd21("p21editor"))); ok.set(doc(f, "pc_patient_corrections", "px_1"), corr21("p21editor", "px", 1)); await assertSucceeds(ok.commit());
+  const next = writeBatch(f); next.update(pref, Object.assign({ sex: "female", identityVersion: 2 }, upd21("p21editor"))); next.set(doc(f, "pc_patient_corrections", "px_2"), corr21("p21editor", "px", 2, { before: { sex: "male" }, after: { sex: "female" } })); await assertSucceeds(next.commit());
+  await assertSucceeds(getDoc(doc(f, "pc_patient_corrections", "px_1")));
+  await assertFails(updateDoc(doc(f, "pc_patient_corrections", "px_1"), { reason: "changed later" }));
+  await assertFails(deleteDoc(doc(f, "pc_patient_corrections", "px_1")));
+  await assertFails(getDoc(doc(db("stranger"), "pc_patient_corrections", "px_1")));
+});
+const shareDoc21 = extra => Object.assign({ businessId: B, facilityId: A, patientId: "psh", granteeBusinessId: B, granteeFacilityId: S, granteeFacilityName: "B", patientSnapshot: { fullName: "Old Name" }, purpose: "care", consentMethod: "verbal", consentGivenBy: "Self", grantedBy: "x", schemaVersion: 1, createdBy: "x" }, extra || {});
+const seedShare21 = async extra => { await seedPatient21("psh"); await env.withSecurityRulesDisabled(async ctx => { const g = ctx.firestore(); await setDoc(doc(g, "pc_shares", "psh_" + A + "_" + B), shareDoc21(extra)); await setDoc(doc(g, "pc_allergies", "alsh"), { businessId: B, facilityId: A, patientId: "psh", status: "active", substance: "x" }); }); };
+test("v21 shares: the sharing facility can refresh the snapshot of an active share; nothing else can ride along; others and revoked shares are refused", async () => {
+  await seedShare21();
+  const f = db("p21consent"), ref = doc(f, "pc_shares", "psh_" + A + "_" + B), u = upd21("p21consent");
+  await assertSucceeds(updateDoc(ref, Object.assign({ patientSnapshot: { fullName: "New Name" }, snapshotAt: serverTimestamp() }, u)));
+  await assertFails(updateDoc(ref, Object.assign({ patientSnapshot: { fullName: "New Name" }, snapshotAt: new Date() }, u)));
+  await assertFails(updateDoc(ref, Object.assign({ patientSnapshot: { fullName: "X" }, snapshotAt: serverTimestamp(), purpose: "other" }, u)));
+  await assertFails(updateDoc(ref, Object.assign({ patientSnapshot: "text", snapshotAt: serverTimestamp() }, u)));
+  await assertFails(updateDoc(doc(db("p21editor"), "pc_shares", "psh_" + A + "_" + B), Object.assign({ patientSnapshot: { fullName: "X" }, snapshotAt: serverTimestamp() }, upd21("p21editor"))));
+  await assertFails(updateDoc(doc(db("prescriberB"), "pc_shares", "psh_" + A + "_" + B), Object.assign({ patientSnapshot: { fullName: "X" }, snapshotAt: serverTimestamp() }, upd21("prescriberB"))));
+});
+test("v21 shares: a revoked share cannot be refreshed or given an expiry", async () => {
+  await seedShare21({ revokedAt: new Date(), revokedBy: "x" });
+  const f = db("p21consent"), ref = doc(f, "pc_shares", "psh_" + A + "_" + B);
+  await assertFails(updateDoc(ref, Object.assign({ patientSnapshot: { fullName: "N" }, snapshotAt: serverTimestamp() }, upd21("p21consent"))));
+  await assertFails(updateDoc(ref, Object.assign({ consentExpiresAt: new Date(Date.now() + 86400000) }, upd21("p21consent"))));
+});
+test("v21 expiry: a share can be given a future end date, extended or cleared, never a past date; once the date has passed the receiving facility can no longer read the patient's shared records", async () => {
+  await seedShare21();
+  const f = db("p21consent"), ref = doc(f, "pc_shares", "psh_" + A + "_" + B), u = upd21("p21consent"), allergy = () => getDoc(doc(db("prescriberB"), "pc_allergies", "alsh"));
+  await assertSucceeds(allergy());                                                                   // no expiry: works as before
+  await assertFails(updateDoc(ref, Object.assign({ consentExpiresAt: new Date(Date.now() - 86400000) }, u)));
+  await assertSucceeds(updateDoc(ref, Object.assign({ consentExpiresAt: new Date(Date.now() + 86400000) }, u)));
+  await assertSucceeds(allergy());                                                                   // not yet expired
+  await assertSucceeds(updateDoc(ref, Object.assign({ consentExpiresAt: new Date(Date.now() + 5 * 86400000) }, u)));
+  await assertSucceeds(updateDoc(ref, Object.assign({ consentExpiresAt: null }, u)));
+  await env.withSecurityRulesDisabled(async ctx => { await updateDoc(doc(ctx.firestore(), "pc_shares", "psh_" + A + "_" + B), { consentExpiresAt: new Date(Date.now() - 1000) }); });
+  await assertFails(allergy());                                                                      // expired
+  await assertSucceeds(getDoc(doc(db("prescriberB"), "pc_shares", "psh_" + A + "_" + B)));           // the share itself stays readable, so the screen can say "expired"
+});
+test("v21 expiry: a new share can start with a future end date but not a past one", async () => {
+  await seedPatient21("psh");
+  const f = db("p21consent"), id = "psh_" + A + "_" + B;
+  const mk = extra => Object.assign({}, shareDoc21(extra), { createdBy: "p21consent", createdAt: serverTimestamp(), grantedBy: "p21consent", schemaVersion: 1 });
+  await assertFails(setDoc(doc(f, "pc_shares", id), mk({ consentExpiresAt: new Date(Date.now() - 86400000) })));
+  await assertSucceeds(setDoc(doc(f, "pc_shares", id), mk({ consentExpiresAt: new Date(Date.now() + 86400000) })));
 });
