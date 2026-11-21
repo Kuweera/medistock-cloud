@@ -161,6 +161,16 @@
   .cal-native{position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0; padding:0;}
   .info-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--accent); color:var(--text); font-size:13px; line-height:1.5;}
   .perm-warn{font-size:12px; color:var(--warn); margin-bottom:8px; line-height:1.5;}
+  /* ===== Stage 2 (Developer 2): read-first profile ===== */
+  .sec-h{display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;}
+  .sec-h h2{margin:0;}
+  .sec-h .btn-small{width:auto; flex:0 0 auto; min-height:40px;}
+  .subform{border:1px solid var(--border); border-radius:10px; padding:12px; margin:10px 0;}
+  #tabs{position:sticky; top:0; z-index:5; background:var(--bg); padding:6px 0; flex-wrap:nowrap; overflow-x:auto;}
+  #tabs .pill-btn{flex:0 0 auto; min-height:40px;}
+  .src{font-size:11.5px; color:var(--muted); margin-top:2px;}
+  .vitals{margin:8px 0; padding:9px 11px; border:1px solid var(--border); border-radius:9px; font-size:13px; line-height:1.5;}
+  @media (min-width:900px){ #mainArea{max-width:960px; margin:0 auto;} }
 </style>
 <script>
 (function(){
@@ -259,11 +269,20 @@
     <div id="allergyBanner" class="alert-box hidden"></div>
   </div>
 
-  <div class="pill-row" id="tabs">
-    <button type="button" class="pill-btn selected" data-t="overview">Overview</button>
-    <button type="button" class="pill-btn" data-t="history">Medical history</button>
+  <div class="card hidden" id="newNote">
+    <h2>New patient: nothing recorded yet</h2>
+    <div class="hint2" style="margin-top:0;">Here you can add allergies and medical history, and start a visit (triage, consultation, tests and treatment). Diagnoses, treatment and test results appear on this page once a clinician records them during a visit.</div>
+    <div class="op-actions"><button type="button" class="btn-small btn-primary hidden" id="newNoteVisitBtn">Start a visit</button></div>
+  </div>
+
+  <div class="pill-row" id="tabs" aria-label="Jump to a section">
+    <button type="button" class="pill-btn selected" data-t="overview">Details</button>
     <button type="button" class="pill-btn" data-t="allergies">Allergies</button>
+    <button type="button" class="pill-btn" data-t="history">History</button>
     <button type="button" class="pill-btn" data-t="encounters" id="encTab">Visits</button>
+    <button type="button" class="pill-btn" data-t="dx" id="dxTab">Diagnoses</button>
+    <button type="button" class="pill-btn" data-t="tx" id="txTab">Treatment</button>
+    <button type="button" class="pill-btn" data-t="inv" id="invTab">Tests</button>
     <button type="button" class="pill-btn" data-t="sharing" id="sharingTab">Sharing</button>
   </div>
 
@@ -289,9 +308,10 @@
     <div class="msg" id="mMsg"></div>
   </div>
 
-  <div id="tab-history" class="hidden">
-    <div class="card hidden" id="hAddCard">
-      <h2>Add to medical history</h2>
+  <div id="tab-history" class="card">
+    <div class="sec-h"><h2>Medical history</h2><button type="button" class="btn-small btn-primary hidden" id="hOpenBtn">+ Add</button></div>
+    <div class="subform hidden" id="hAddCard">
+      <h3 class="sub" style="margin-top:0;">Add to medical history</h3>
 <div class="hint2" id="req-history">Required: the details. Everything else is optional.</div>
       <label>Type</label>
       <select id="hType">
@@ -309,15 +329,16 @@
       <textarea id="hText" rows="3" placeholder="e.g. Asthma since childhood, uses inhaler"></textarea>
       <label>When (optional)</label>
       <input type="text" id="hOnset" placeholder="e.g. 2019, or March 2024">
-      <button class="btn-primary" id="hAddBtn">Add to history</button>
+      <div class="op-actions"><button class="btn-primary" id="hAddBtn">Add to history</button><button type="button" class="btn-small btn-secondary" id="hCancelBtn">Cancel</button></div>
       <div class="msg" id="hMsg"></div>
     </div>
-    <div class="card"><h2>Medical history</h2><div id="hList"></div></div>
+    <div id="hList"></div>
   </div>
 
-  <div id="tab-allergies" class="hidden">
-    <div class="card hidden" id="aAddCard">
-      <h2>Record an allergy</h2>
+  <div id="tab-allergies" class="card">
+    <div class="sec-h"><h2>Allergies</h2><button type="button" class="btn-small btn-primary hidden" id="aOpenBtn">+ Add</button></div>
+    <div class="subform hidden" id="aAddCard">
+      <h3 class="sub" style="margin-top:0;">Record an allergy</h3>
 <div class="hint2" id="req-allergy">Required: what the patient is allergic to. Everything else is optional.</div>
       <label>Allergic to (substance) *</label>
       <input type="text" id="aSubstance" list="substanceList" placeholder="Type or choose, e.g. Penicillin" autocomplete="off">
@@ -329,24 +350,28 @@
         <div><label>Date noted</label>
           <div class="dateField"><input type="text" id="aDate"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div></div>
       </div>
-      <button class="btn-primary" id="aAddBtn">Save allergy</button>
+      <div class="op-actions"><button class="btn-primary" id="aAddBtn">Save allergy</button><button type="button" class="btn-small btn-secondary" id="aCancelBtn">Cancel</button></div>
       <div class="msg" id="aMsg"></div>
     </div>
-    <div class="card"><h2>Allergies</h2><div id="aList"></div></div>
+    <div id="aList"></div>
   </div>
 
-  <div id="tab-encounters" class="hidden">
-    <div class="card">
-      <h2>Visits (encounters)</h2>
-      <div id="encList"></div>
-      <button class="btn-primary hidden" id="newVisitBtn">Start a new visit for this patient</button>
-    </div>
+  <div id="tab-encounters" class="card">
+    <div class="sec-h"><h2>Visits</h2><button type="button" class="btn-small btn-primary hidden" id="newVisitBtn">Start a new visit</button></div>
+    <div id="vitalsBox"></div>
+    <div id="encList"></div>
+    <button type="button" class="btn-small btn-secondary hidden" id="encMoreBtn" style="width:100%; margin-top:8px;">Show all visits</button>
   </div>
+  <div id="sec-dx" class="card"><div class="sec-h"><h2>Diagnoses</h2></div><div id="dxList"></div></div>
+  <div id="sec-tx" class="card"><div class="sec-h"><h2>Treatment and medication</h2></div><div id="txList"></div></div>
+  <div id="sec-inv" class="card"><div class="sec-h"><h2>Investigations and results</h2></div><div id="invList"></div></div>
 
-  <div id="tab-sharing" class="hidden">
-    <div class="card"><h2>Shared by this facility</h2><div id="sOutList"></div></div>
-    <div class="card hidden" id="sNewCard">
-      <h2>Share this patient with another facility</h2>
+  <div id="tab-sharing" class="card">
+    <div class="sec-h"><h2>Sharing</h2><button type="button" class="btn-small btn-primary hidden" id="sOpenBtn">+ Share with a facility</button></div>
+    <div class="hint2" style="margin-top:0;">Facilities this patient is shared with (only with the patient's agreement).</div>
+    <div id="sOutList"></div>
+    <div class="subform hidden" id="sNewCard">
+      <h3 class="sub" style="margin-top:0;">Share this patient with another facility</h3>
       <div class="hint2" style="margin-top:0;">The facility you choose will be able to read this patient's details, allergies and medical history, until you stop sharing. Do this only with the patient's (or guardian's) agreement. It can be a facility in your own business or in another business that has published itself in the Facility Directory.</div>
       <label>Service needed (optional)</label>
       <select id="sService"><option value="">Any service</option></select>
@@ -364,7 +389,7 @@
         <div><label>Who agreed? *</label><input type="text" id="sBy" list="byList" placeholder="Name" autocomplete="off"></div>
       </div>
       <label class="chk"><input type="checkbox" id="sAgree"><span>The patient (or guardian) agrees to share these records</span></label>
-      <button class="btn-primary" id="sGrantBtn">Share patient</button>
+      <div class="op-actions"><button class="btn-primary" id="sGrantBtn">Share patient</button><button type="button" class="btn-small btn-secondary" id="sCancelBtn">Cancel</button></div>
       <div class="msg" id="sMsg"></div>
     </div>
   </div>
@@ -478,6 +503,7 @@
   let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "", bizName = "";
   let patient = null, share = null, srcBusinessId = null, srcFacilityId = null;
   let links = [], allergies = [], history = [], shopsById = {}, dirDocs = [], sharesByMe = [], dirError = false, patientEncs = [];
+  let dxDocs = [], txOrders = [], invOrders = [], invResults = [], triageDocs = [], loaded = {}, clinErr = {}, showAllEnc = false;
   let showErrAllergies = false, showErrHistory = false, loggedView = false;
   let facPatients = [], facLoaded = false, mergeOther = null, mergedFromIds = [], unsubA = null, unsubH = null;
   const mergeParam = params.get("merge");
@@ -533,15 +559,17 @@
   function renderOverview() {
     const p = patient, nok = p.nextOfKin || {}, em = p.emergencyContact || {};
     const ls = links.filter(l => l.patientId === pid && l.facilityId === facilityId);
-    const act = allergies.filter(a => a.status === "active").length, hist = history.filter(h => h.status !== "entered_in_error").length;
-    $("tab-overview").innerHTML = "<h2>Overview</h2>" +
+    $("tab-overview").innerHTML = "<h2>Patient details</h2>" +
+      '<h3 class="sub" style="margin-top:4px;">Demographics</h3>' +
       (readOnly() ? "" : line("Registration no.", ls[0] ? ls[0].localRegNo : "")) +
       line("Sex", p.sex) + line("Age", ageText(p, new Date())) + line("Date of birth", p.dobPrecision === "exact" ? PCF.toTyped(p.dob) : "") +
-      line("Phone", p.phone) + line("Address", [p.address, p.village, p.district].filter(Boolean).join(", ")) +
+      (readOnly() && share && share.patientSnapshot && share.patientSnapshot.sourceRegNo ? line("Registration no. at " + (share.sourceFacilityName || "source facility"), share.patientSnapshot.sourceRegNo) : "") +
+      '<h3 class="sub">Contact</h3>' +
+      (line("Phone", p.phone) + line("Address", [p.address, p.village, p.district].filter(Boolean).join(", ")) +
       line("Next of kin", [nok.name, nok.relationship, nok.phone].filter(Boolean).join(" · ")) +
-      (readOnly() ? "" : line("Emergency contact", [em.name, em.relationship, em.phone].filter(Boolean).join(" · "))) +
-      line("Allergies recorded", String(act)) + line("History entries", String(hist)) +
-      '<div class="hint2">' + (readOnly() ? "These details were shared with you and cannot be changed here." : "Allergies and history are kept by the facility that recorded them. Use the Sharing tab to let another facility read this patient.") + "</div>" +
+      (readOnly() ? "" : line("Emergency contact", [em.name, em.relationship, em.phone].filter(Boolean).join(" · ")))
+        || '<div class="empty">No contact details recorded.</div>') +
+      '<div class="hint2">' + (readOnly() ? "These details were shared with you and cannot be changed here." : "Allergies and history are kept by the facility that recorded them. Use the Sharing section to let another facility read this patient.") + "</div>" +
       (!readOnly() && patient.status === "active" && can("patient.merge") ? '<button type="button" class="btn-small btn-secondary" id="openMergeBtn" style="width:100%; margin-top:10px;">Merge a duplicate record</button>' : "") +
       (!readOnly() && patient.status === "merged" && patient.mergedInto ? '<button type="button" class="btn-small btn-primary" id="openKeptBtn" style="width:100%; margin-top:10px;">Open the record that was kept</button>' : "");
     const mb = $("openMergeBtn"); if (mb) mb.onclick = () => openMerge(null);
@@ -553,7 +581,7 @@
     const act = sortAllergies(allergies.filter(a => a.status === "active"));
     const bad = allergies.filter(a => a.status !== "active");
     let h = "";
-    if (!act.length) h += '<div class="empty">No allergy recorded.</div>';
+    if (!act.length) h += '<div class="empty">' + (readOnly() ? "The sharing facility has no allergy on record." : "No allergy recorded. Add any known drug, food or other allergy so every clinician sees a warning.") + "</div>";
     act.forEach(a => {
       h += '<div class="entry"><div class="pt-name">' + esc(a.substance) + ' <span class="chip ' + (a.severity === "severe" ? "bad" : a.severity === "moderate" ? "warn" : "") + '">' + esc(SEV_LABEL[a.severity] || a.severity) + "</span></div>" +
         '<div class="pt-meta">' + (a.reaction ? "Reaction: " + esc(a.reaction) + "<br>" : "") + "Noted " + esc(a.recordedDate || "") + (a.recordedByName ? " by " + esc(a.recordedByName) : "") + "</div>" +
@@ -577,6 +605,7 @@
     setDoc(ref, d).catch(saveFailed);
     logAudit("allergy.add", "pc_allergies/" + ref.id, { substance: sub, severity: d.severity });
     $("aSubstance").value = ""; $("aReaction").value = ""; $("aSeverity").value = "unknown"; PCF.setDate("aDate", PCF.todayISO());
+    $("aAddCard").classList.add("hidden");
     ok("Allergy saved on this phone. It will sync when you are online.");
   }
   function allergyError(id) {
@@ -591,14 +620,14 @@
     const live = history.filter(h => h.status !== "entered_in_error");
     const bad = history.filter(h => h.status === "entered_in_error");
     let out = "";
-    if (!live.length) out += '<div class="empty">No medical history recorded.</div>';
+    if (!live.length) out += '<div class="empty">' + (readOnly() ? "The sharing facility has no medical history on record." : "No medical history recorded. You can add long-term illnesses, past operations or admissions, current medicines, and family or social history.") + "</div>";
     HIST_TYPES.forEach(t => {
       const rows = live.filter(h => h.type === t[0]).sort((a, b) => (b.clientCreatedAt || 0) - (a.clientCreatedAt || 0));
       if (!rows.length) return;
       out += '<h3 class="sub">' + esc(t[1]) + "</h3>";
       rows.forEach(h => {
         out += '<div class="entry"><div class="pt-name">' + esc(h.text) + (h.status === "resolved" ? ' <span class="chip">Resolved</span>' : "") + "</div>" +
-          '<div class="pt-meta">' + (h.onset ? "When: " + esc(h.onset) + "<br>" : "") + "Recorded by " + esc(h.recordedByName || "") + "</div>" +
+          '<div class="pt-meta">' + (h.onset ? "When: " + esc(h.onset) + "<br>" : "") + "Recorded " + esc(dateOf(h.createdAt) || (h.clientCreatedAt ? PCF.toTyped(isoDate(new Date(h.clientCreatedAt))) : "")) + " by " + esc(h.recordedByName || "") + "</div>" +
           (!readOnly() && can("history.record") ? '<div class="op-actions">' + (h.status === "active" ? '<button class="btn-small btn-secondary" data-hres="' + esc(h.id) + '">Mark resolved</button>' : "") +
             '<button class="btn-small btn-secondary" data-herr="' + esc(h.id) + '">Entered in error</button></div>' : "") + "</div>";
       });
@@ -619,6 +648,7 @@
     setDoc(ref, d).catch(saveFailed);
     logAudit("history.add", "pc_medical_history/" + ref.id, { type: d.type });
     $("hText").value = ""; $("hOnset").value = "";
+    $("hAddCard").classList.add("hidden");
     ok("History entry saved on this phone. It will sync when you are online.");
   }
   function historyResolve(id) {
@@ -634,14 +664,69 @@
 
   // ---------- visits (encounters) ----------
   const E_TYPE = { outpatient: "Outpatient", emergency: "Emergency", followup: "Follow-up", procedure: "Procedure", pharmacy: "Pharmacy" };
+  function dstr(ms) { return ms ? PCF.toTyped(isoDate(new Date(ms))) : ""; }
+  function encNo(id) { const e = patientEncs.find(x => x.id === id); return e ? e.encounterNo : ""; }
+  function goVisit() { const o = patientEncs.find(e => e.status === "open"); window.mcGo(o ? "encounter.html?id=" + encodeURIComponent(o.id) : "encounters.html?newFor=" + encodeURIComponent(pid)); }
+  function canVisit() { return can("encounter.open") && patient && patient.status === "active" && !readOnly(); }
+  function emptyWithVisit(text) { return '<div class="empty">' + esc(text) + "</div>" + (canVisit() ? '<div class="op-actions"><button type="button" class="btn-small btn-secondary" data-govisit="1">' + (patientEncs.some(e => e.status === "open") ? "Open the current visit" : "Start a visit") + "</button></div>" : ""); }
+  function errOr(name) { return clinErr[name] ? '<div class="empty">' + esc(clinErr[name]) + "</div>" : null; }
   function renderEncounters() {
     const list = patientEncs.slice().sort((a, b) => (b.arrivalAt || 0) - (a.arrivalAt || 0));
-    $("encList").innerHTML = list.length ? list.map(e => '<div class="pt" data-enc="' + esc(e.id) + '"><div class="pt-name">' + esc(e.encounterNo) + ' <span class="chip ' + (e.type === "emergency" ? "bad" : "") + '">' + esc(E_TYPE[e.type] || e.type) + '</span> <span class="chip ' + (e.status === "open" ? "ok" : "") + '">' + (e.status === "open" ? "Open" : e.status === "closed" ? "Closed" : "Cancelled") + '</span></div><div class="pt-meta">' +
-      esc(PCF.toTyped(e.arrivalDay || "")) + (e.reason ? " · " + esc(e.reason) : "") + "</div></div>").join("") : '<div class="empty">No visits recorded yet.</div>';
+    const shownList = showAllEnc ? list : list.slice(0, 5);
+    $("encList").innerHTML = list.length ? shownList.map(e => '<div class="pt" data-enc="' + esc(e.id) + '"><div class="pt-name">' + esc(e.encounterNo) + ' <span class="chip ' + (e.type === "emergency" ? "bad" : "") + '">' + esc(E_TYPE[e.type] || e.type) + '</span> <span class="chip ' + (e.status === "open" ? "ok" : "") + '">' + (e.status === "open" ? "Open" : e.status === "closed" ? "Closed" : "Cancelled") + '</span></div><div class="pt-meta">' +
+      esc(PCF.toTyped(e.arrivalDay || "")) + (e.reason ? " · " + esc(e.reason) : "") + "</div></div>").join("") : '<div class="empty">No visits yet. A visit starts with registration at the front desk, then triage and consultation as needed.</div>';
+    $("encMoreBtn").classList.toggle("hidden", list.length <= 5);
+    $("encMoreBtn").textContent = showAllEnc ? "Show only the latest 5" : "Show all visits (" + list.length + ")";
     const openOne = list.find(e => e.status === "open");
-    $("newVisitBtn").classList.toggle("hidden", !(can("encounter.open") && patient && patient.status === "active"));
-    $("newVisitBtn").textContent = openOne ? "Open the current visit (" + openOne.encounterNo + ")" : "Start a new visit for this patient";
-    $("newVisitBtn").onclick = () => window.mcGo(openOne ? "encounter.html?id=" + encodeURIComponent(openOne.id) : "encounters.html?newFor=" + encodeURIComponent(pid));
+    $("newVisitBtn").classList.toggle("hidden", !canVisit());
+    $("newVisitBtn").textContent = openOne ? "Open current visit (" + openOne.encounterNo + ")" : "Start a new visit";
+    $("newVisitBtn").onclick = goVisit;
+    renderVitals(); renderDx(); renderTx(); renderInv(); renderNewNote();
+  }
+  // the latest measurements, with the date and visit they were taken at (never presented as today's)
+  function renderVitals() {
+    const t = triageDocs.filter(x => x.status !== "entered_in_error").sort((a, b) => (b.clientCreatedAt || 0) - (a.clientCreatedAt || 0))[0];
+    if (!t) { $("vitalsBox").innerHTML = ""; return; }
+    const bits = [];
+    if (t.temperatureC != null) bits.push("Temp " + t.temperatureC + " °C"); if (t.bpSys != null && t.bpDia != null) bits.push("BP " + t.bpSys + "/" + t.bpDia); if (t.pulse != null) bits.push("Pulse " + t.pulse);
+    if (t.respRate != null) bits.push("Resp " + t.respRate); if (t.spo2 != null) bits.push("SpO2 " + t.spo2 + "%"); if (t.weightKg != null) bits.push("Weight " + t.weightKg + " kg");
+    $("vitalsBox").innerHTML = bits.length ? '<div class="vitals"><b>Last recorded measurements</b><br>' + esc(bits.join(" · ")) + '<div class="src">Taken ' + esc(dstr(t.clientCreatedAt)) + (encNo(t.encounterId) ? " during visit " + esc(encNo(t.encounterId)) : "") + ". These are not today's readings; measure again at the next visit.</div></div>" : "";
+  }
+  function renderDx() {
+    const e = errOr("pc_diagnoses"); if (e) { $("dxList").innerHTML = e; return; }
+    const act = dxDocs.filter(d => d.status === "active").sort((a, b) => (a.role === "primary" ? 0 : 1) - (b.role === "primary" ? 0 : 1) || (b.clientCreatedAt || 0) - (a.clientCreatedAt || 0));
+    $("dxList").innerHTML = act.length ? act.map(d => '<div class="entry" data-enc="' + esc(d.encounterId || "") + '"><div class="pt-name">' + esc(d.name) + (d.icd10 ? ' <span class="chip">' + esc(d.icd10) + "</span>" : "") + (d.role === "primary" ? ' <span class="chip ok">Primary</span>' : "") + (d.certainty && d.certainty !== "confirmed" ? ' <span class="chip warn">' + esc(String(d.certainty).replace(/_/g, " ")) + "</span>" : "") + "</div>" +
+      '<div class="src">Recorded ' + esc(dstr(d.clientCreatedAt)) + " by " + esc(d.authorName || "") + (encNo(d.encounterId) ? " · visit " + esc(encNo(d.encounterId)) : "") + "</div></div>").join("") : emptyWithVisit("No diagnosis recorded yet. A clinician adds diagnoses during a visit.");
+  }
+  function renderTx() {
+    const er = errOr("pc_treatment_orders"); if (er) { $("txList").innerHTML = er; return; }
+    const live = txOrders.filter(o => o.status !== "superseded").sort((a, b) => (b.prescribedAt || 0) - (a.prescribedAt || 0));
+    const cur = live.filter(o => o.status === "active"), past = live.filter(o => o.status !== "active");
+    const row = o => { const nm = o.kind === "procedure" ? o.procedureName : o.medicineName;
+      return '<div class="entry" data-enc="' + esc(o.encounterId || "") + '"><div class="pt-name">' + esc(nm || "") + ' <span class="chip">' + (o.kind === "procedure" ? "Procedure" : "Medicine") + '</span> <span class="chip ' + (o.status === "active" ? "ok" : "") + '">' + esc({ active: "Current", stopped: "Stopped", completed: "Completed" }[o.status] || o.status) + "</span></div>" +
+        '<div class="pt-meta">' + esc([o.strength, o.doseValue != null ? o.doseValue + " " + (o.doseUnit || "") : "", o.route].filter(Boolean).join(" · ")) + (o.instructions ? "<br>" + esc(o.instructions) : "") + "</div>" +
+        '<div class="src">Prescribed ' + esc(dstr(o.prescribedAt)) + " by " + esc(o.prescriberName || "") + (encNo(o.encounterId) ? " · visit " + esc(encNo(o.encounterId)) : "") + "</div></div>"; };
+    let h = "";
+    if (cur.length) h += '<h3 class="sub">Current</h3>' + cur.map(row).join("");
+    if (past.length) h += '<h3 class="sub">Earlier (medication and treatment history)</h3>' + past.map(row).join("");
+    $("txList").innerHTML = h || emptyWithVisit("No treatment or medicine ordered yet. A clinician orders these during a visit; what the pharmacy gave and what was administered are recorded separately.");
+  }
+  const INV_ST = { requested: "Waiting for sample", collected: "Sample collected", received: "Sample received", accepted: "Sample accepted", rejected: "Sample rejected", processing: "Being processed", resulted: "Result entered, not yet verified", verified: "Verified", reviewed: "Reviewed", cancelled: "Cancelled" };
+  function renderInv() {
+    const er = errOr("pc_inv_orders"); if (er) { $("invList").innerHTML = er; return; }
+    const list = invOrders.slice().sort((a, b) => (b.requestedAt || 0) - (a.requestedAt || 0)).slice(0, 30);
+    $("invList").innerHTML = list.length ? list.map(o => {
+      const r = invResults.find(x => x.id === o.currentResultId && x.status !== "entered_in_error");
+      return '<div class="entry" data-enc="' + esc(o.encounterId || "") + '"><div class="pt-name">' + esc(o.name) + (o.priority && o.priority !== "routine" ? ' <span class="chip ' + (o.priority === "stat" ? "bad" : "warn") + '">' + (o.priority === "stat" ? "STAT" : "Urgent") + "</span>" : "") + ' <span class="chip ' + (o.status === "verified" || o.status === "reviewed" ? "ok" : o.status === "cancelled" || o.status === "rejected" ? "bad" : o.status === "resulted" ? "warn" : "") + '">' + esc(INV_ST[o.status] || o.status) + "</span></div>" +
+        (r ? '<div class="pt-meta"><b>' + esc(String(r.value)) + (r.unit ? " " + esc(r.unit) : "") + "</b>" + (r.flag && r.flag !== "none" && r.flag !== "normal" ? ' <span class="chip ' + (r.critical ? "bad" : "warn") + '">' + esc(String(r.flag).toUpperCase()) + "</span>" : "") + (r.status !== "verified" ? ' <span class="chip warn">Not verified</span>' : "") + "</div>" +
+          '<div class="src">Resulted ' + esc(dstr(r.resultAt)) + (r.enteredByName ? " by " + esc(r.enteredByName) : "") + "</div>" : "") +
+        '<div class="src">Requested ' + esc(dstr(o.requestedAt)) + " by " + esc(o.requestedByName || "") + (encNo(o.encounterId) ? " · visit " + esc(encNo(o.encounterId)) : "") + "</div></div>";
+    }).join("") : emptyWithVisit("No tests requested yet. A clinician requests tests during a visit; results appear here once the laboratory enters them.");
+  }
+  function renderNewNote() {
+    const fresh = !readOnly() && patient && patient.status === "active" && loaded.a && loaded.h && loaded.e && !allergies.length && !history.length && !patientEncs.length;
+    $("newNote").classList.toggle("hidden", !fresh);
+    $("newNoteVisitBtn").classList.toggle("hidden", !canVisit());
   }
 
   // ---------- sharing this patient with another facility (same business or another business) ----------
@@ -704,7 +789,8 @@
         (dateOf(c.grantedAt) ? " · from " + esc(dateOf(c.grantedAt)) : "") + (!live && dateOf(c.revokedAt) ? " · stopped " + esc(dateOf(c.revokedAt)) : "") + "</div>" +
         (can("patient.consent") ? '<div class="op-actions">' + (live ? '<button class="btn-small btn-secondary" data-stop="' + esc(c.granteeBusinessId) + '">Stop sharing</button>' : '<button class="btn-small btn-secondary" data-again="' + esc(c.granteeBusinessId) + '">Share again</button>') + "</div>" : "") + "</div>";
     }).join("") : '<div class="empty">Not shared with any other facility.</div>';
-    $("sNewCard").classList.toggle("hidden", !can("patient.consent"));
+    $("sOpenBtn").classList.toggle("hidden", !can("patient.consent"));
+    if (!can("patient.consent")) $("sNewCard").classList.add("hidden");
     renderPicker();
   }
   function setSMsg(t, err) { const m = $("sMsg"); m.textContent = t || ""; m.className = "msg " + (err ? "err" : "ok"); }
@@ -719,6 +805,7 @@
     const existing = sharesByMe.find(c => c.granteeBusinessId === t.businessId);
     if (existing && !existing.revokedAt) { setSMsg("This patient is already shared with " + t.businessName + ". Stop sharing first to change the facility.", true); return; }
     const id = pid + "_" + facilityId + "_" + t.businessId, ref = doc(db, "pc_shares", id), snap = snapshotOf(patient);
+    { const ml = links.find(l => l.patientId === pid && l.facilityId === facilityId); snap.sourceRegNo = ml ? ml.localRegNo : ""; } // lets the receiving facility show our registration number
     if (existing) {
       updateDoc(ref, { revokedAt: null, revokedBy: null, grantedAt: serverTimestamp(), grantedBy: me.id, purpose: purpose, consentMethod: method, consentGivenBy: by,
         granteeFacilityId: t.facilityId, granteeFacilityName: t.facilityName, patientSnapshot: snap, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
@@ -729,7 +816,9 @@
     }
     logAudit("share.grant", "pc_shares/" + id, { granteeBusinessId: t.businessId, granteeFacilityId: t.facilityId, purpose: purpose, consentMethod: method, consentGivenBy: by });
     $("sPurpose").value = ""; $("sBy").value = ""; $("sAgree").checked = false;
-    setSMsg("Saved on this phone. " + t.facilityName + " will see the patient once it syncs.");
+    setSMsg("");
+    $("sNewCard").classList.add("hidden");
+    ok("Saved on this phone. " + t.facilityName + " will see the patient once it syncs.");
   }
   function stopShare(granteeBusinessId) {
     if (!window.confirm("Stop sharing this patient with that facility?")) return;
@@ -805,10 +894,22 @@
   }
 
   // ---------- wiring ----------
-  function renderAll() { if (!patient) return; renderHeader(); renderBanner(); renderOverview(); renderAllergies(); renderHistory(); }
+  function renderAll() { if (!patient) return; renderHeader(); renderBanner(); renderOverview(); renderAllergies(); renderHistory(); if (!readOnly()) renderEncounters(); }
+  const JUMP = { overview: "tab-overview", allergies: "tab-allergies", history: "tab-history", encounters: "tab-encounters", dx: "sec-dx", tx: "sec-tx", inv: "sec-inv", sharing: "tab-sharing" };
   document.querySelectorAll("#tabs .pill-btn").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll("#tabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b));
-    ["overview", "history", "allergies", "encounters", "sharing"].forEach(t => { $("tab-" + t).classList.toggle("hidden", t !== b.dataset.t); });
+    const el = $(JUMP[b.dataset.t]); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
+  // forms stay closed until the user chooses to add something
+  function openForm(cardId, focusId) { $(cardId).classList.remove("hidden"); $(cardId).scrollIntoView({ behavior: "smooth", block: "nearest" }); if (focusId) $(focusId).focus(); }
+  $("aOpenBtn").onclick = () => openForm("aAddCard", "aSubstance"); $("aCancelBtn").onclick = () => $("aAddCard").classList.add("hidden");
+  $("hOpenBtn").onclick = () => openForm("hAddCard", "hText"); $("hCancelBtn").onclick = () => $("hAddCard").classList.add("hidden");
+  $("sOpenBtn").onclick = () => openForm("sNewCard", "sBiz"); $("sCancelBtn").onclick = () => $("sNewCard").classList.add("hidden");
+  $("encMoreBtn").onclick = () => { showAllEnc = !showAllEnc; renderEncounters(); };
+  $("newNoteVisitBtn").onclick = goVisit;
+  ["dxList", "txList", "invList"].forEach(id => $(id).addEventListener("click", e => {
+    if (e.target.closest("[data-govisit]")) { goVisit(); return; }
+    const r = e.target.closest("[data-enc]"); if (r && r.dataset.enc) window.mcGo("encounter.html?id=" + encodeURIComponent(r.dataset.enc));
   }));
   $("mQ").addEventListener("input", renderMergeLists); $("mCancel").onclick = () => { $("mergeCard").classList.add("hidden"); mergeOther = null; };
   $("mDoBtn").onclick = doMerge;
@@ -842,10 +943,10 @@
     const pidWhere = ids.length > 1 ? where("patientId", "in", ids) : where("patientId", "==", pid);
     const base = [where("businessId", "==", srcBusinessId), pidWhere, where("facilityId", "==", srcFacilityId), limit(300)];
     unsubA = onSnapshot(query(collection(db, "pc_allergies"), ...base), { includeMetadataChanges: true }, s => {
-      allergies = s.docs.map(d => ({ id: d.id, ...d.data() })); mark(s); renderBanner(); renderAllergies(); renderOverview();
+      allergies = s.docs.map(d => ({ id: d.id, ...d.data() })); loaded.a = true; mark(s); renderBanner(); renderAllergies(); renderOverview(); renderNewNote();
     }, err => { $("aList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view allergies." : "The allergies could not be loaded. Check your internet connection and try again.") + "</div>"; });
     unsubH = onSnapshot(query(collection(db, "pc_medical_history"), ...base), { includeMetadataChanges: true }, s => {
-      history = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHistory(); renderOverview();
+      history = s.docs.map(d => ({ id: d.id, ...d.data() })); loaded.h = true; renderHistory(); renderOverview(); renderNewNote();
     }, err => { $("hList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view medical history." : "The medical history could not be loaded. Check your internet connection and try again.") + "</div>"; });
   }
   function startLists() {
@@ -857,8 +958,14 @@
       if (ids.join(",") !== mergedFromIds.slice().sort().join(",")) { mergedFromIds = ids; subscribeClinical(); }
     }, () => {});
     onSnapshot(query(collection(db, "pc_encounters"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", pid), limit(100)), s => {
-      patientEncs = s.docs.map(d => ({ id: d.id, ...d.data() })); renderEncounters();
+      patientEncs = s.docs.map(d => ({ id: d.id, ...d.data() })); loaded.e = true; renderEncounters();
     }, () => {});
+    // read-only summaries of this facility's own clinical records (same facility and patient.view as the rules require); nothing here is written
+    const csc = [where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", pid), limit(200)];
+    const wc = (name, what, cb) => onSnapshot(query(collection(db, name), ...csc), s => { clinErr[name] = null; cb(s.docs.map(d => ({ id: d.id, ...d.data() }))); renderEncounters(); },
+      err => { clinErr[name] = err && err.code === "permission-denied" ? "You do not have permission to view " + what + "." : "The " + what + " could not be loaded. Check your internet connection and try again."; renderEncounters(); });
+    wc("pc_diagnoses", "diagnoses", v => { dxDocs = v; }); wc("pc_treatment_orders", "treatment orders", v => { txOrders = v; });
+    wc("pc_inv_orders", "tests", v => { invOrders = v; }); wc("pc_inv_results", "test results", v => { invResults = v; }); wc("pc_triage", "measurements", v => { triageDocs = v; });
     onSnapshot(query(collection(db, "pc_patient_facility_links"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", pid), limit(20)), s => {
       links = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHeader(); renderOverview();
     }, () => {});
@@ -899,10 +1006,11 @@
     $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
     const ro = readOnly();
     const lk = locked();
-    $("aAddCard").classList.toggle("hidden", lk || !can("allergy.record"));
-    $("hAddCard").classList.toggle("hidden", lk || !can("history.record"));
-    $("sharingTab").classList.toggle("hidden", lk);
-    $("encTab").classList.toggle("hidden", ro);
+    $("aOpenBtn").classList.toggle("hidden", lk || !can("allergy.record"));
+    $("hOpenBtn").classList.toggle("hidden", lk || !can("history.record"));
+    ["sharingTab", "tab-sharing"].forEach(id => $(id).classList.toggle("hidden", lk));
+    // visits, diagnoses, treatment and tests belong to the facility that holds them: never shown for a patient shared from elsewhere
+    ["encTab", "dxTab", "txTab", "invTab", "tab-encounters", "sec-dx", "sec-tx", "sec-inv"].forEach(id => $(id).classList.toggle("hidden", ro));
     fillPeopleList(); renderAll(); renderSharing(); startLists();
     if (mergeParam && !ro && can("patient.merge") && patient.status === "active") openMerge(mergeParam);
     if (!loggedView) {

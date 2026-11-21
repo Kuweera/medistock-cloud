@@ -514,7 +514,7 @@
   function buildItems(q) {
     const items = [];
     patients.forEach(p => { if (p.status !== "merged" && matchesQuery(p, regsOf(p.id), q)) items.push({ kind: "local", p: p, t: p.clientCreatedAt || 0 }); });
-    liveShares().forEach(x => { const sp = shareAsPatient(x); if (matchesQuery(sp, [], q)) items.push({ kind: "shared", p: sp, x: x, t: tsMs(x.grantedAt) || x.clientCreatedAt || 0 }); });
+    liveShares().forEach(x => { const sp = shareAsPatient(x); if (matchesQuery(sp, sp.sourceRegNo ? [sp.sourceRegNo] : [], q)) items.push({ kind: "shared", p: sp, x: x, t: tsMs(x.grantedAt) || x.clientCreatedAt || 0 }); });
     return items;
   }
   function renderList() {
@@ -542,7 +542,7 @@
     $("results").innerHTML = list.map(i => {
       const p = i.p, meta = esc(sexText(p.sex)) + " · " + esc(ageText(p, now)) + (p.phone ? " · " + esc(p.phone) : "") + (p.village ? " · " + esc(p.village) : "");
       if (i.kind === "shared") {
-        return '<div class="pt" data-share="' + esc(i.x.id) + '"><div class="pt-name">' + esc(p.fullName) + ' <span class="chip shared">Shared</span> <span class="chip">ID ' + esc(String(i.x.patientId || "").slice(-6).toUpperCase()) + "</span></div>" +
+        return '<div class="pt" data-share="' + esc(i.x.id) + '"><div class="pt-name">' + esc(p.fullName) + ' <span class="chip shared">Shared</span> <span class="chip">' + (p.sourceRegNo ? "Ref " + esc(p.sourceRegNo) : "ID " + esc(String(i.x.patientId || "").slice(-6).toUpperCase())) + "</span></div>" +
           '<div class="pt-meta">' + meta + '</div><div class="pt-from">From ' + esc(shareFrom(i.x)) + (i.x.purpose ? " · " + esc(i.x.purpose) : "") + "</div></div>";
       }
       const ml = myLink(p.id), src = p.sharedFrom ? shares.find(x => x.id === p.sharedFrom) : null;
