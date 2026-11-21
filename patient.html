@@ -670,11 +670,20 @@
   function canVisit() { return can("encounter.open") && patient && patient.status === "active" && !readOnly(); }
   function emptyWithVisit(text) { return '<div class="empty">' + esc(text) + "</div>" + (canVisit() ? '<div class="op-actions"><button type="button" class="btn-small btn-secondary" data-govisit="1">' + (patientEncs.some(e => e.status === "open") ? "Open the current visit" : "Start a visit") + "</button></div>" : ""); }
   function errOr(name) { return clinErr[name] ? '<div class="empty">' + esc(clinErr[name]) + "</div>" : null; }
+  // where an open visit goes next: the journey hint when there is one, otherwise what the visit stage implies (the hint is only a cache)
+  const J_LABEL = { triage: "Triage", consultation: "Consultation", investigation: "Investigation (laboratory)", results_review: "Clinician to review results", pharmacy: "Pharmacy", treatment: "Treatment or procedure", follow_up: "Follow-up", discharge: "Discharge", none: "No further step" };
+  function nextStepLine(e) {
+    if (e.status !== "open") return "";
+    const j = e.journey, hint = j && j.v === 1 && J_LABEL[j.next] ? j.next : null;
+    const stageNext = e.stage === "registered" ? "triage" : e.stage === "triaged" ? "consultation" : null;
+    const label = hint && hint !== "none" ? J_LABEL[hint] : stageNext ? J_LABEL[stageNext] : "In consultation";
+    return '<div class="pt-meta">Next: <b>' + esc(label) + "</b>" + (hint && j.note ? " · " + esc(String(j.note).slice(0, 140)) : "") + "</div>";
+  }
   function renderEncounters() {
     const list = patientEncs.slice().sort((a, b) => (b.arrivalAt || 0) - (a.arrivalAt || 0));
     const shownList = showAllEnc ? list : list.slice(0, 5);
     $("encList").innerHTML = list.length ? shownList.map(e => '<div class="pt" data-enc="' + esc(e.id) + '"><div class="pt-name">' + esc(e.encounterNo) + ' <span class="chip ' + (e.type === "emergency" ? "bad" : "") + '">' + esc(E_TYPE[e.type] || e.type) + '</span> <span class="chip ' + (e.status === "open" ? "ok" : "") + '">' + (e.status === "open" ? "Open" : e.status === "closed" ? "Closed" : "Cancelled") + '</span></div><div class="pt-meta">' +
-      esc(PCF.toTyped(e.arrivalDay || "")) + (e.reason ? " · " + esc(e.reason) : "") + "</div></div>").join("") : '<div class="empty">No visits yet. A visit starts with registration at the front desk, then triage and consultation as needed.</div>';
+      esc(PCF.toTyped(e.arrivalDay || "")) + (e.reason ? " · " + esc(e.reason) : "") + "</div>" + nextStepLine(e) + "</div>").join("") : '<div class="empty">No visits yet. A visit starts with registration at the front desk, then triage and consultation as needed.</div>';
     $("encMoreBtn").classList.toggle("hidden", list.length <= 5);
     $("encMoreBtn").textContent = showAllEnc ? "Show only the latest 5" : "Show all visits (" + list.length + ")";
     const openOne = list.find(e => e.status === "open");

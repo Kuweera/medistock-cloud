@@ -161,6 +161,17 @@
   .cal-native{position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0; padding:0;}
   .info-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--accent); color:var(--text); font-size:13px; line-height:1.5;}
   .perm-warn{font-size:12px; color:var(--warn); margin-bottom:8px; line-height:1.5;}
+  /* ===== Stage 3 (Developer 2): journey and departments ===== */
+  .jr{margin-top:4px;}
+  .jr b{color:var(--text);}
+  .pt-actions{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .pt-actions .btn-small{width:auto; min-height:40px; padding:8px 14px;}
+  #deptTabs .pill-btn{min-height:40px;}
+  .chk{display:flex; align-items:center; gap:10px; font-size:13.5px; color:var(--text); margin:6px 0;}
+  .chk input{width:22px; height:22px; flex:0 0 22px; padding:0; margin:0;}
+  .deptlink{margin:6px 0 10px; font-size:13px;}
+  .deptlink a{color:var(--accent); font-weight:700;}
+  @media (min-width:900px){ #mainArea{max-width:960px; margin:0 auto;} }
 </style>
 <script>
 (function(){
@@ -172,18 +183,6 @@
 })();
 </script>
 </head>
-<body>
-
-<body>
-
-<body>
-
-<body>
-
-<body>
-
-<body>
-
 <body>
 
 <header class="app-header">
@@ -274,6 +273,20 @@
     <div class="msg" id="nMsg"></div>
   </div>
 
+  <div class="card hidden" id="routeCard">
+    <h2>Send patient to the next step</h2>
+    <div class="hint2" id="routePt" style="margin-top:0;"></div>
+    <label for="rNext">Next step</label>
+    <select id="rNext"></select>
+    <label>Also waiting for (optional)</label>
+    <div id="rWaiting"></div>
+    <label for="rNote">Note for the next team (optional)</label>
+    <input type="text" id="rNote" maxlength="140" placeholder="e.g. Fasting sample needed" autocomplete="off">
+    <div class="op-actions"><button type="button" class="btn-primary" id="rSaveBtn" style="margin-top:0;">Save</button><button type="button" class="btn-small btn-secondary" id="rCancelBtn">Cancel</button></div>
+    <div class="hint2">This only tells the next team where the patient is going. It does not order tests or medicines, and it never stops any other work. Only the steps this patient needs should be chosen.</div>
+    <div class="msg" id="rMsg"></div>
+  </div>
+
   <div class="card">
     <h2>Patient queue</h2>
     <div class="pill-row" id="qTabs">
@@ -281,6 +294,8 @@
       <button type="button" class="pill-btn" data-f="closed">Closed today</button>
       <button type="button" class="pill-btn" data-f="all">All today</button>
     </div>
+    <div class="pill-row" id="deptTabs" aria-label="Show one department"></div>
+    <div class="deptlink hidden" id="deptLink"></div>
     <div class="hint2" id="qInfo"></div>
     <div id="qList"></div>
   </div>
@@ -305,7 +320,7 @@
 <script src="pc-ux.js"></script>
 <script src="pc-fields.js"></script>
 <script type="module">
-  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, collection, onSnapshot, serverTimestamp, query, where, limit, getDocFromCache } = window.top.MC.api(window);
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, collection, onSnapshot, serverTimestamp, query, where, limit, getDocFromCache, updateDoc, writeBatch } = window.top.MC.api(window);
 
   const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
   async function getDocServerFirst(ref) {
@@ -362,11 +377,48 @@
     return list.slice().sort((a, b) => (queueRank(a) - queueRank(b)) || ((a.arrivalAt || 0) - (b.arrivalAt || 0)));
   }
   const OBS = [["temperatureC", "Temperature (°C)"], ["bpSys", "Blood pressure top number (systolic)"], ["bpDia", "Blood pressure bottom number (diastolic)"], ["pulse", "Pulse (per minute)"], ["respRate", "Breathing rate (per minute)"], ["spo2", "Oxygen saturation (%)"]];
+  // ---------- patient journey (hint + real records). The hint (pc_encounters.journey) is only a cache; the records win ----------
+  const J_NEXT_LABEL = { triage: "Triage", consultation: "Consultation", investigation: "Investigation (laboratory)", results_review: "Clinician to review results", pharmacy: "Pharmacy", treatment: "Treatment or procedure", follow_up: "Follow-up", discharge: "Discharge", none: "No further step" };
+  const J_WAIT_LABEL = { laboratory: "Laboratory", pharmacy: "Pharmacy", treatment: "Treatment room", clinician: "Clinician", patient: "Patient to return" };
+  const J_DEPT_LABEL = { triage: "Triage", consultation: "Consultation", laboratory: "Laboratory", pharmacy: "Pharmacy", treatment: "Procedures", closing: "Ready to close" };
+  const J_LAB_OPEN = ["requested", "collected", "received", "accepted", "processing"], J_LAB_DONE = ["resulted", "verified"];
+  function journeyHint(e) {
+    const j = e && e.journey;
+    if (!j || typeof j !== "object" || j.v !== 1 || !J_NEXT_LABEL[j.next]) return null;
+    return { next: j.next, waiting: (Array.isArray(j.waiting) ? j.waiting : []).filter(x => J_WAIT_LABEL[x]).slice(0, 4), note: typeof j.note === "string" ? j.note.slice(0, 140) : "" };
+  }
+  function journeyView(e, labs, meds) {
+    labs = labs || []; meds = meds || [];
+    const labOpen = labs.filter(o => J_LAB_OPEN.indexOf(o.status) >= 0).length, toReview = labs.filter(o => J_LAB_DONE.indexOf(o.status) >= 0).length;
+    const stage = e.stage || "registered", h = journeyHint(e);
+    const derived = stage === "registered" ? "triage" : stage === "triaged" ? "consultation" : (labOpen ? "investigation" : (toReview ? "results_review" : "none"));
+    let stale = false, next = derived;
+    if (h) {
+      if (h.next === "triage" && stage !== "registered") stale = true;
+      else if (h.next === "consultation" && stage === "in_consultation") stale = true;
+      else if (h.next === "investigation" && !labOpen && !toReview) stale = true;
+      else if (h.next === "results_review" && !toReview) stale = true;
+      if (!stale && h.next !== "none") next = h.next;
+    }
+    const live = h && !stale ? h : null, depts = [], add = d => { if (depts.indexOf(d) < 0) depts.push(d); };
+    const sentOn = !!live && ["pharmacy", "treatment", "follow_up", "discharge"].indexOf(live.next) >= 0 && live.waiting.indexOf("clinician") < 0;
+    if (!sentOn) { if (stage === "registered" && !(live && live.next === "consultation")) add("triage"); else add("consultation"); }
+    if (toReview) add("consultation");
+    if (labOpen) add("laboratory");
+    if (live) {
+      if (live.next === "pharmacy" || live.waiting.indexOf("pharmacy") >= 0) add("pharmacy");
+      if (live.next === "treatment" || live.waiting.indexOf("treatment") >= 0) add("treatment");
+      if (live.next === "follow_up" || live.next === "discharge") add("closing");
+    }
+    return { next: next, derived: derived, stale: stale, hint: live, depts: depts, labOpen: labOpen, toReview: toReview, meds: meds.filter(o => o.kind !== "procedure").length, procs: meds.filter(o => o.kind === "procedure").length, waiting: live ? live.waiting : [] };
+  }
   /*PURE-END*/
 
   const params = new URLSearchParams(location.search);
   let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "", myOperatorId = "";
   let encs = {}, openList = [], todayList = [], patients = [], links = [], patientsLoaded = false, picked = null, filter = "active", obsRules = null;
+  let invLive = [], txLive = [], recErr = {}, dept = "all", routeId = null;
+  const canRoute = () => can("encounter.open") || can("triage.record") || can("consult.record");
   const can = k => role === "owner" || perms[k] === true;
   const STAGE = { registered: "Waiting", triaged: "Triaged", in_consultation: "In consultation" };
   const TYPE = { outpatient: "Outpatient", emergency: "Emergency", followup: "Follow-up", procedure: "Procedure", pharmacy: "Pharmacy" };
@@ -387,23 +439,67 @@
     encs = {}; openList.concat(todayList).forEach(e => { encs[e.id] = e; });
     renderQueue();
   }
+  function byEnc(list) { const m = {}; list.forEach(o => { (m[o.encounterId] = m[o.encounterId] || []).push(o); }); return m; }
   function renderQueue() {
     const all = Object.keys(encs).map(k => encs[k]);
+    const labsBy = byEnc(invLive), medsBy = byEnc(txLive), view = {};
+    all.forEach(e => { if (e.status === "open") view[e.id] = journeyView(e, recErr.inv ? [] : labsBy[e.id], recErr.tx ? [] : medsBy[e.id]); });
+    // department tabs: counts of open visits that currently have work for that department
+    const openAll = all.filter(e => e.status === "open"), counts = { all: openAll.length };
+    Object.keys(J_DEPT_LABEL).forEach(d => { counts[d] = openAll.filter(e => view[e.id].depts.indexOf(d) >= 0).length; });
+    if (filter === "closed") $("deptTabs").classList.add("hidden"); else $("deptTabs").classList.remove("hidden");
+    $("deptTabs").innerHTML = ["all"].concat(Object.keys(J_DEPT_LABEL)).map(d => '<button type="button" class="pill-btn' + (dept === d ? " selected" : "") + '" data-d="' + d + '">' + (d === "all" ? "All" : J_DEPT_LABEL[d]) + " (" + counts[d] + ")</button>").join("");
+    const link = { laboratory: ["laboratory.html", "Open the laboratory work list"], pharmacy: ["pharmacy.html", "Open the pharmacy work list"] }[dept];
+    $("deptLink").classList.toggle("hidden", !link || filter === "closed"); if (link) $("deptLink").innerHTML = '<a href="#" data-go="' + link[0] + '">' + link[1] + " &rarr;</a> (orders, results and dispensing are handled there)";
+    const inDept = e => dept === "all" || e.status !== "open" || view[e.id].depts.indexOf(dept) >= 0;
     let list;
-    if (filter === "active") list = sortQueue(all.filter(e => e.status === "open"));
+    if (filter === "active") list = sortQueue(all.filter(e => e.status === "open" && inDept(e)));
     else if (filter === "closed") list = all.filter(e => e.status !== "open").sort((a, b) => (b.arrivalAt || 0) - (a.arrivalAt || 0));
-    else list = sortQueue(all.filter(e => e.status === "open")).concat(all.filter(e => e.status !== "open").sort((a, b) => (b.arrivalAt || 0) - (a.arrivalAt || 0)));
-    const nOpen = all.filter(e => e.status === "open").length;
-    $("qInfo").textContent = nOpen + " open visit" + (nOpen === 1 ? "" : "s") + " · emergencies first, then by triage category, then by arrival time";
+    else list = sortQueue(all.filter(e => e.status === "open" && inDept(e))).concat(all.filter(e => e.status !== "open").sort((a, b) => (b.arrivalAt || 0) - (a.arrivalAt || 0)));
+    $("qInfo").textContent = openAll.length + " open visit" + (openAll.length === 1 ? "" : "s") + " · emergencies first, then by triage category, then by arrival time";
     const now = new Date();
     $("qList").innerHTML = list.length ? list.map(e => {
       const snap = { dobPrecision: e.patientDobPrecision, dob: e.patientDob, dobApprox: e.patientDobApprox };
-      const emerg = e.type === "emergency" || e.triageCategory === "emergency";
+      const emerg = e.type === "emergency" || e.triageCategory === "emergency", v = view[e.id];
+      let jr = "";
+      if (v) {
+        const bits = [];
+        if (v.labOpen) bits.push('<span class="chip warn">' + v.labOpen + " test" + (v.labOpen === 1 ? "" : "s") + " in the laboratory</span>");
+        if (v.toReview) bits.push('<span class="chip warn">' + v.toReview + " result" + (v.toReview === 1 ? "" : "s") + " to review</span>");
+        if (v.meds) bits.push('<span class="chip">Medicine ordered</span>'); if (v.procs) bits.push('<span class="chip">Procedure ordered</span>');
+        v.waiting.forEach(w => { if (w !== "laboratory" || !v.labOpen) bits.push('<span class="chip">Waiting: ' + esc(J_WAIT_LABEL[w]) + "</span>"); });
+        jr = '<div class="pt-meta jr">Now: <b>' + esc(STAGE[e.stage] || e.stage) + "</b> · Next: <b>" + esc(J_NEXT_LABEL[v.next]) + "</b> " + bits.join("") + (v.hint && v.hint.note ? '<br><i>“' + esc(v.hint.note) + "”</i>" : "") + "</div>";
+      }
+      const act = e.status === "open" && canRoute() ? '<div class="pt-actions"><button type="button" class="btn-small btn-secondary" data-route="' + esc(e.id) + '">Send to next step</button></div>' : "";
       return '<div class="pt" data-enc="' + esc(e.id) + '"><div class="pt-name">' + esc(e.patientName) + ' <span class="chip ' + (emerg ? "bad" : "") + '">' + esc(TYPE[e.type] || e.type) + "</span>" +
         (e.status === "open" ? ' <span class="chip ok">' + esc(STAGE[e.stage] || e.stage) + "</span>" : ' <span class="chip">' + (e.status === "closed" ? "Closed" : "Cancelled") + "</span>") +
         (e.triageCategory ? ' <span class="chip ' + (e.triageCategory === "emergency" ? "bad" : e.triageCategory === "urgent" ? "warn" : "") + '">' + esc(CAT[e.triageCategory]) + "</span>" : "") + "</div>" +
-        '<div class="pt-meta">' + esc(e.encounterNo) + " · " + esc(e.patientSex || "") + " · " + esc(ageText(snap, now)) + " · arrived " + esc(hhmm(e.arrivalAt || 0)) + (e.reason ? " · " + esc(e.reason) : "") + "</div></div>";
-    }).join("") : '<div class="empty">' + (filter === "active" ? "No open visits." : "Nothing here.") + "</div>";
+        '<div class="pt-meta">' + esc(e.encounterNo) + " · " + esc(e.patientSex || "") + " · " + esc(ageText(snap, now)) + " · arrived " + esc(hhmm(e.arrivalAt || 0)) + (e.reason ? " · " + esc(e.reason) : "") + "</div>" + jr + act + "</div>";
+    }).join("") : '<div class="empty">' + (filter === "closed" ? "Nothing here." : dept !== "all" ? "No patient is waiting for " + esc(J_DEPT_LABEL[dept]) + " right now." : "No open visits.") + "</div>";
+  }
+  // ---------- send to the next step (writes only the journey hint; no orders are created) ----------
+  function openRoute(id) {
+    const e = encs[id]; if (!e || e.status !== "open" || !canRoute()) return;
+    routeId = id; const v = journeyView(e, byEnc(invLive)[id], byEnc(txLive)[id]);
+    $("routePt").textContent = e.patientName + " · " + e.encounterNo;
+    $("rNext").innerHTML = Object.keys(J_NEXT_LABEL).map(k => '<option value="' + k + '">' + esc(J_NEXT_LABEL[k]) + "</option>").join("");
+    $("rNext").value = v.hint ? v.hint.next : v.next;
+    $("rWaiting").innerHTML = Object.keys(J_WAIT_LABEL).map(k => '<label class="chk"><input type="checkbox" value="' + k + '"' + (v.waiting.indexOf(k) >= 0 ? " checked" : "") + "> " + esc(J_WAIT_LABEL[k]) + "</label>").join("");
+    $("rNote").value = v.hint ? v.hint.note : ""; $("rMsg").textContent = "";
+    $("routeCard").classList.remove("hidden"); $("routeCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function saveRoute() {
+    const e = encs[routeId], m = $("rMsg"); m.className = "msg err"; m.textContent = "";
+    if (!e || e.status !== "open") { m.textContent = "This visit is no longer open."; return; }
+    const waiting = Array.prototype.slice.call(document.querySelectorAll("#rWaiting input:checked")).map(x => x.value), note = $("rNote").value.trim().slice(0, 140), next = $("rNext").value;
+    if (!J_NEXT_LABEL[next]) { m.textContent = "Choose the next step."; return; }
+    if (waiting.length > 4) { m.textContent = "Choose at most 4 things the patient is waiting for."; return; }
+    const journey = { v: 1, next: next, waiting: waiting, note: note }, b = writeBatch(db);
+    b.update(doc(db, "pc_encounters", e.id), { journey: journey, updatedAt: serverTimestamp(), updatedBy: me.id });
+    b.set(doc(collection(db, "pc_audit_logs")), Object.assign(stamp(), { actorUid: me.id, actorName: myName, action: "journey.route", recordPath: "pc_encounters/" + e.id, patientId: e.patientId, encounterId: e.id, next: next, waiting: waiting, at: serverTimestamp() }));
+    b.commit().catch(saveFailed);
+    $("routeCard").classList.add("hidden"); routeId = null;
+    const d = $("doneMsg"); d.className = "msg ok"; d.textContent = e.patientName + ": next step is " + J_NEXT_LABEL[next] + ". Saved on this phone; it syncs when you are online.";
   }
 
   // ---------- new visit ----------
@@ -498,7 +594,10 @@
   $("nQ").addEventListener("input", renderPatientResults);
   $("nResults").addEventListener("click", e => { const r = e.target.closest("[data-pick]"); if (r) pick(r.dataset.pick); });
   $("nStartBtn").onclick = startVisit;
-  $("qList").addEventListener("click", e => { const r = e.target.closest("[data-enc]"); if (r) window.mcGo("encounter.html?id=" + encodeURIComponent(r.dataset.enc)); });
+  $("qList").addEventListener("click", e => { const rt = e.target.closest("[data-route]"); if (rt) { openRoute(rt.dataset.route); return; } const r = e.target.closest("[data-enc]"); if (r) window.mcGo("encounter.html?id=" + encodeURIComponent(r.dataset.enc)); });
+  $("deptTabs").addEventListener("click", e => { const b = e.target.closest("[data-d]"); if (b) { dept = b.dataset.d; renderQueue(); } });
+  $("deptLink").addEventListener("click", e => { const a = e.target.closest("[data-go]"); if (a) { e.preventDefault(); window.mcGo(a.dataset.go); } });
+  $("rSaveBtn").onclick = saveRoute; $("rCancelBtn").onclick = () => { routeId = null; $("routeCard").classList.add("hidden"); };
   document.querySelectorAll("#qTabs .pill-btn").forEach(b => b.addEventListener("click", () => { filter = b.dataset.f; document.querySelectorAll("#qTabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b)); renderQueue(); }));
   $("ruleToggleBtn").onclick = () => { buildRuleForm(); $("ruleCard").classList.toggle("hidden"); };
   $("ruleSaveBtn").onclick = saveRules;
@@ -516,6 +615,9 @@
     onSnapshot(query(collection(db, "pc_encounters"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("arrivalDay", "==", isoDate(new Date())), limit(500)), s => {
       todayList = s.docs.map(d => ({ id: d.id, ...d.data() })); rebuild();
     }, () => {});
+    // real records that decide what is waiting where (read-only; if a user may not read them the chips are simply not shown)
+    onSnapshot(query(collection(db, "pc_inv_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "in", J_LAB_OPEN.concat(J_LAB_DONE)), limit(1000)), s => { recErr.inv = false; invLive = s.docs.map(d => ({ id: d.id, ...d.data() })); renderQueue(); }, () => { recErr.inv = true; invLive = []; renderQueue(); });
+    onSnapshot(query(collection(db, "pc_treatment_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "active"), limit(1000)), s => { recErr.tx = false; txLive = s.docs.map(d => ({ id: d.id, ...d.data() })); renderQueue(); }, () => { recErr.tx = true; txLive = []; renderQueue(); });
     getDoc(doc(db, "pc_obs_rules", facilityId)).then(s => { if (s.exists()) obsRules = s.data(); }).catch(() => {});
   }
   function begin() {
