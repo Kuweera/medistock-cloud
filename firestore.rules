@@ -1,7 +1,8 @@
 rules_version = '2';
 
 // MediStock Cloud — multi-shop roles & security (v19 verified in CI run #68; v20 journey field proposed)
-// v21 (Lead, PROPOSED, not yet run in CI): patient identity corrections need a correction record (pc_patient_corrections); an active share's snapshot can be refreshed; optional share expiry (consentExpiresAt) enforced on reads.
+// v22 (Lead, PROPOSED): pc_treatment_orders.administrationMode optional, one of take_home | facility_administered | inpatient_mar (set at creation only; the update rule already refuses changing it).
+// v21 (verified in CI 2026-11-21): patient identity corrections need a correction record (pc_patient_corrections); an active share's snapshot can be refreshed; optional share expiry (consentExpiresAt) enforced on reads.
 // v19 (Lead Developer, owner decisions 2026-11-20; see docs/DATA_CONTRACT_V19.md): (1) the clinician may create a PENDING prescription document in the same
 //   commit as the medicine order, and cancel/supersede it (only while nothing is dispensed) in the same commit that stops/replaces the order; the pharmacy
 //   fills an unknown quantity/medicine at first dispensing; (2) clinicians (treatment.prescribe, treatment.administer, consult.record) of the facility can
@@ -1139,6 +1140,7 @@ service cloud.firestore {
         && request.resource.data.prescriberId == request.auth.uid
         && request.resource.data.kind in ['medicine', 'procedure']
         && request.resource.data.scheduleType in ['once', 'interval', 'daily', 'fixed', 'weight', 'prn', 'taper', 'elapsed', 'custom']
+        && request.resource.data.get('administrationMode', '') in ['', 'take_home', 'facility_administered', 'inpatient_mar']   // v22: optional care mode; missing = today's behaviour
         && request.resource.data.version is int
         && (
           (request.resource.data.kind == 'procedure'
