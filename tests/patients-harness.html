@@ -51,6 +51,6 @@
   window.MC = { api: function () { return api; }, go: function () {}, home: function () {} };
   window.mcGo = function (u) { window.__went = u; };
   window.mcShareText = function (t) { window.__shared = t; return Promise.resolve(); };
-  document.getElementById("f").src = "/patients.html";
+  document.getElementById("f").src = "/patients.html" + (qs.get("go") || "");
 })();
 </script></body></html>

@@ -5,6 +5,7 @@
    NOT real Firebase. TEST CONTENT ONLY: every guideline below is obviously fake. ?as=owner|nopres  &weight=20  &preg=1  &nodata=1 */
 (function () {
   var qs = new URLSearchParams(location.search), as = qs.get("as") || "owner";
+  var offline = qs.get("offline") === "1", batches = [], done = function () { return offline ? new Promise(function () {}) : Promise.resolve(); }; /* ?offline=1: writes apply on this "phone" at once but the server never answers, like airplane mode */
   var store = new Map(), listeners = [], clock = Date.now(), B = "biz1", F = "shop1", writes = [];
   function put(c, id, d) { store.set(c + "/" + id, JSON.parse(JSON.stringify(d))); }
   var yr = new Date().getFullYear() - 8, dob = yr + "-05-10";
@@ -20,7 +21,7 @@
   put("pc_treatment_events", "ev1", Object.assign({ orderId: "o1", planId: "pl1", kind: "medicine", label: "TESTmed 500 mg", plannedAt: t0, plannedDay: localDay(t0), plannedLocal: localDay(t0) + " " + localHm(t0), plannedDoseValue: 2, doseUnit: "tablet", route: "by mouth", status: "pending", instructions: "TEST after food", idKey: "k1", idx: 0 }, base));
   put("pc_treatment_orders", "o1", Object.assign({ medicineName: "TESTmed 500 mg", kind: "medicine", status: "active", scheduleType: "interval", doseValue: 2, doseUnit: "tablet", route: "by mouth", planId: "pl1" }, base));
   if (qs.get("allergy")) put("pc_allergies", "a1", { businessId: B, facilityId: F, patientId: "p1", status: "active", substance: "TESTmed", severity: "severe" });
-  window.__db = { store: store, writes: writes, all: function (c) { var o = []; store.forEach(function (v, k) { if (k.indexOf(c + "/") === 0) o.push(Object.assign({ _id: k.slice(c.length + 1) }, JSON.parse(JSON.stringify(v)))); }); return o; },
+  window.__db = { store: store, writes: writes, batches: batches, all: function (c) { var o = []; store.forEach(function (v, k) { if (k.indexOf(c + "/") === 0) o.push(Object.assign({ _id: k.slice(c.length + 1) }, JSON.parse(JSON.stringify(v)))); }); return o; },
     add: function (c, id, d) { put(c, id, d); notifyAll(); } };
   function snapOf(q) {
     var docs = [];
@@ -30,7 +31,7 @@
   }
   function notifyAll() { listeners.forEach(function (l) { setTimeout(function () { l.next(snapOf(l.q)); }, 0); }); }
   function stampV(d) { return JSON.parse(JSON.stringify(d, function (k, v) { return v && v.__ts ? ++clock : v; })); }
-  function write(kind, r, d) { var v = stampV(d); if (kind === "update") { if (!store.has(r.path)) throw new Error("missing " + r.path); store.set(r.path, Object.assign(store.get(r.path), v)); } else store.set(r.path, v); writes.push({ kind: kind, path: r.path }); }
+  function write(kind, r, d) { var v = stampV(d); if (kind === "update") { if (!store.has(r.path)) throw new Error("missing " + r.path); store.set(r.path, Object.assign(store.get(r.path), v)); } else store.set(r.path, v); writes.push({ kind: kind, path: r.path, data: v }); }
   var api = {
     initializeApp: function () { return {}; }, getAuth: function () { return { currentUser: { uid: uid }, signOut: function () { return Promise.resolve(); } }; },
     onAuthStateChanged: function (a, cb) { setTimeout(function () { cb({ uid: uid }); }, 0); return function () {}; }, getFirestore: function () { return {}; },
@@ -42,11 +43,11 @@
     getDoc: function (r) { var has = store.has(r.path), v = has ? JSON.parse(JSON.stringify(store.get(r.path))) : null; return Promise.resolve({ id: r.id, exists: function () { return has; }, data: function () { return v; } }); },
     getDocFromCache: function (r) { return api.getDoc(r); },
     getDocs: function (q) { return Promise.resolve(snapOf(q)); },
-    setDoc: function (r, d) { write("set", r, d); notifyAll(); return Promise.resolve(); },
-    updateDoc: function (r, d) { write("update", r, d); notifyAll(); return Promise.resolve(); },
+    setDoc: function (r, d) { write("set", r, d); notifyAll(); return done(); },
+    updateDoc: function (r, d) { write("update", r, d); notifyAll(); return done(); },
     onSnapshot: function (q) { var fn = Array.prototype.slice.call(arguments, 1).filter(function (x) { return typeof x === "function"; })[0]; var l = { q: q, next: fn }; listeners.push(l); setTimeout(function () { fn(snapOf(q)); }, 0); return function () { listeners = listeners.filter(function (x) { return x !== l; }); }; },
     writeBatch: function () { var ops = []; var w = {}; w.set = function (r, d) { ops.push(["set", r, d]); return w; }; w.update = function (r, d) { ops.push(["update", r, d]); return w; };
-      w.commit = function () { ops.forEach(function (o) { write(o[0], o[1], o[2]); }); notifyAll(); return Promise.resolve(); }; return w; }
+      w.commit = function () { batches.push(ops.map(function (o) { return o[0] + ":" + o[1].path; })); ops.forEach(function (o) { write(o[0], o[1], o[2]); }); notifyAll(); return done(); }; return w; }
   };
   window.MC = { api: function () { return api; }, go: function () {}, home: function () {} };
   window.mcGo = function (u) { window.__went = u; };
