@@ -289,7 +289,7 @@
   <div id="tab-overview" class="card"></div>
   <div class="card hidden" id="editCard">
     <h2>Update contact details</h2>
-    <div class="hint2" style="margin-top:0;">Changes here are recorded with your name and the time. Name, sex and date of birth are not changed here. Facilities this patient was already shared with keep the details as they were when shared: stop sharing and share again to update them.</div>
+    <div class="hint2" style="margin-top:0;">Changes here are recorded with your name and the time. To correct the name, sex or date of birth use "Correct name, sex or date of birth" instead, because that needs a reason. Facilities this patient is shared with keep the details as they were when last shared: use "Update shared details" in Sharing.</div>
     <label>Phone number</label><input type="tel" id="eqPhone" autocomplete="off">
     <label>Address</label><input type="text" id="eqAddress" autocomplete="off">
     <div class="row"><div><label>Village</label><input type="text" id="eqVillage" autocomplete="off"></div><div><label>District</label><input type="text" id="eqDistrict" autocomplete="off"></div></div>
@@ -302,6 +302,26 @@
     <div class="op-actions"><button type="button" class="btn-primary" id="eqSaveBtn" style="margin-top:0;">Save changes</button><button type="button" class="btn-small btn-secondary" id="eqCancelBtn">Cancel</button></div>
     <div class="msg" id="eqMsg"></div>
   </div>
+
+  <div class="card hidden" id="idCard">
+    <h2>Correct name, sex or date of birth</h2>
+    <div class="hint2" style="margin-top:0;">Use this only to fix a mistake. The old and the new values are kept with your name, the time and your reason, and cannot be edited or deleted. Facilities this patient is shared with will keep the old details until you use "Update shared details" in Sharing.</div>
+    <label>Name</label><input type="text" id="idName" autocomplete="off">
+    <label>Sex</label>
+    <select id="idSex"><option value="female">Female</option><option value="male">Male</option><option value="other">Other</option><option value="unknown">Unknown</option></select>
+    <label>Age</label>
+    <select id="idAgeMode"><option value="dob">I know the date of birth</option><option value="est">Estimated age</option><option value="unknown">Age is unknown</option></select>
+    <div id="idDobWrap"><label>Date of birth</label>
+      <div class="dateField"><input type="text" id="idDob"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div></div>
+    <div id="idEstWrap" class="hidden"><div class="row">
+      <div><label>Years</label><input type="number" inputmode="numeric" id="idAgeY" min="0" max="120" placeholder="0"></div>
+      <div><label>Months</label><input type="number" inputmode="numeric" id="idAgeM" min="0" max="11" placeholder="0"></div>
+      <div><label>Days</label><input type="number" inputmode="numeric" id="idAgeD" min="0" max="31" placeholder="0"></div></div></div>
+    <label>Reason for the correction</label><input type="text" id="idReason" maxlength="300" placeholder="e.g. Name was spelt wrongly at registration" autocomplete="off">
+    <div class="op-actions"><button type="button" class="btn-primary" id="idSaveBtn" style="margin-top:0;">Save correction</button><button type="button" class="btn-small btn-secondary" id="idCancelBtn">Cancel</button></div>
+    <div class="msg" id="idMsg"></div>
+  </div>
+  <div class="card hidden" id="corrBox"><h2>Corrections to name, sex or date of birth</h2><div id="corrList"></div></div>
 
   <div class="card hidden" id="mergeCard">
     <h2>Merge a duplicate record</h2>
@@ -385,6 +405,13 @@
     <div class="sec-h"><h2>Sharing</h2><button type="button" class="btn-small btn-primary hidden" id="sOpenBtn">+ Share with a facility</button></div>
     <div class="hint2" style="margin-top:0;">Facilities this patient is shared with (only with the patient's agreement).</div>
     <div id="sOutList"></div>
+    <div class="subform hidden" id="sxCard">
+      <h3 class="sub" style="margin-top:0;" id="sxTitle">Change the end date</h3>
+      <div class="hint2" style="margin-top:0;">The other facility can read this patient's allergies and history until this date. Choose a later date to extend, or remove the date to share until you stop sharing.</div>
+      <label for="sxDate">Share until</label><input type="date" id="sxDate">
+      <div class="op-actions"><button type="button" class="btn-primary" id="sxSaveBtn" style="margin-top:0;">Save end date</button><button type="button" class="btn-small btn-secondary" id="sxClearBtn">Remove end date</button><button type="button" class="btn-small btn-secondary" id="sxCancelBtn">Cancel</button></div>
+      <div class="msg" id="sxMsg"></div>
+    </div>
     <div class="subform hidden" id="sNewCard">
       <h3 class="sub" style="margin-top:0;">Share this patient with another facility</h3>
       <div class="hint2" style="margin-top:0;">The facility you choose will be able to read this patient's details, allergies and medical history, until you stop sharing. Do this only with the patient's (or guardian's) agreement. It can be a facility in your own business or in another business that has published itself in the Facility Directory.</div>
@@ -403,6 +430,7 @@
           <select id="sMethod"><option value="verbal">Said yes (verbal)</option><option value="written">Signed (written)</option></select></div>
         <div><label>Who agreed? *</label><input type="text" id="sBy" list="byList" placeholder="Name" autocomplete="off"></div>
       </div>
+      <label for="sUntil">Share until (optional)</label><input type="date" id="sUntil"><div class="hint2">Leave empty to share until you stop sharing. After this date the other facility can no longer read the allergies and history.</div>
       <label class="chk"><input type="checkbox" id="sAgree"><span>The patient (or guardian) agrees to share these records</span></label>
       <div class="op-actions"><button class="btn-primary" id="sGrantBtn">Share patient</button><button type="button" class="btn-small btn-secondary" id="sCancelBtn">Cancel</button></div>
       <div class="msg" id="sMsg"></div>
@@ -558,6 +586,7 @@
     if (readOnly() && share) {
       sn.innerHTML = "Shared with you by <b>" + esc(share.sourceFacilityName || "a facility") + "</b>" + (share.sourceBusinessName ? " (" + esc(share.sourceBusinessName) + ")" : "") +
         ". Reason: " + esc(share.purpose || "") + (dateOf(share.grantedAt) ? " · since " + esc(dateOf(share.grantedAt)) : "") + ". Read-only." +
+        "<br>Details as of " + esc(msDate(tsMs(share.snapshotAt) || tsMs(share.grantedAt)) || "when it was shared") + "." + (shareEnd(share) != null ? " Access ends " + esc(msDate(shareEnd(share))) + "." : "") +
         (can("patient.register") ? '<div class="op-actions"><button type="button" class="btn-small btn-primary" id="regOursBtn">Register as our patient</button></div>' : "");
       sn.classList.remove("hidden");
       const rb = $("regOursBtn"); if (rb) rb.onclick = () => window.mcGo("patients.html?fromShare=" + encodeURIComponent(share.id));
@@ -585,10 +614,10 @@
       (readOnly() ? "" : line("Emergency contact", [em.name, em.relationship, em.phone].filter(Boolean).join(" · ")))
         || '<div class="empty">No contact details recorded.</div>') +
       '<div class="hint2">' + (readOnly() ? "These details were shared with you and cannot be changed here." : "Allergies and history are kept by the facility that recorded them. Use the Sharing section to let another facility read this patient.") + "</div>" +
-      (!readOnly() && patient.status === "active" && can("patient.edit") ? '<button type="button" class="btn-small btn-primary" id="editContactBtn" style="width:100%; margin-top:10px;">Update contact details</button>' : "") +
+      (!readOnly() && patient.status === "active" && can("patient.edit") ? '<button type="button" class="btn-small btn-primary" id="editContactBtn" style="width:100%; margin-top:10px;">Update contact details</button><button type="button" class="btn-small btn-secondary" id="editIdBtn" style="width:100%; margin-top:8px;">Correct name, sex or date of birth</button>' : "") +
       (!readOnly() && patient.status === "active" && can("patient.merge") ? '<button type="button" class="btn-small btn-secondary" id="openMergeBtn" style="width:100%; margin-top:10px;">Merge a duplicate record</button>' : "") +
       (!readOnly() && patient.status === "merged" && patient.mergedInto ? '<button type="button" class="btn-small btn-primary" id="openKeptBtn" style="width:100%; margin-top:10px;">Open the record that was kept</button>' : "");
-    const eb = $("editContactBtn"); if (eb) eb.onclick = openEdit;
+    const eb = $("editContactBtn"); if (eb) eb.onclick = openEdit; const ib = $("editIdBtn"); if (ib) ib.onclick = openIdEdit;
     const mb = $("openMergeBtn"); if (mb) mb.onclick = () => openMerge(null);
     const kb = $("openKeptBtn"); if (kb) kb.onclick = () => window.mcGo("patient.html?id=" + encodeURIComponent(patient.mergedInto));
   }
@@ -620,6 +649,79 @@
     b.commit().catch(saveFailed);
     Object.assign(patient, next); renderHeader(); renderOverview(); $("editCard").classList.add("hidden");
     ok("Saved on this phone. It will sync when you are online.");
+  }
+
+  // ---------- correct name, sex or date of birth (rules v21: needs a reason and a correction record in the same commit) ----------
+  function nameKeyOf(s) { return nameTokens(s).sort().join(" "); }
+  function approxDobFromAge(y, m, d, today) {
+    const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    t.setFullYear(t.getFullYear() - (y || 0)); t.setMonth(t.getMonth() - (m || 0)); t.setDate(t.getDate() - (d || 0));
+    return isoDate(t);
+  }
+  const IDK = ["fullName", "nameKey", "sex", "dob", "dobApprox", "dobPrecision"];
+  function identityOf(p) { return { fullName: p.fullName || "", nameKey: p.nameKey || nameKeyOf(p.fullName), sex: p.sex || "unknown", dob: p.dob || null, dobApprox: p.dobApprox || null, dobPrecision: p.dobPrecision || "unknown" }; }
+  let idPrefill = null, corrs = [];
+  function syncIdMode() { const m = $("idAgeMode").value; $("idDobWrap").classList.toggle("hidden", m !== "dob"); $("idEstWrap").classList.toggle("hidden", m !== "est"); }
+  function openIdEdit() {
+    if (readOnly() || !patient || patient.status !== "active" || !can("patient.edit")) return;
+    const p = patient;
+    $("idName").value = p.fullName || ""; $("idSex").value = p.sex || "unknown"; $("idReason").value = ""; $("idMsg").textContent = ""; $("idAgeY").value = ""; $("idAgeM").value = ""; $("idAgeD").value = "";
+    idPrefill = null;
+    if (p.dobPrecision === "exact" && p.dob) { $("idAgeMode").value = "dob"; PCF.setDate("idDob", p.dob); }
+    else if (p.dobPrecision === "estimated" && p.dobApprox) {
+      const b = new Date(p.dobApprox + "T00:00:00"), n = new Date();
+      let m = (n.getFullYear() - b.getFullYear()) * 12 + (n.getMonth() - b.getMonth()); if (n.getDate() < b.getDate()) m--;
+      m = Math.max(m, 0); idPrefill = { y: Math.floor(m / 12), m: m % 12, d: 0 };
+      $("idAgeMode").value = "est"; $("idAgeY").value = idPrefill.y; $("idAgeM").value = idPrefill.m; $("idAgeD").value = "";
+    } else { $("idAgeMode").value = "unknown"; PCF.setDate("idDob", ""); }
+    syncIdMode(); $("idCard").classList.remove("hidden"); $("idCard").scrollIntoView({ behavior: "smooth", block: "nearest" }); $("idName").focus();
+  }
+  function saveIdentity() {
+    const m = $("idMsg"); m.className = "msg err"; m.textContent = "";
+    if (readOnly() || !patient || patient.status !== "active" || !can("patient.edit")) { m.textContent = "You cannot change this patient."; return; }
+    const name = $("idName").value.trim().replace(/\s+/g, " "), reason = $("idReason").value.trim().replace(/\s+/g, " ");
+    if (name.length < 2) { m.textContent = "Enter the patient's name."; return; }
+    const old = identityOf(patient), after = { fullName: name, nameKey: nameKeyOf(name), sex: $("idSex").value, dob: null, dobApprox: null, dobPrecision: "unknown" };
+    const mode = $("idAgeMode").value;
+    if (mode === "dob") {
+      const di = PCF.dateInfo("idDob");
+      if (di.state !== "ok") { m.textContent = "Enter a valid date of birth, or choose Estimated age or Age is unknown."; return; }
+      after.dob = di.iso; after.dobApprox = di.iso; after.dobPrecision = "exact";
+    } else if (mode === "est") {
+      const y = parseInt($("idAgeY").value || "0", 10) || 0, mo = parseInt($("idAgeM").value || "0", 10) || 0, d = parseInt($("idAgeD").value || "0", 10) || 0;
+      if (y + mo + d <= 0) { m.textContent = "Enter the estimated age."; return; }
+      if (old.dobPrecision === "estimated" && idPrefill && y === idPrefill.y && mo === idPrefill.m && d === idPrefill.d) { after.dobApprox = old.dobApprox; } // untouched estimate: keep it
+      else after.dobApprox = approxDobFromAge(y, mo, d, new Date());
+      after.dobPrecision = "estimated";
+    }
+    const changed = []; if (after.fullName !== old.fullName) changed.push("name"); if (after.sex !== old.sex) changed.push("sex");
+    if (after.dob !== old.dob || after.dobApprox !== old.dobApprox || after.dobPrecision !== old.dobPrecision) changed.push("dateOfBirth");
+    if (!changed.length) { m.textContent = "Nothing was changed."; return; }
+    if (reason.length < 3) { m.textContent = "Say why this is being corrected (at least 3 letters)."; return; }
+    if (reason.length > 300) { m.textContent = "The reason is too long (300 letters at most)."; return; }
+    const version = (patient.identityVersion || 0) + 1, upd = { fullName: after.fullName, nameKey: after.nameKey, sex: after.sex, dob: after.dob, dobApprox: after.dobApprox, dobPrecision: after.dobPrecision, identityVersion: version };
+    if (mode === "est") { upd.ageRecordedOn = (old.dobPrecision === "estimated" && after.dobApprox === old.dobApprox && patient.ageRecordedOn) || isoDate(new Date()); const dd = { y: parseInt($("idAgeY").value || "0", 10) || 0, m: parseInt($("idAgeM").value || "0", 10) || 0, d: parseInt($("idAgeD").value || "0", 10) || 0 }; upd.estimatedAge = { years: dd.y, months: dd.m, days: dd.d }; }
+    else { upd.estimatedAge = null; upd.ageRecordedOn = isoDate(new Date()); }
+    const b = writeBatch(db);
+    b.update(doc(db, "pc_patients", pid), Object.assign({}, upd, { updatedAt: serverTimestamp(), updatedBy: me.id }));
+    b.set(doc(db, "pc_patient_corrections", pid + "_" + version), Object.assign(stamp(), { patientId: pid, version: version, reason: reason, before: old, after: after, correctedBy: me.id }));
+    b.set(doc(collection(db, "pc_audit_logs")), auditDoc("patient.identity_correct", "pc_patients/" + pid, { changedFields: changed, identityVersion: version }));
+    b.commit().catch(saveFailed);
+    Object.assign(patient, upd); corrs = corrs.filter(c => c.version !== version).concat([{ id: pid + "_" + version, patientId: pid, version: version, reason: reason, before: old, after: after, clientCreatedAt: Date.now(), correctedBy: me.id }]);
+    renderHeader(); renderOverview(); renderCorrections(); renderSharing(); fillPeopleList(); $("idCard").classList.add("hidden");
+    ok("Saved on this phone. It will sync when you are online." + (sharesByMe.some(c => !c.revokedAt) ? " Facilities this patient is shared with still show the old details: use \"Update shared details\" in Sharing." : ""));
+  }
+  function renderCorrections() {
+    const box = $("corrBox"), list = corrs.slice().sort((a, b) => (b.version || 0) - (a.version || 0));
+    box.classList.toggle("hidden", readOnly() || !list.length); if (readOnly() || !list.length) return;
+    const show = (v, k) => k === "sex" ? ({ female: "Female", male: "Male", other: "Other", unknown: "Unknown" }[v] || "Unknown") : k === "dob" ? (v ? PCF.toTyped(v) : "not exact") : String(v || "");
+    $("corrList").innerHTML = list.map(c => {
+      const b = c.before || {}, a = c.after || {}, parts = [];
+      if (b.fullName !== a.fullName) parts.push("Name: " + esc(b.fullName) + " → " + esc(a.fullName));
+      if (b.sex !== a.sex) parts.push("Sex: " + esc(show(b.sex, "sex")) + " → " + esc(show(a.sex, "sex")));
+      if (b.dob !== a.dob || b.dobApprox !== a.dobApprox || b.dobPrecision !== a.dobPrecision) parts.push("Date of birth: " + esc(b.dobPrecision === "exact" ? show(b.dob, "dob") : b.dobPrecision === "estimated" ? "estimated" : "unknown") + " → " + esc(a.dobPrecision === "exact" ? show(a.dob, "dob") : a.dobPrecision === "estimated" ? "estimated ~" + esc(a.dobApprox) : "unknown"));
+      return '<div class="entry"><div class="pt-name">Correction ' + esc(String(c.version)) + '</div><div class="pt-meta">' + parts.join("<br>") + "<br>Reason: " + esc(c.reason || "") + (dateOf(c.createdAt) ? " · " + esc(dateOf(c.createdAt)) : "") + "</div></div>";
+    }).join("");
   }
 
   // ---------- allergies ----------
@@ -835,17 +937,63 @@
     $("sFacInfo").innerHTML = t ? (t.services.length ? t.services.map(s => '<span class="chip">' + esc(s) + "</span>").join(" ") : "") + (t.description ? "<br>" + esc(t.description) : "") + (t.district ? "<br>" + esc(t.district) : "") : "";
     $("sGrantBtn").disabled = !t;
   }
+  // ---------- sharing: details date, optional end date, refresh ----------
+  function tsMs(v) { if (v == null) return null; if (typeof v.toMillis === "function") return v.toMillis(); if (typeof v.seconds === "number") return v.seconds * 1000; if (v instanceof Date) return v.getTime(); if (typeof v === "string") { const t = Date.parse(v); return isNaN(t) ? null : t; } return typeof v === "number" && v > 1e11 ? v : null; }
+  const shareEnd = c => tsMs(c && c.consentExpiresAt);
+  const shareExpired = c => { const t = shareEnd(c); return t != null && t <= Date.now(); };
+  const msDate = ms => ms == null ? "" : PCF.toTyped(isoDate(new Date(ms)));
+  function endOfDay(iso) { const d = new Date(iso + "T23:59:59"); return isNaN(d.getTime()) ? null : d; }
+  function snapshotStale(c) {
+    const now = snapshotOf(patient), was = c.patientSnapshot || {};
+    return Object.keys(now).some(k => JSON.stringify(now[k] == null ? null : now[k]) !== JSON.stringify(was[k] == null ? null : was[k]));
+  }
+  function freshSnapshot() { const snap = snapshotOf(patient); const ml = links.find(l => l.patientId === pid && l.facilityId === facilityId); snap.sourceRegNo = ml ? ml.localRegNo : ""; return snap; }
+  function refreshShare(gbid) {
+    const c = sharesByMe.find(x => x.granteeBusinessId === gbid); if (!c || c.revokedAt || !can("patient.consent") || readOnly()) return;
+    const id = pid + "_" + facilityId + "_" + gbid;
+    updateDoc(doc(db, "pc_shares", id), { patientSnapshot: freshSnapshot(), snapshotAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    c.patientSnapshot = freshSnapshot(); c.snapshotAt = { seconds: Math.floor(Date.now() / 1000) };
+    logAudit("share.refresh", "pc_shares/" + id, { granteeBusinessId: gbid });
+    renderSharing(); ok("Saved on this phone. " + (c.granteeFacilityName || "The facility") + " will see the updated details once it syncs.");
+  }
+  let expTarget = null;
+  function openExpiry(gbid) {
+    const c = sharesByMe.find(x => x.granteeBusinessId === gbid); if (!c || c.revokedAt || !can("patient.consent") || readOnly()) return;
+    expTarget = gbid; const t = new Date(); t.setDate(t.getDate() + 1); $("sxDate").min = isoDate(t);
+    $("sxDate").value = shareEnd(c) && !shareExpired(c) ? isoDate(new Date(shareEnd(c))) : ""; $("sxMsg").textContent = "";
+    $("sxTitle").textContent = (shareExpired(c) ? "Extend sharing with " : "End date for sharing with ") + (c.granteeFacilityName || "the facility");
+    $("sxCard").classList.remove("hidden"); $("sxCard").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+  function saveExpiry(clear) {
+    const m = $("sxMsg"); m.className = "msg err"; m.textContent = "";
+    const c = sharesByMe.find(x => x.granteeBusinessId === expTarget); if (!c || c.revokedAt || !can("patient.consent") || readOnly()) { m.textContent = "You cannot change this."; return; }
+    let when = null;
+    if (!clear) {
+      const d = $("sxDate").value ? endOfDay($("sxDate").value) : null;
+      if (!d) { m.textContent = "Choose an end date, or use Remove end date."; return; }
+      if (d.getTime() <= Date.now()) { m.textContent = "The end date must be in the future."; return; }
+      when = d;
+    }
+    const id = pid + "_" + facilityId + "_" + expTarget;
+    updateDoc(doc(db, "pc_shares", id), { consentExpiresAt: when, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+    c.consentExpiresAt = when;
+    logAudit("share.expiry", "pc_shares/" + id, { granteeBusinessId: expTarget, consentExpiresAt: when ? isoDate(when) : "none" });
+    $("sxCard").classList.add("hidden"); renderSharing();
+    ok("Saved on this phone. " + (when ? "Sharing ends on " + msDate(when.getTime()) + "." : "There is no end date now."));
+  }
+
   function renderSharing() {
     if (readOnly()) return;
     $("sOutList").innerHTML = sharesByMe.length ? sharesByMe.map(c => {
-      const live = !c.revokedAt;
-      return '<div class="entry"><div class="pt-name">' + esc(c.granteeFacilityName || "a facility") + (c.granteeBusinessName ? " (" + esc(c.granteeBusinessName) + ")" : "") + ' <span class="chip ' + (live ? "ok" : "") + '">' + (live ? "Sharing" : "Stopped") + "</span></div>" +
+      const live = !c.revokedAt, exp = live && shareExpired(c), end = shareEnd(c), asOf = msDate(tsMs(c.snapshotAt) || tsMs(c.grantedAt)), stale = live && snapshotStale(c);
+      return '<div class="entry"><div class="pt-name">' + esc(c.granteeFacilityName || "a facility") + (c.granteeBusinessName ? " (" + esc(c.granteeBusinessName) + ")" : "") + ' <span class="chip ' + (exp ? "warn" : live ? "ok" : "") + '">' + (exp ? "Expired" : live ? "Sharing" : "Stopped") + "</span>" + (stale ? ' <span class="chip warn">Details changed since shared</span>' : "") + "</div>" +
         '<div class="pt-meta">Why: ' + esc(c.purpose || "") + (c.consentGivenBy ? "<br>Agreed by " + esc(c.consentGivenBy) + " (" + (c.consentMethod === "written" ? "signed" : "verbal") + ")" : "") +
-        (dateOf(c.grantedAt) ? " · from " + esc(dateOf(c.grantedAt)) : "") + (!live && dateOf(c.revokedAt) ? " · stopped " + esc(dateOf(c.revokedAt)) : "") + "</div>" +
-        (can("patient.consent") ? '<div class="op-actions">' + (live ? '<button class="btn-small btn-secondary" data-stop="' + esc(c.granteeBusinessId) + '">Stop sharing</button>' : '<button class="btn-small btn-secondary" data-again="' + esc(c.granteeBusinessId) + '">Share again</button>') + "</div>" : "") + "</div>";
+        (dateOf(c.grantedAt) ? " · from " + esc(dateOf(c.grantedAt)) : "") + (!live && dateOf(c.revokedAt) ? " · stopped " + esc(dateOf(c.revokedAt)) : "") +
+        (live ? "<br>" + (end != null ? (exp ? "Ended " : "Ends ") + esc(msDate(end)) : "No end date") + (asOf ? " · details sent as of " + esc(asOf) : "") : "") + "</div>" +
+        (can("patient.consent") ? '<div class="op-actions">' + (live ? '<button class="btn-small btn-secondary" data-refresh="' + esc(c.granteeBusinessId) + '">Update shared details</button><button class="btn-small btn-secondary" data-exp="' + esc(c.granteeBusinessId) + '">' + (exp ? "Extend" : "Change end date") + '</button><button class="btn-small btn-secondary" data-stop="' + esc(c.granteeBusinessId) + '">Stop sharing</button>' : '<button class="btn-small btn-secondary" data-again="' + esc(c.granteeBusinessId) + '">Share again</button>') + "</div>" : "") + "</div>";
     }).join("") : '<div class="empty">Not shared with any other facility.</div>';
     $("sOpenBtn").classList.toggle("hidden", !can("patient.consent"));
-    if (!can("patient.consent")) $("sNewCard").classList.add("hidden");
+    if (!can("patient.consent")) { $("sNewCard").classList.add("hidden"); $("sxCard").classList.add("hidden"); }
     renderPicker();
   }
   function setSMsg(t, err) { const m = $("sMsg"); m.textContent = t || ""; m.className = "msg " + (err ? "err" : "ok"); }
@@ -858,19 +1006,20 @@
     if (by.length < 2) { setSMsg("Enter the name of the person who agreed.", true); return; }
     if (!$("sAgree").checked) { setSMsg("Tick the box only if the patient or guardian agreed.", true); return; }
     const existing = sharesByMe.find(c => c.granteeBusinessId === t.businessId);
-    if (existing && !existing.revokedAt) { setSMsg("This patient is already shared with " + t.businessName + ". Stop sharing first to change the facility.", true); return; }
-    const id = pid + "_" + facilityId + "_" + t.businessId, ref = doc(db, "pc_shares", id), snap = snapshotOf(patient);
-    { const ml = links.find(l => l.patientId === pid && l.facilityId === facilityId); snap.sourceRegNo = ml ? ml.localRegNo : ""; } // lets the receiving facility show our registration number
+    if (existing && !existing.revokedAt) { setSMsg("This patient is already shared with " + t.businessName + ". To change the end date use Change end date; to change the facility stop sharing first.", true); return; }
+    let until = null;
+    if ($("sUntil").value) { until = endOfDay($("sUntil").value); if (!until || until.getTime() <= Date.now()) { setSMsg("The end date must be in the future.", true); return; } }
+    const id = pid + "_" + facilityId + "_" + t.businessId, ref = doc(db, "pc_shares", id), snap = freshSnapshot(); // includes our registration number for the receiving facility
     if (existing) {
       updateDoc(ref, { revokedAt: null, revokedBy: null, grantedAt: serverTimestamp(), grantedBy: me.id, purpose: purpose, consentMethod: method, consentGivenBy: by,
-        granteeFacilityId: t.facilityId, granteeFacilityName: t.facilityName, patientSnapshot: snap, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
+        granteeFacilityId: t.facilityId, granteeFacilityName: t.facilityName, patientSnapshot: snap, snapshotAt: serverTimestamp(), consentExpiresAt: until, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
     } else {
       setDoc(ref, Object.assign(stamp(), { patientId: pid, granteeBusinessId: t.businessId, granteeBusinessName: t.businessName, granteeFacilityId: t.facilityId, granteeFacilityName: t.facilityName,
-        sourceBusinessName: bizName, sourceFacilityName: facility ? facility.name : "", purpose: purpose, consentMethod: method, consentGivenBy: by, patientSnapshot: snap,
+        sourceBusinessName: bizName, sourceFacilityName: facility ? facility.name : "", purpose: purpose, consentMethod: method, consentGivenBy: by, patientSnapshot: snap, snapshotAt: serverTimestamp(), consentExpiresAt: until,
         grantedBy: me.id, grantedAt: serverTimestamp(), revokedAt: null, revokedBy: null })).catch(saveFailed);
     }
-    logAudit("share.grant", "pc_shares/" + id, { granteeBusinessId: t.businessId, granteeFacilityId: t.facilityId, purpose: purpose, consentMethod: method, consentGivenBy: by });
-    $("sPurpose").value = ""; $("sBy").value = ""; $("sAgree").checked = false;
+    logAudit("share.grant", "pc_shares/" + id, { granteeBusinessId: t.businessId, granteeFacilityId: t.facilityId, purpose: purpose, consentMethod: method, consentGivenBy: by, consentExpiresAt: until ? isoDate(until) : "none" });
+    $("sPurpose").value = ""; $("sBy").value = ""; $("sUntil").value = ""; $("sAgree").checked = false;
     setSMsg("");
     $("sNewCard").classList.add("hidden");
     ok("Saved on this phone. " + t.facilityName + " will see the patient once it syncs.");
@@ -957,6 +1106,8 @@
   }));
   // forms stay closed until the user chooses to add something
   function openForm(cardId, focusId) { $(cardId).classList.remove("hidden"); $(cardId).scrollIntoView({ behavior: "smooth", block: "nearest" }); if (focusId) $(focusId).focus(); }
+  $("idSaveBtn").onclick = saveIdentity; $("idCancelBtn").onclick = () => $("idCard").classList.add("hidden"); $("idAgeMode").addEventListener("change", syncIdMode);
+  $("sxSaveBtn").onclick = () => saveExpiry(false); $("sxClearBtn").onclick = () => saveExpiry(true); $("sxCancelBtn").onclick = () => $("sxCard").classList.add("hidden");
   $("eqSaveBtn").onclick = saveEdit; $("eqCancelBtn").onclick = () => $("editCard").classList.add("hidden");
   $("aOpenBtn").onclick = () => openForm("aAddCard", "aSubstance"); $("aCancelBtn").onclick = () => $("aAddCard").classList.add("hidden");
   $("hOpenBtn").onclick = () => openForm("hAddCard", "hText"); $("hCancelBtn").onclick = () => $("hAddCard").classList.add("hidden");
@@ -976,9 +1127,11 @@
   $("sService").addEventListener("change", renderPicker); $("sTarget").addEventListener("change", renderFacilities);
   $("sOutList").addEventListener("click", e => {
     const st = e.target.closest("[data-stop]"); if (st) { stopShare(st.dataset.stop); return; }
+    const rf = e.target.closest("[data-refresh]"); if (rf) { refreshShare(rf.dataset.refresh); return; }
+    const ex = e.target.closest("[data-exp]"); if (ex) { openExpiry(ex.dataset.exp); return; }
     const ag = e.target.closest("[data-again]"); if (ag) {
       const c = sharesByMe.find(x => x.granteeBusinessId === ag.dataset.again);
-      if (c) { $("sService").value = ""; $("sBiz").value = c.granteeBusinessName || ""; renderPicker(); if (c.granteeFacilityId) $("sTarget").value = c.granteeFacilityId; renderFacilities(); $("sPurpose").focus(); }
+      if (c) { $("sService").value = ""; $("sBiz").value = c.granteeBusinessName || ""; renderPicker(); if (c.granteeFacilityId) $("sTarget").value = c.granteeFacilityId; renderFacilities(); openForm("sNewCard", "sPurpose"); }
     }
   });
   $("aList").addEventListener("click", e => { const b = e.target.closest("[data-aerr]"); if (b) allergyError(b.dataset.aerr); });
@@ -1000,10 +1153,10 @@
     const base = [where("businessId", "==", srcBusinessId), pidWhere, where("facilityId", "==", srcFacilityId), limit(300)];
     unsubA = onSnapshot(query(collection(db, "pc_allergies"), ...base), { includeMetadataChanges: true }, s => {
       allergies = s.docs.map(d => ({ id: d.id, ...d.data() })); loaded.a = true; mark(s); renderBanner(); renderAllergies(); renderOverview(); renderNewNote();
-    }, err => { $("aList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view allergies." : "The allergies could not be loaded. Check your internet connection and try again.") + "</div>"; });
+    }, err => { $("aList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? (readOnly() ? "Sharing has ended or you do not have permission. If the date has passed, ask the sharing facility to extend it." : "You do not have permission to view allergies.") : "The allergies could not be loaded. Check your internet connection and try again.") + "</div>"; });
     unsubH = onSnapshot(query(collection(db, "pc_medical_history"), ...base), { includeMetadataChanges: true }, s => {
       history = s.docs.map(d => ({ id: d.id, ...d.data() })); loaded.h = true; renderHistory(); renderOverview(); renderNewNote();
-    }, err => { $("hList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view medical history." : "The medical history could not be loaded. Check your internet connection and try again.") + "</div>"; });
+    }, err => { $("hList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? (readOnly() ? "Sharing has ended or you do not have permission. If the date has passed, ask the sharing facility to extend it." : "You do not have permission to view medical history.") : "The medical history could not be loaded. Check your internet connection and try again.") + "</div>"; });
   }
   function startLists() {
     subscribeClinical();
@@ -1016,6 +1169,7 @@
     onSnapshot(query(collection(db, "pc_encounters"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", pid), limit(100)), s => {
       patientEncs = s.docs.map(d => ({ id: d.id, ...d.data() })); loaded.e = true; renderEncounters();
     }, () => {});
+    onSnapshot(query(collection(db, "pc_patient_corrections"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", pid), limit(100)), s => { corrs = s.docs.map(d => ({ id: d.id, ...d.data() })); renderCorrections(); }, () => {});
     // read-only summaries of this facility's own clinical records (same facility and patient.view as the rules require); nothing here is written
     const csc = [where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", pid), limit(200)];
     const wc = (name, what, cb) => onSnapshot(query(collection(db, name), ...csc), s => { clinErr[name] = null; cb(s.docs.map(d => ({ id: d.id, ...d.data() }))); renderEncounters(); },
@@ -1040,6 +1194,7 @@
         if (!s.exists()) { showGate("This shared patient was not found on this phone yet. Open the Patients list while online, then try again."); return; }
         share = { id: s.id, ...s.data() };
         if (share.granteeBusinessId !== businessId || (role !== "owner" && share.granteeFacilityId !== facilityId)) { showGate("This patient was not shared with this facility."); return; }
+        if (!share.revokedAt && shareExpired(share)) { showGate("Sharing of this patient with your facility ended on " + esc(msDate(shareEnd(share))) + ". Ask " + esc(share.sourceFacilityName || "the other facility") + " to extend it. Expired."); return; }
         if (share.revokedAt) { showGate("Sharing of this patient has been stopped by " + esc(share.sourceFacilityName || "the other facility") + "."); return; }
         pid = share.patientId; patient = Object.assign({ id: pid, status: "active" }, share.patientSnapshot || {});
         srcBusinessId = share.businessId; srcFacilityId = share.facilityId;

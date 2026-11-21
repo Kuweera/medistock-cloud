@@ -503,11 +503,17 @@
   // ---------- one list: patients registered here (Local) and patients other facilities shared with us (Shared) ----------
   let scope = "all";
   function tsMs(t) { return t && t.toMillis ? t.toMillis() : (t && t.seconds ? t.seconds * 1000 : 0); }
+  // optional end date of a share (rules v21): after it the other facility can no longer read the shared records
+  function endMs(x) { const v = x && x.consentExpiresAt; if (v == null) return null; if (v.toMillis) return v.toMillis(); if (typeof v.seconds === "number") return v.seconds * 1000; const t = typeof v === "string" ? Date.parse(v) : (v instanceof Date ? v.getTime() : NaN); return isNaN(t) ? null : t; }
+  const shareExpired = x => { const t = endMs(x); return t != null && t <= Date.now(); };
+  const typedOf = ms => ms ? isoDate(new Date(ms)).split("-").reverse().join("/") : "";
   // a shared patient that this facility has already registered as its own is shown once, as Local
   function liveShares() {
     const taken = {}; patients.forEach(p => { if (p.sharedFrom) taken[p.sharedFrom] = true; });
     return shares.filter(x => !x.revokedAt && !taken[x.id]);
   }
+  // data that may still be used (for matching and registering): expired shares are not
+  function usableShares() { return liveShares().filter(x => !shareExpired(x)); }
   function shareAsPatient(x) { const sp = x.patientSnapshot || {}; return Object.assign({}, sp, { id: "share:" + x.id, phoneKey: sp.phoneKey || phoneKeyOf(sp.phone) }); }
   function shareFrom(x) { return (x.sourceFacilityName || "another facility") + (x.sourceBusinessName ? " (" + x.sourceBusinessName + ")" : ""); }
   function sexText(s) { return s === "female" ? "Female" : s === "male" ? "Male" : s === "other" ? "Other" : "Sex unknown"; }
@@ -542,8 +548,8 @@
     $("results").innerHTML = list.map(i => {
       const p = i.p, meta = esc(sexText(p.sex)) + " · " + esc(ageText(p, now)) + (p.phone ? " · " + esc(p.phone) : "") + (p.village ? " · " + esc(p.village) : "");
       if (i.kind === "shared") {
-        return '<div class="pt" data-share="' + esc(i.x.id) + '"><div class="pt-name">' + esc(p.fullName) + ' <span class="chip shared">Shared</span> <span class="chip">' + (p.sourceRegNo ? "Ref " + esc(p.sourceRegNo) : "ID " + esc(String(i.x.patientId || "").slice(-6).toUpperCase())) + "</span></div>" +
-          '<div class="pt-meta">' + meta + '</div><div class="pt-from">From ' + esc(shareFrom(i.x)) + (i.x.purpose ? " · " + esc(i.x.purpose) : "") + "</div></div>";
+        return '<div class="pt" data-share="' + esc(i.x.id) + '"><div class="pt-name">' + esc(p.fullName) + ' <span class="chip shared">Shared</span>' + (shareExpired(i.x) ? ' <span class="chip warn">Expired</span>' : "") + ' <span class="chip">' + (p.sourceRegNo ? "Ref " + esc(p.sourceRegNo) : "ID " + esc(String(i.x.patientId || "").slice(-6).toUpperCase())) + "</span></div>" +
+          '<div class="pt-meta">' + meta + '</div><div class="pt-from">From ' + esc(shareFrom(i.x)) + (i.x.purpose ? " · " + esc(i.x.purpose) : "") + '</div><div class="pt-meta">' + (shareExpired(i.x) ? "Sharing ended " + esc(typedOf(endMs(i.x))) + ". The records can no longer be opened." : "Details as of " + esc(typedOf(tsMs(i.x.snapshotAt) || tsMs(i.x.grantedAt)) || "when shared") + (endMs(i.x) ? " · access ends " + esc(typedOf(endMs(i.x))) : "")) + "</div></div>";
       }
       const ml = myLink(p.id), src = p.sharedFrom ? shares.find(x => x.id === p.sharedFrom) : null;
       return '<div class="pt" data-pid="' + esc(p.id) + '"><div class="pt-name">' + esc(p.fullName) + ' <span class="chip local">Local</span> ' + (ml ? '<span class="chip ok">' + esc(ml.localRegNo) + "</span>" : "") + "</div>" +
@@ -641,7 +647,7 @@
     pendingForm = f;
     const inp = { tokens: nameTokens(f.fullName), phoneKey: phoneKeyOf(f.phone), dob: f.dobPrecision === "exact" ? f.dob : null, dobApprox: f.dobApprox, nokPhoneKey: phoneKeyOf(f.nextOfKin.phone) };
     // local patients AND patients shared with us are checked, so a shared patient is not registered a second time by accident
-    const pool = patients.concat(liveShares().filter(x => x.id !== pendingShareId).map(shareAsPatient));
+    const pool = patients.concat(usableShares().filter(x => x.id !== pendingShareId).map(shareAsPatient));
     const cands = findDuplicates(inp, pool);
     if (!cands.length) { saveNew(f, "", []); return; }
     renderCandidates(cands);
@@ -770,6 +776,7 @@
       const sh = await getDoc(doc(db, "pc_shares", sid));
       if (!sh.exists()) return;
       const x = sh.data(), p = x.patientSnapshot || {};
+      if (x.revokedAt || shareExpired(x)) { alert("Sharing of this patient has ended, so the details cannot be used to register them. Ask " + (x.sourceFacilityName || "the other facility") + " to share again."); return; }
       $("showFormBtn").click();
       $("fName").value = p.fullName || ""; $("fSex").value = p.sex || ""; $("fPhone").value = p.phone || "";
       $("fVillage").value = p.village || ""; $("fDistrict").value = p.district || "";
