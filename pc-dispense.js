@@ -236,7 +236,8 @@
 
       // ---- quantities (all in the medicine's smallest unit, e.g. tablets)
       var prescribed, qtySetBy;
-      if (rx) { prescribed = num(rx.qtyPrescribed); qtySetBy = rx.qtySetBy || "prescriber"; }
+      // a pending prescription with qtyUnknown (the prescriber gave no quantity) has no usable quantity yet: the pharmacy states it now
+      if (rx && rx.qtyUnknown !== true) { prescribed = num(rx.qtyPrescribed); qtySetBy = rx.qtySetBy || "prescriber"; }
       else if (order.quantityPrescribed != null && Number(order.quantityPrescribed) > 0) { prescribed = Number(order.quantityPrescribed); qtySetBy = "prescriber"; }
       else if (p.qtyPrescribedOverride != null && Number(p.qtyPrescribedOverride) > 0) { prescribed = Number(p.qtyPrescribedOverride); qtySetBy = "pharmacist"; }
       else throw PCDError("no_quantity", FRIENDLY.no_quantity);
@@ -316,6 +317,11 @@
       };
       if (subst) Object.assign(rxBase, { drugId: p.drugId, drugName: drug.name, substitutedForId: order.medicineId || (rx && rx.drugId) || null, substitutedForName: order.medicineName || (rx && rx.drugName) || null,
         substitutionReason: subst.reason, substitutionAuthorisedBy: subst.authorisedBy, substitutedBy: p.uid });
+      if (rx && rx.status === "pending") {
+        // first dispensing of a pending prescription (rules v19): the pharmacy fills the open quantity and/or medicine
+        if (rx.qtyUnknown === true) Object.assign(rxBase, { qtyPrescribed: prescribed, qtyUnknown: false, qtySetBy: "pharmacy" });
+        if (!rx.drugId) Object.assign(rxBase, { drugId: p.drugId, drugName: drug.name });
+      }
       if (rx) tx.update(rxRef, rxBase);
       else tx.set(rxRef, clean(Object.assign({}, stamp, rxBase, {
         id: p.orderId, orderId: p.orderId, patientId: order.patientId, patientName: order.patientName, encounterId: order.encounterId, encounterNo: order.encounterNo, planId: order.planId,

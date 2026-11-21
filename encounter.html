@@ -1031,23 +1031,39 @@
   const tzOf = () => (facility && facility.timezone) || "Africa/Kampala";
   const SET_LABEL = { outpatient: "Outpatient", home: "At home", inpatient: "Inpatient", procedure_room: "Procedure room" };
   const ST_LABEL = { pending: "Pending", administered: "Given", refused: "Refused", missed: "Missed", held: "Held", not_given: "Not given", cancelled: "Cancelled" };
-  let plans = [], tOrders = [], tEvents = [], dRules = [], drugs = [], obCtx = null, showPlanned = {}, draftTimer = null;
+  let plans = [], tOrders = [], tEvents = [], rxs = [], dRules = [], drugs = [], obCtx = null, showPlanned = {}, draftTimer = null;
   const todayIso = () => isoDate(new Date());
   function ageMonths() { const b = ageBase({ dobPrecision: enc.patientDobPrecision, dob: enc.patientDob, dobApprox: enc.patientDobApprox }); return b ? Math.floor((Date.now() - b.getTime()) / (30.4375 * 864e5)) : null; }
   function latestWeight() { const t = triage.filter(x => x.status === "active" && x.weightKg != null).sort((a, b) => (b.recordedAt || 0) - (a.recordedAt || 0))[0]; return t ? t.weightKg : null; }
-  function commitOps(ops) {
-    const CH = 400, ps = [];
-    for (let i = 0; i < ops.length; i += CH) {
-      const b = writeBatch(db);
-      ops.slice(i, i + CH).forEach(o => { if (o[0] === "u") b.update(o[1], o[2]); else b.set(o[1], o[2]); });
-      ps.push(b.commit());
-    }
-    Promise.all(ps).catch(saveFailed);
+  // ops: ["s"|"u", ref, data, "keep"?, "optional"?]. A "keep" op is never separated from the op before it (an order and its prescription must be committed
+  // together, rules v19). An "optional" op (cancelling the pharmacy prescription) is dropped and the rest retried once if the server refuses the batch,
+  // for example because the pharmacy started dispensing in the meantime: the order itself must still be stoppable.
+  function commitOps(ops, onDone) {
+    const CH = 400;
+    const run = list => {
+      const chunks = []; let cur = [];
+      list.forEach(o => { if (cur.length >= CH && o[3] !== "keep") { chunks.push(cur); cur = []; } cur.push(o); });
+      if (cur.length) chunks.push(cur);
+      return Promise.all(chunks.map(c => { const b = writeBatch(db); c.forEach(o => { if (o[0] === "u") b.update(o[1], o[2]); else b.set(o[1], o[2]); }); return b.commit(); }));
+    };
+    const hasOpt = ops.some(o => o[4] === "optional");
+    run(ops).then(() => { if (onDone) onDone(false); }).catch(err => {
+      if (hasOpt && err && err.code === "permission-denied") run(ops.filter(o => o[4] !== "optional")).then(() => { if (onDone) onDone(true); }).catch(saveFailed);
+      else saveFailed(err);
+    });
   }
   const auditOp = (action, path, extra) => ["s", doc(collection(db, "pc_audit_logs")), auditDoc(action, path, extra)];
   const upd = () => ({ updatedAt: serverTimestamp(), updatedBy: me.id });
 
   function evsOf(orderId) { return tEvents.filter(e => e.orderId === orderId); }
+  // Stage 2: the pharmacy prescription (prescriptions/{orderId}) that belongs to a medicine order. Only the documents this phone has seen are known.
+  function rxOf(orderId) { return rxs.find(r => r.id === orderId) || null; }
+  const rxDispensed = r => (r && Number(r.qtyDispensed)) || 0;
+  // A prescription can be cancelled by the clinician only while it is pending and nothing has been dispensed (rules v19).
+  const rxCancellable = r => !!r && r.status === "pending" && rxDispensed(r) === 0;
+  function rxUpdateOp(rx, status, reason, extra) {
+    return ["u", doc(db, "prescriptions", rx.id), Object.assign({ status: status, endedAt: serverTimestamp(), endedBy: me.id, endReason: reason }, extra || {}, upd()), "keep", "optional"];
+  }
   function orderTitle(o) {
     return o.kind === "procedure" ? esc(o.procedureName) : esc(o.medicineName) + (o.strength ? " " + esc(o.strength) : "") + " — " + esc(o.doseValue) + " " + esc(o.doseUnit || "") + (o.route ? " · " + esc(o.route) : "");
   }
@@ -1281,6 +1297,7 @@
     if (obCtx.block && override.length < 5) { m.textContent = "There are warnings. Write why it is safe to continue."; return; }
     const base = obCtx.base; let changeReason = "";
     if (base) { changeReason = $("obChangeReason").value.trim(); if (changeReason.length < 3) { m.textContent = "Say why the order is being changed."; return; } }
+    if (base && kind === "medicine" && rxDispensed(rxOf(base.id)) > 0 && !window.confirm(rxDispensed(rxOf(base.id)) + " of this medicine has already been dispensed on the earlier version. The new version is a NEW prescription at the pharmacy and does not count what was already given. Continue?")) return;
     const d = drugByName(name), wi = o.scheduleType === "weight" ? weightInfo() : null;
     const oref = doc(collection(db, "pc_treatment_orders")), full = o.scheduleType === "prn" ? [] : PCS.generate(o);
     const horizon = Math.max(Date.now(), o.startAt) + 7 * 864e5, win = full.filter(e => e.plannedAt <= horizon);
@@ -1293,21 +1310,53 @@
       Object.assign(order, { prescribingLevel: obCtx.pre ? "guideline" : (rl ? "rule_checked" : "clinician"), dosingCheck: kind === "medicine" ? (rl ? "rule" : "not_checked") : null, checkedRuleId: rl ? rl.id : null, checkedRuleVersion: rl ? rl.version : null,
         guidelineRef: obCtx.pre ? obCtx.pre.guideline : null, regimenLabel: obCtx.pre ? obCtx.pre.regimenLabel : null, abbreviation: pe.ok ? { code: ab, meaning: pe.entry.m } : null }); }
     if (wi && wi.rule) Object.assign(order, { ruleId: wi.rule.id, ruleVersion: wi.rule.version, ruleSource: wi.rule.source, weightKg: wi.weight, doseConfirmedBy: me.id, doseConfirmedAt: Date.now() });
-    const ops = [["s", oref, order], auditOp(base ? "order.change" : "order.add", "pc_treatment_orders/" + oref.id, { name: name, scheduleType: o.scheduleType, warnings: warnings.length, override: override || null, supersedes: base ? base.id : null })];
+    const ops = [["s", oref, order]];
+    if (kind === "medicine") {
+      // Stage 2: the PENDING prescription is written in the same batch as the order (same id). Quantity 0 + qtyUnknown = the prescriber gave no quantity; drugId null = not matched to stock.
+      // The pharmacy fills both at the first dispensing. lastRequestId null is written so the later-dispensing rule can compare it.
+      const qty = order.quantityPrescribed > 0 ? Number(order.quantityPrescribed) : 0;
+      ops.push(["s", doc(db, "prescriptions", oref.id), Object.assign(stamp(), { id: oref.id, orderId: oref.id, patientId: enc.patientId, patientName: enc.patientName, encounterId: encId, encounterNo: enc.encounterNo, planId: plan.id,
+        status: "pending", qtyPrescribed: qty, qtyDispensed: 0, qtyOutstanding: qty, qtyUnknown: qty === 0, qtySetBy: "prescriber", qtyReturned: 0, lastRequestId: null,
+        drugId: d ? d.id : null, drugName: d ? d.name : name, prescribedName: name, medicineName: name, formulation: order.formulation || "", strength: order.strength || "", route: order.route || "",
+        dose: order.doseValue + (order.doseUnit ? " " + order.doseUnit : ""), instructions: order.instructions || "", prescriberId: me.id, prescriberName: myName, prescribedAt: order.prescribedAt, orderVersion: order.version, supersedes: order.supersedes || null }), "keep"]);
+    }
+    ops.push(auditOp(base ? "order.change" : "order.add", "pc_treatment_orders/" + oref.id, { name: name, scheduleType: o.scheduleType, warnings: warnings.length, override: override || null, supersedes: base ? base.id : null }));
     if (base) {
       ops.push(["u", doc(db, "pc_treatment_orders", base.id), Object.assign({ status: "superseded", supersededBy: oref.id, endedAt: serverTimestamp(), endedBy: me.id, endedByName: myName, endReason: changeReason }, upd())]);
+      { const brx = rxOf(base.id); if (rxCancellable(brx)) ops.push(rxUpdateOp(brx, "superseded", changeReason, { supersededBy: oref.id })); }
       evsOf(base.id).filter(e => e.status === "pending" || e.status === "held").forEach(e => ops.push(["u", doc(db, "pc_treatment_events", e.id), Object.assign({ status: "cancelled", cancelReason: "Order changed: " + changeReason }, upd())]));
     }
     win.forEach(e => ops.push(["s", doc(db, "pc_treatment_events", oref.id + "_" + e.idKey), Object.assign(stamp(), { orderId: oref.id, idKey: e.idKey, idx: e.idx, planId: plan.id, encounterId: encId, patientId: enc.patientId, patientName: enc.patientName, kind: kind, label: name, plannedAt: e.plannedAt, plannedLocal: e.plannedLocal, plannedDay: e.plannedDay, tz: e.tz,
       plannedDoseValue: e.doseValue != null ? e.doseValue : order.doseValue, doseUnit: o.doseUnit || "", route: o.route || "", instructions: order.instructions, status: "pending" })]));
     commitOps(ops); closeOrder();
-    ok((kind === "medicine" ? "Medicine order" : "Procedure order") + " saved on this phone" + (win.length ? " with " + win.length + " planned administration" + (win.length === 1 ? "" : "s") + (full.length > win.length ? " (the rest are written later: tap 'Write the next days')" : "") : "") + ".");
+    ok((kind === "medicine" ? "Medicine order" : "Procedure order") + " saved on this phone" + (win.length ? " with " + win.length + " planned administration" + (win.length === 1 ? "" : "s") + (full.length > win.length ? " (the rest are written later: tap 'Write the next days')" : "") : "") + "." +
+      (kind === "medicine" ? " Next step: the pharmacy now has this as a pending prescription. Nothing has been dispensed yet." : " Next step: the responsible clinical team carries out this procedure."));
   }
+  // What happens to the pharmacy prescription when its order ends. Returns { ops: [optional prescription update], text }.
+  function rxEnding(o, status, reason) {
+    if (o.kind !== "medicine") return { ops: [], text: "" };
+    const rx = rxOf(o.id), n = rxDispensed(rx), word = status === "stopped" ? "stopped" : "completed";
+    if (!rx) return { ops: [], text: " The pharmacy will see that this order is " + word + "." };
+    if (rxCancellable(rx)) return { ops: [rxUpdateOp(rx, "cancelled", reason)], text: " Nothing had been dispensed, so the pharmacy prescription is cancelled." };
+    if (n > 0) return { ops: [], text: " " + n + " " + (rx.qtyUnit || "") + " of " + (rx.qtyPrescribed || "?") + " had already been dispensed and stays on record. The pharmacy will show it as " + (status === "stopped" ? "stopped, do not dispense" : "completed, do not dispense more") + "." };
+    return { ops: [], text: " The pharmacy will see that this order is " + word + "." };
+  }
+  // STOP = discontinued before the intended course finished (reason required). COMPLETE = the intended course has finished. Different records, different messages.
   function stopOrder(id, status, reason) {
-    const o = tOrders.find(x => x.id === id); if (!o) return;
-    const ops = [["u", doc(db, "pc_treatment_orders", id), Object.assign({ status: status, endedAt: serverTimestamp(), endedBy: me.id, endedByName: myName, endReason: reason }, upd())], auditOp(status === "stopped" ? "order.stop" : "order.complete", "pc_treatment_orders/" + id, { reason: reason })];
-    evsOf(id).filter(e => e.status === "pending" || e.status === "held").forEach(e => ops.push(["u", doc(db, "pc_treatment_events", e.id), Object.assign({ status: "cancelled", cancelReason: (status === "stopped" ? "Order stopped: " : "Order completed: ") + reason }, upd())]));
-    commitOps(ops);
+    const o = tOrders.find(x => x.id === id); if (!o || o.status !== "active") return;
+    const name = o.kind === "procedure" ? o.procedureName : o.medicineName, stopped = status === "stopped";
+    if (stopped && String(reason || "").trim().length < 3) { alert("Please give a short reason."); return; }
+    const rxe = rxEnding(o, status, reason);
+    const ops = [["u", doc(db, "pc_treatment_orders", id), Object.assign({ status: status, endedAt: serverTimestamp(), endedBy: me.id, endedByName: myName, endReason: reason }, upd())]];
+    rxe.ops.forEach(x => ops.push(x));
+    ops.push(auditOp(stopped ? "order.stop" : "order.complete", "pc_treatment_orders/" + id, { reason: reason, kind: o.kind }));
+    const cx = evsOf(id).filter(e => e.status === "pending" || e.status === "held");
+    cx.forEach(e => ops.push(["u", doc(db, "pc_treatment_events", e.id), Object.assign({ status: "cancelled", cancelReason: (stopped ? "Order stopped: " : "Order completed: ") + reason }, upd())]));
+    const future = cx.length ? " " + cx.length + " planned administration" + (cx.length === 1 ? "" : "s") + " cancelled." : "";
+    const msg = stopped ? "STOPPED before the course finished: " + name + ". Reason saved: " + reason + "." + future + rxe.text + " The order and every dose already given are kept."
+                        : "COMPLETED, the course has finished: " + name + "." + future + rxe.text + " The order history is kept.";
+    commitOps(ops, fell => { if (fell) { const el = $("doneMsg"); el.className = "msg ok"; el.textContent = (stopped ? "STOPPED: " : "COMPLETED: ") + name + ". The pharmacy had already started dispensing, so its prescription was not changed and will show this order as " + (stopped ? "stopped, do not dispense" : "completed") + "."; } });
+    ok(msg);
   }
   function extendOrder(id) {
     const o = tOrders.find(x => x.id === id); if (!o || o.scheduleType === "prn") return;
@@ -1320,18 +1369,29 @@
     if (!ops.length) { ok("Nothing new to write yet: the next days are already planned, or the course has ended."); return; }
     ops.push(auditOp("order.extend", "pc_treatment_orders/" + id, { added: ops.length })); commitOps(ops); ok(ops.length - 1 + " more planned administration(s) written on this phone.");
   }
+  // Completing or stopping a whole PLAN. Every active order in it ends with the same meaning; the message counts them.
   function endPlan(pid, status) {
-    const p = plans.find(x => x.id === pid); if (!p) return;
+    const p = plans.find(x => x.id === pid); if (!p || p.status !== "active") return;
+    const act = tOrders.filter(o => o.planId === pid && o.status === "active"), stopped = status === "stopped";
     let reason = "Plan completed";
-    if (status === "stopped") { reason = (window.prompt("Why is this plan being stopped?") || "").trim(); if (reason.length < 3) { if (reason) alert("Please give a short reason."); return; } }
-    else if (!window.confirm("Complete this plan? Any administrations still pending will be cancelled.")) return;
-    const ops = [];
-    tOrders.filter(o => o.planId === pid && o.status === "active").forEach(o => {
-      ops.push(["u", doc(db, "pc_treatment_orders", o.id), Object.assign({ status: status === "stopped" ? "stopped" : "completed", endedAt: serverTimestamp(), endedBy: me.id, endedByName: myName, endReason: reason }, upd())]);
-      evsOf(o.id).filter(e => e.status === "pending" || e.status === "held").forEach(e => ops.push(["u", doc(db, "pc_treatment_events", e.id), Object.assign({ status: "cancelled", cancelReason: "Plan " + status + ": " + reason }, upd())]));
+    if (stopped) { reason = (window.prompt("Why is this whole plan being stopped? (" + act.length + " active order" + (act.length === 1 ? "" : "s") + " will be stopped)") || "").trim(); if (reason.length < 3) { if (reason) alert("Please give a short reason."); return; } }
+    else {
+      const undisp = act.filter(o => o.kind === "medicine" && rxCancellable(rxOf(o.id))).length;
+      if (!window.confirm("Complete the whole plan \"" + p.title + "\"? This means the intended treatment has finished. " + act.length + " active order" + (act.length === 1 ? "" : "s") + " will be marked completed and pending administrations cancelled." +
+        (undisp ? "\n\n" + undisp + " medicine" + (undisp === 1 ? " has" : "s have") + " NOT been dispensed yet; their pharmacy prescriptions will be cancelled. Use Stop instead if the treatment is being discontinued." : ""))) return;
+    }
+    const ops = []; let nEv = 0, nRxCancel = 0, nRxKept = 0;
+    act.forEach(o => {
+      ops.push(["u", doc(db, "pc_treatment_orders", o.id), Object.assign({ status: status, endedAt: serverTimestamp(), endedBy: me.id, endedByName: myName, endReason: reason }, upd())]);
+      const rxe = rxEnding(o, status, reason); rxe.ops.forEach(x => { ops.push(x); nRxCancel++; }); if (o.kind === "medicine" && !rxe.ops.length && rxDispensed(rxOf(o.id)) > 0) nRxKept++;
+      evsOf(o.id).filter(e => e.status === "pending" || e.status === "held").forEach(e => { nEv++; ops.push(["u", doc(db, "pc_treatment_events", e.id), Object.assign({ status: "cancelled", cancelReason: "Plan " + status + ": " + reason }, upd())]); });
     });
-    ops.push(["u", doc(db, "pc_treatment_plans", pid), Object.assign({ status: status, endedAt: serverTimestamp(), endedBy: me.id, endedByName: myName, endReason: reason }, upd())], auditOp("plan." + status, "pc_treatment_plans/" + pid, { reason: reason }));
-    commitOps(ops);
+    ops.push(["u", doc(db, "pc_treatment_plans", pid), Object.assign({ status: status, endedAt: serverTimestamp(), endedBy: me.id, endedByName: myName, endReason: reason }, upd())], auditOp("plan." + status, "pc_treatment_plans/" + pid, { reason: reason, orders: act.length }));
+    const tail = " " + act.length + " order" + (act.length === 1 ? "" : "s") + " " + status + ", " + nEv + " planned administration" + (nEv === 1 ? "" : "s") + " cancelled" +
+      (nRxCancel ? ", " + nRxCancel + " undispensed pharmacy prescription" + (nRxCancel === 1 ? "" : "s") + " cancelled" : "") + (nRxKept ? ", " + nRxKept + " partly or fully dispensed medicine" + (nRxKept === 1 ? "" : "s") + " kept on record" : "") + ". Nothing was deleted.";
+    const head = (stopped ? "PLAN STOPPED before the treatment finished: " : "PLAN COMPLETED, the treatment has finished: ") + p.title + ".";
+    commitOps(ops, fell => { if (fell) { const el = $("doneMsg"); el.className = "msg ok"; el.textContent = head + " The pharmacy had already started dispensing some medicines, so those prescriptions were not changed."; } });
+    ok(head + tail);
   }
 
   // ---------- summary / closing ----------
@@ -1501,8 +1561,9 @@
     else if (ds.oplan) { showPlanned[ds.oplan] = !showPlanned[ds.oplan]; renderTreat(); }
     else if (ds.oext) extendOrder(ds.oext);
     else if (ds.ochg) { const o = tOrders.find(x => x.id === ds.ochg); if (o) openOrder(o.planId, o.kind, o); }
-    else if (ds.ostop) { const r = (window.prompt("Why is this order being stopped?") || "").trim(); if (r.length < 3) { if (r) alert("Please give a short reason."); } else stopOrder(ds.ostop, "stopped", r); }
-    else if (ds.odone) { if (window.confirm("Mark this order as completed? Pending administrations will be cancelled.")) stopOrder(ds.odone, "completed", "Course completed"); }
+    else if (ds.ostop) { const r = (window.prompt("STOP this order (discontinue before the course finishes). Why is it being stopped?") || "").trim(); if (r.length < 3) { if (r) alert("Please give a short reason."); } else stopOrder(ds.ostop, "stopped", r); }
+    else if (ds.odone) { const oo = tOrders.find(x => x.id === ds.odone), rr = oo && oo.kind === "medicine" ? rxOf(oo.id) : null;
+      if (window.confirm("Mark this " + (oo && oo.kind === "procedure" ? "procedure" : "medicine") + " as COMPLETED? This means the intended course has finished. Pending administrations will be cancelled." + (rxCancellable(rr) ? "\n\nNothing has been dispensed yet, so the pharmacy prescription will be cancelled. Use Stop if the treatment is being discontinued." : "") + "\n\n(Completing a single medicine does not complete the whole plan.)")) stopOrder(ds.odone, "completed", "Course completed"); }
   });
   $("xCloseBtn").onclick = closeVisit; $("xCancelBtn").onclick = cancelVisit;
   $("profileBtn").onclick = () => { if (enc) window.mcGo("patient.html?id=" + encodeURIComponent(enc.patientId)); };
@@ -1539,6 +1600,7 @@
     onSnapshot(query(collection(db, "pc_treatment_plans"), ...pbase), { includeMetadataChanges: true }, s => { plans = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTreat(); }, () => {});
     onSnapshot(query(collection(db, "pc_treatment_orders"), ...pbase), { includeMetadataChanges: true }, s => { tOrders = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTreat(); }, () => {});
     onSnapshot(query(collection(db, "pc_treatment_events"), ...pbase), { includeMetadataChanges: true }, s => { tEvents = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTreat(); }, () => {});
+    onSnapshot(query(collection(db, "prescriptions"), ...pbase), { includeMetadataChanges: true }, s => { rxs = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTreat(); }, () => {});
     onSnapshot(query(collection(db, "pc_dosing_rules"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), limit(1000)), s => { dRules = s.docs.map(d => ({ id: d.id, ...d.data() })); schedulePreview(); }, () => {});
     onSnapshot(query(collection(db, "pc_inv_catalogue"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), limit(1000)), s => { catalogue = s.docs.map(d => ({ id: d.id, ...d.data() })); renderOrderPick(); }, () => {});
     onSnapshot(query(collection(db, "pc_allergies"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", enc.patientId), limit(100)), s => { allergies = s.docs.map(d => ({ id: d.id, ...d.data() })); renderBanner(); }, () => {});
