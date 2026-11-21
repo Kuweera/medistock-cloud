@@ -47,6 +47,9 @@
   .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
   .pt{padding:12px 0; border-bottom:1px solid var(--border); cursor:pointer;}
   .pt:last-child{border-bottom:none;} .pt.sel{background:rgba(43,191,160,.10); margin:0 -8px; padding-left:8px; padding-right:8px; border-radius:8px;}
+  .rxgroup{border:1px solid var(--border); border-radius:12px; padding:4px 12px 4px; margin:0 0 12px;}
+  .rxhead{padding:10px 0 8px; border-bottom:2px solid var(--border);}
+  .rxgroup .pt:last-of-type{border-bottom:none;}
   .pt-name{font-size:14.5px; font-weight:700; color:var(--text);}
   .pt-meta{font-size:12.5px; color:var(--muted); margin-top:2px; line-height:1.55;}
   .chip{display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:4px; vertical-align:middle; background:var(--border); color:var(--muted);}
@@ -280,16 +283,47 @@
     return c;
   }
   const STATUS = { waiting: ["Waiting", "warn"], partial: ["Partly dispensed", "warn"], done: ["Fully dispensed", "ok"], stopped: ["Stopped", "bad"] };
+  // One medicine line inside a prescription. The patient is named once, in the prescription header (groupHtml).
   function cardHtml(r) {
     const i = info(r), st = STATUS[r.group], u = (r.rx && r.rx.qtyUnit) || "";
-    const reg = regNos[i.patientId];
     const q = r.q;
     return '<div class="pt' + (D && D.id === r.id ? " sel" : "") + '" data-id="' + esc(r.id) + '">' +
-      '<div class="pt-name">' + esc(i.patientName) + (reg ? " · " + esc(reg) : "") + ' <span class="chip ' + st[1] + '">' + esc(st[0]) + "</span>" + chipsOf(r) + "</div>" +
-      '<div class="pt-meta"><b>' + esc(i.medicine) + "</b>" + (i.formulation ? " · " + esc(i.formulation) : "") + (i.strength ? " · " + esc(i.strength) : "") + "<br>" +
-      (i.dose ? "Dose: " + esc(i.dose) + (i.route ? " · " + esc(i.route) : "") + "<br>" : "") + (i.instructions ? esc(i.instructions) + "<br>" : "") +
-      esc((facility && facility.name) || "") + (i.encounterNo ? " · Visit " + esc(i.encounterNo) : "") + (i.prescriber ? " · Prescriber: " + esc(i.prescriber) : "") + (i.prescribedAt ? " · " + esc(fmtWhen(i.prescribedAt)) : "") + "</div>" +
+      '<div class="pt-name">' + esc(i.medicine) + ' <span class="chip ' + st[1] + '">' + esc(st[0]) + "</span>" + chipsOf(r) + "</div>" +
+      '<div class="pt-meta">' + (i.formulation ? esc(i.formulation) : "") + (i.strength ? (i.formulation ? " · " : "") + esc(i.strength) : "") + ((i.formulation || i.strength) ? "<br>" : "") +
+      (i.dose ? "Dose: " + esc(i.dose) + (i.route ? " · " + esc(i.route) : "") + "<br>" : "") + (i.instructions ? esc(i.instructions) + "<br>" : "") + "</div>" +
       (q.known ? '<div class="qty3"><div><b>' + esc(q.prescribed) + '</b><span>Prescribed</span></div><div><b>' + esc(q.dispensed) + '</b><span>Dispensed</span></div><div class="out"><b>' + esc(q.outstanding) + '</b><span>Outstanding' + (u ? " (" + esc(u) + ")" : "") + "</span></div></div>" : "") + "</div>";
+  }
+  // A prescription = one patient + one visit. Medicines of different visits are never merged, even for the same patient.
+  function visitKey(r) {
+    const o = r.order || {}, x = r.rx || {}, i = info(r);
+    const enc = o.encounterId || x.encounterId || i.encounterNo || "";
+    // old records with no visit at all: keep them apart by the day they were prescribed, so two visits are never merged
+    return (i.patientId || i.patientName) + "|" + (enc || ("noenc-" + (num(i.prescribedAt) ? PCD.localDay(new Date(num(i.prescribedAt))) : "unknown")));
+  }
+  function groupRows(rows) {
+    const m = new Map();
+    rows.forEach(r => { const k = visitKey(r); if (!m.has(k)) m.set(k, { key: k, rows: [] }); m.get(k).rows.push(r); });
+    const out = Array.from(m.values());
+    out.forEach(g => {
+      g.rows.sort((a, b) => num(info(a).prescribedAt) - num(info(b).prescribedAt) || String(info(a).medicine).localeCompare(String(info(b).medicine)));
+      g.first = info(g.rows[0]);
+      g.plans = Array.from(new Set(g.rows.map(r => (r.order && r.order.planId) || (r.rx && r.rx.planId) || "")));
+    });
+    return out;
+  }
+  function groupHtml(g) {
+    const i = g.first, reg = regNos[i.patientId];
+    const cnt = k => g.rows.filter(r => r.group === k).length;
+    const parts = []; [["waiting", "waiting"], ["partial", "partly dispensed"], ["done", "fully dispensed"], ["stopped", "stopped"]].forEach(p => { const n = cnt(p[0]); if (n) parts.push(n + " " + p[1]); });
+    const prescribers = Array.from(new Set(g.rows.map(r => info(r).prescriber).filter(Boolean))).join(", ");
+    let body = "";
+    if (g.plans.length > 1) {
+      g.plans.forEach((pl, n) => { const rs = g.rows.filter(r => ((r.order && r.order.planId) || (r.rx && r.rx.planId) || "") === pl);
+        body += '<div class="pt-meta" style="margin-top:8px;font-weight:600;">Treatment plan ' + (n + 1) + "</div>" + rs.map(cardHtml).join(""); });
+    } else body = g.rows.map(cardHtml).join("");
+    return '<div class="rxgroup" data-g="' + esc(g.key) + '"><div class="rxhead"><div class="pt-name">' + esc(i.patientName) + (reg ? " · " + esc(reg) : "") + "</div>" +
+      '<div class="pt-meta">Prescription from ' + (i.encounterNo ? "Visit " + esc(i.encounterNo) : "a visit with no number") + " · " + esc((facility && facility.name) || "") + (prescribers ? " · Prescriber: " + esc(prescribers) : "") + (i.prescribedAt ? " · " + esc(fmtWhen(i.prescribedAt)) : "") +
+      "<br>" + g.rows.length + " medicine" + (g.rows.length === 1 ? "" : "s") + (parts.length ? ": " + esc(parts.join(", ")) : "") + "</div></div>" + body + "</div>";
   }
   function resolveRegNos(rows) {
     rows.forEach(r => {
@@ -311,7 +345,13 @@
     const list = rows.filter(r => r.group === filter && matches(r, q)).sort((a, b) => filter === "done" ? tsMs((b.rx || {}).lastDispensedAt) - tsMs((a.rx || {}).lastDispensedAt) : num(info(a).prescribedAt) - num(info(b).prescribedAt));
     $("info").textContent = { waiting: "Prescriptions that have not been dispensed yet, oldest first.", partial: "Some of the medicine has been given out. The outstanding quantity is still to be dispensed.",
       done: "Recently completed prescriptions.", stopped: "Prescriptions that were stopped or replaced by the prescriber. These cannot be dispensed." }[filter];
-    $("list").innerHTML = list.length ? list.map(cardHtml).join("") : '<div class="empty">Nothing here.</div>';
+    // Group by prescription (patient + visit). A prescription is listed here when at least one of its medicines belongs to this tab;
+    // all of its loaded medicines are then shown, each with its own status.
+    const keys = new Set(list.map(visitKey));
+    const groups = groupRows(rows.filter(r => keys.has(visitKey(r))));
+    const firstSeen = {}; list.forEach((r, n) => { const k = visitKey(r); if (!(k in firstSeen)) firstSeen[k] = n; });
+    groups.sort((a, b) => firstSeen[a.key] - firstSeen[b.key]);
+    $("list").innerHTML = groups.length ? groups.map(groupHtml).join("") : '<div class="empty">Nothing here.</div>';
     resolveRegNos(list.slice(0, 60));
   }
 
