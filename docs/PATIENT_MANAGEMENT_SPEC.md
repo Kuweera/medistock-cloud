@@ -200,3 +200,10 @@ This replaces the "identity visible to the whole business" assumption (section 2
 
 ## 21. Stage 3 (Developer 2, 2026-11-21): journey and department queues
 See `docs/PATIENT_JOURNEY_PROPOSAL.md`. Summary: the existing visit queue (`encounters.html`) gains department tabs (Triage, Consultation, Laboratory, Pharmacy, Procedures, Ready to close, with counts), a "Now / Next / Waiting" line on every open visit, information chips (tests in the laboratory, results to review, medicine or procedure ordered) and a "Send to next step" form that writes `pc_encounters.journey` (rules v20) plus an audit row. The Laboratory and Pharmacy tabs link to the existing `laboratory.html` and `pharmacy.html` work lists, so no second queue exists. `patient.html` shows "Next:" on an open visit. Reads added to `encounters.html`: `pc_inv_orders` (status in requested..verified) and `pc_treatment_orders` (status active), both facility-scoped; if a user cannot read them the chips are simply not shown. No schema change beyond the Lead's v20 field.
+
+## 22. Audit viewer, contact edit, shared-patient review (2026-11-21)
+- **audit.html** (new, read-only): who changed or opened which patient record. Gate: owner or `audit.view`. Scopes: one patient (default; also `?patient=<id>`), one staff member (owner only, needs the users list), whole facility (max 1000 entries per log). Filters: type (changes/views), dates, text. Newest first, sorted in the browser (the app uses no indexes or `orderBy`). Writes nothing.
+- Limit: with no index the facility scope cannot guarantee the newest entries once a log has over 1000 rows; the page warns. Recommended to the Lead: composite index (businessId, facilityId, clientCreatedAt desc).
+- **patient.html**: "Update contact details" gated by `patient.edit`. See PATIENT_EDIT_REVIEW.md.
+- **Reviews:** SHARED_PATIENT_REVIEW.md, PATIENT_EDIT_REVIEW.md.
+- Not linked in `nav.js` or cached in `sw.js` (Lead's files). Request: add `["audit.html","Audit and access log"]` and cache `audit.html`.

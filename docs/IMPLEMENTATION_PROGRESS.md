@@ -140,3 +140,6 @@ Changed: `patient.html`, `patients.html` (shows source reg no for shared rows), 
 
 ## Developer 2, Stage 3: journey and department queues (2026-11-21)
 Changed: `encounters.html`, `patient.html`, `docs/FIELD_EXPLANATIONS.md` (2 rows), spec section 21. New: `docs/PATIENT_JOURNEY_PROPOSAL.md`, `tests/journey.test.js` (9 unit tests, logic taken from the page), `tests/queue-check.js` (15 browser checks), `tests/queue-harness.html`. `tests/profile-check.js` extended. Results: 153/153 offline tests; list, profile, queue, registration, progressive, browser, hints, guidance, follow-up, lab, order-form, required, test-request and treatment checks all pass. Stand-in only: the v20 rules emulator tests (`tests-emulator/rules.test.js`) were NOT run here (no emulator); a unit test checks that the choices offered equal the rules' enums.
+
+## Developer 2 · Audit viewer, patient.edit, shared review (2026-11-21)
+Done: audit.html (tests/audit-check.js, 13 checks), contact edit in patient.html (4 new checks in tests/profile-check.js, now 19), two review docs. Tested on the in-memory stand-in only; emulator rules tests not run; not tested on real devices or offline. Needs from Lead: nav.js and sw.js entries for audit.html; index decision; decisions listed in the review docs.
