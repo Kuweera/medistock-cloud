@@ -607,3 +607,15 @@ test("v21 expiry: a new share can start with a future end date but not a past on
   await assertFails(setDoc(doc(f, "pc_shares", id), mk({ consentExpiresAt: new Date(Date.now() - 86400000) })));
   await assertSucceeds(setDoc(doc(f, "pc_shares", id), mk({ consentExpiresAt: new Date(Date.now() + 86400000) })));
 });
+
+// ======================= v22 (Lead): order care mode =======================
+test("v22 administrationMode: optional on a new order; only the three agreed values; cannot be changed afterwards; old orders without it still work", async () => {
+  await seedV19();
+  const f = db("prescriber"), mk = (id, mode) => setDoc(doc(f, "pc_treatment_orders", id), Object.assign(orderDoc("prescriber"), mode === undefined ? {} : { administrationMode: mode }));
+  await assertSucceeds(mk("m0"));
+  for (const [i, m] of ["take_home", "facility_administered", "inpatient_mar"].entries()) await assertSucceeds(mk("m" + (i + 1), m));
+  await assertFails(mk("m9", "bogus"));
+  await assertFails(mk("m8", 5));
+  await assertFails(updateDoc(doc(f, "pc_treatment_orders", "m1"), { administrationMode: "inpatient_mar", updatedBy: "prescriber", updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(f, "pc_treatment_orders", "m1"), { status: "stopped", endedBy: "prescriber", endedAt: serverTimestamp(), endReason: "not needed", updatedBy: "prescriber", updatedAt: serverTimestamp() }));
+});
