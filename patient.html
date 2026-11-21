@@ -287,6 +287,21 @@
   </div>
 
   <div id="tab-overview" class="card"></div>
+  <div class="card hidden" id="editCard">
+    <h2>Update contact details</h2>
+    <div class="hint2" style="margin-top:0;">Changes here are recorded with your name and the time. Name, sex and date of birth are not changed here. Facilities this patient was already shared with keep the details as they were when shared: stop sharing and share again to update them.</div>
+    <label>Phone number</label><input type="tel" id="eqPhone" autocomplete="off">
+    <label>Address</label><input type="text" id="eqAddress" autocomplete="off">
+    <div class="row"><div><label>Village</label><input type="text" id="eqVillage" autocomplete="off"></div><div><label>District</label><input type="text" id="eqDistrict" autocomplete="off"></div></div>
+    <h3 class="sub">Guardian / next of kin</h3>
+    <label>Name</label><input type="text" id="eqNokName" autocomplete="off">
+    <div class="row"><div><label>Relationship</label><input type="text" id="eqNokRel" autocomplete="off"></div><div><label>Phone</label><input type="tel" id="eqNokPhone" autocomplete="off"></div></div>
+    <h3 class="sub">Emergency contact</h3>
+    <label>Name</label><input type="text" id="eqEmName" autocomplete="off">
+    <div class="row"><div><label>Relationship</label><input type="text" id="eqEmRel" autocomplete="off"></div><div><label>Phone</label><input type="tel" id="eqEmPhone" autocomplete="off"></div></div>
+    <div class="op-actions"><button type="button" class="btn-primary" id="eqSaveBtn" style="margin-top:0;">Save changes</button><button type="button" class="btn-small btn-secondary" id="eqCancelBtn">Cancel</button></div>
+    <div class="msg" id="eqMsg"></div>
+  </div>
 
   <div class="card hidden" id="mergeCard">
     <h2>Merge a duplicate record</h2>
@@ -570,10 +585,41 @@
       (readOnly() ? "" : line("Emergency contact", [em.name, em.relationship, em.phone].filter(Boolean).join(" · ")))
         || '<div class="empty">No contact details recorded.</div>') +
       '<div class="hint2">' + (readOnly() ? "These details were shared with you and cannot be changed here." : "Allergies and history are kept by the facility that recorded them. Use the Sharing section to let another facility read this patient.") + "</div>" +
+      (!readOnly() && patient.status === "active" && can("patient.edit") ? '<button type="button" class="btn-small btn-primary" id="editContactBtn" style="width:100%; margin-top:10px;">Update contact details</button>' : "") +
       (!readOnly() && patient.status === "active" && can("patient.merge") ? '<button type="button" class="btn-small btn-secondary" id="openMergeBtn" style="width:100%; margin-top:10px;">Merge a duplicate record</button>' : "") +
       (!readOnly() && patient.status === "merged" && patient.mergedInto ? '<button type="button" class="btn-small btn-primary" id="openKeptBtn" style="width:100%; margin-top:10px;">Open the record that was kept</button>' : "");
+    const eb = $("editContactBtn"); if (eb) eb.onclick = openEdit;
     const mb = $("openMergeBtn"); if (mb) mb.onclick = () => openMerge(null);
     const kb = $("openKeptBtn"); if (kb) kb.onclick = () => window.mcGo("patient.html?id=" + encodeURIComponent(patient.mergedInto));
+  }
+
+  // ---------- update contact details (only for patient.edit; the rules also require it) ----------
+  const trim1 = id => $(id).value.trim().replace(/\s+/g, " ");
+  function openEdit() {
+    if (readOnly() || !patient || patient.status !== "active" || !can("patient.edit")) return;
+    const n = patient.nextOfKin || {}, em = patient.emergencyContact || {};
+    $("eqPhone").value = patient.phone || ""; $("eqAddress").value = patient.address || ""; $("eqVillage").value = patient.village || ""; $("eqDistrict").value = patient.district || "";
+    $("eqNokName").value = n.name || ""; $("eqNokRel").value = n.relationship || ""; $("eqNokPhone").value = n.phone || "";
+    $("eqEmName").value = em.name || ""; $("eqEmRel").value = em.relationship || ""; $("eqEmPhone").value = em.phone || "";
+    $("eqMsg").textContent = ""; $("editCard").classList.remove("hidden"); $("editCard").scrollIntoView({ behavior: "smooth", block: "nearest" }); $("eqPhone").focus();
+  }
+  function saveEdit() {
+    const m = $("eqMsg"); m.className = "msg err"; m.textContent = "";
+    if (readOnly() || !patient || patient.status !== "active" || !can("patient.edit")) { m.textContent = "You cannot change this patient."; return; }
+    const digits = x => String(x || "").replace(/\D/g, "").length;
+    const phone = trim1("eqPhone"), np = trim1("eqNokPhone"), ep = trim1("eqEmPhone");
+    for (const [lab, v] of [["The patient's phone number", phone], ["The next of kin phone number", np], ["The emergency contact phone number", ep]]) if (v && (digits(v) < 7 || digits(v) > 15)) { m.textContent = lab + " looks wrong. Use 7 to 15 digits, or leave it empty."; return; }
+    const next = { phone: phone, phoneKey: phoneKeyOf(phone), address: trim1("eqAddress"), village: trim1("eqVillage"), district: trim1("eqDistrict"),
+      nextOfKin: { name: trim1("eqNokName"), relationship: trim1("eqNokRel"), phone: np }, emergencyContact: { name: trim1("eqEmName"), relationship: trim1("eqEmRel"), phone: ep } };
+    const was = { phone: patient.phone || "", address: patient.address || "", village: patient.village || "", district: patient.district || "", nextOfKin: patient.nextOfKin || {}, emergencyContact: patient.emergencyContact || {} };
+    const changed = ["phone", "address", "village", "district", "nextOfKin", "emergencyContact"].filter(k => JSON.stringify(k === "nextOfKin" || k === "emergencyContact" ? Object.assign({ name: "", relationship: "", phone: "" }, was[k]) : was[k]) !== JSON.stringify(next[k]));
+    if (!changed.length) { m.textContent = "Nothing was changed."; return; }
+    const b = writeBatch(db);
+    b.update(doc(db, "pc_patients", pid), Object.assign({}, next, { updatedAt: serverTimestamp(), updatedBy: me.id }));
+    b.set(doc(collection(db, "pc_audit_logs")), auditDoc("patient.edit", "pc_patients/" + pid, { changedFields: changed }));
+    b.commit().catch(saveFailed);
+    Object.assign(patient, next); renderHeader(); renderOverview(); $("editCard").classList.add("hidden");
+    ok("Saved on this phone. It will sync when you are online.");
   }
 
   // ---------- allergies ----------
@@ -911,6 +957,7 @@
   }));
   // forms stay closed until the user chooses to add something
   function openForm(cardId, focusId) { $(cardId).classList.remove("hidden"); $(cardId).scrollIntoView({ behavior: "smooth", block: "nearest" }); if (focusId) $(focusId).focus(); }
+  $("eqSaveBtn").onclick = saveEdit; $("eqCancelBtn").onclick = () => $("editCard").classList.add("hidden");
   $("aOpenBtn").onclick = () => openForm("aAddCard", "aSubstance"); $("aCancelBtn").onclick = () => $("aAddCard").classList.add("hidden");
   $("hOpenBtn").onclick = () => openForm("hAddCard", "hText"); $("hCancelBtn").onclick = () => $("hAddCard").classList.add("hidden");
   $("sOpenBtn").onclick = () => openForm("sNewCard", "sBiz"); $("sCancelBtn").onclick = () => $("sNewCard").classList.add("hidden");

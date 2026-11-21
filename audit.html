@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>if(window.top===window){location.replace("app.html#"+location.pathname.split("/").pop()+location.search);}</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2abfa0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MediStock">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<title>MediStock Cloud - Audit and access log</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  /* ===== Users page ===== */
+  .hidden{display:none !important;}
+  .btn-small{padding:8px 12px; font-size:13px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent);}
+  .btn-danger-outline{background:transparent; color:var(--danger); border:1px solid var(--danger);}
+  .op{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;}
+  .op:last-child{margin-bottom:0;}
+  .op-name{font-weight:700; font-size:14.5px; display:flex; justify-content:space-between; gap:8px; align-items:center;}
+  .op-meta{font-size:12px; color:var(--muted); margin-top:3px; line-height:1.5;}
+  .tag{font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid var(--border);}
+  .tag.on{color:var(--accent2); border-color:var(--accent2);} .tag.off{color:var(--danger); border-color:var(--danger);}
+  .op-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .cred{background:var(--bg); border:1px dashed var(--accent); border-radius:10px; padding:12px; margin:10px 0; font-size:14px; line-height:1.7;}
+  .cred b{font-size:16px; letter-spacing:.5px;}
+  .msg{font-size:13px; margin-top:8px;} .msg.err{color:var(--danger);} .msg.ok{color:var(--accent2);}
+  .pill-row{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;}
+  .pill-btn{background:var(--card); color:var(--text); border:1px solid var(--border); padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:600;}
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .day-h{font-size:11.5px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.4px; margin:12px 0 4px;}
+  .ev{display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ev:last-child{border-bottom:none;}
+  .ev-main{min-width:0;} .ev-text{overflow-wrap:anywhere;}
+  .ev-meta{font-size:11.5px; color:var(--muted);}
+  .ev-amt{font-weight:700; white-space:nowrap;} .ev-amt.out{color:var(--danger);}
+  .hint2{font-size:11.5px; color:var(--muted); line-height:1.5; margin-top:6px;}
+
+  /* ===== Patient Care ===== */
+  .sub{font-size:13px; margin:16px 0 2px; color:var(--accent); font-weight:700;}
+  .chk{display:flex; align-items:center; gap:10px; font-size:13.5px; color:var(--text); margin:8px 0;}
+  .chk input{width:22px; height:22px; flex:0 0 22px; padding:0; margin:0;}
+  .pt{padding:11px 0; border-bottom:1px solid var(--border); cursor:pointer;}
+  .pt:last-child{border-bottom:none;}
+  .pt-name{font-size:14.5px; font-weight:700; color:var(--text);}
+  .pt-meta{font-size:12.5px; color:var(--muted); margin-top:2px; line-height:1.5;}
+  .chip{display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:4px; vertical-align:middle; background:var(--border); color:var(--muted);}
+  .chip.ok{color:var(--accent2);} .chip.warn{color:var(--warn);} .chip.bad{color:var(--danger);}
+  .cand{border:1px solid var(--border); border-radius:10px; padding:10px; margin:8px 0;}
+  .cand.strong{border-color:var(--danger);}
+  .cand-head{font-size:14px; font-weight:700; color:var(--danger); margin-top:14px;}
+  .op-actions{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .breakdown-line .v{text-align:right; max-width:62%;}
+  textarea{width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px; font-family:inherit;}
+  textarea:focus{outline:none; border-color:var(--accent);}
+  .back{display:inline-block; font-size:13px; color:var(--accent); margin:0 0 10px; text-decoration:none; font-weight:600;}
+  .alert-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--danger); color:var(--danger); font-size:13px; line-height:1.5; font-weight:600;}
+  .entry{padding:10px 0; border-bottom:1px solid var(--border);} .entry:last-child{border-bottom:none;}
+  .entry.struck .pt-name{text-decoration:line-through; color:var(--muted); font-weight:500;}
+  .pill-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}
+  /* ===== typed or picked dates ===== */
+  .dateField{position:relative; display:flex; gap:8px; align-items:center;}
+  .dateField input[type="text"]{flex:1; min-width:0;}
+  .cal-btn{flex:0 0 46px; height:40px; background:var(--card); border:1px solid var(--border); border-radius:8px; font-size:18px; padding:0;}
+  .cal-native{position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0; padding:0;}
+  .info-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--accent); color:var(--text); font-size:13px; line-height:1.5;}
+  .perm-warn{font-size:12px; color:var(--warn); margin-bottom:8px; line-height:1.5;}
+
+  details.more { margin: 10px 0 4px; border: 1px solid var(--border, #dfe6e3); border-radius: 10px; padding: 0 12px; background: rgba(0,0,0,.015); }
+  details.more > summary { cursor: pointer; font-weight: 700; color: #0f6b57; padding: 11px 0; list-style: none; min-height: 24px; }
+  details.more > summary::-webkit-details-marker { display: none; }
+  details.more > summary::before { content: "+ "; font-weight: 800; }
+  details.more[open] > summary::before { content: "\2212\00a0"; }
+  details.more[open] { padding-bottom: 8px; }
+  /* ===== Stage 1 (Developer 2): patient list toolbar and rows ===== */
+  .toolbar{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; align-items:stretch;}
+  .toolbar input{flex:1 1 220px; min-width:0; padding:12px; font-size:15px;}
+  .toolbar .btn-primary{flex:0 0 auto; width:auto; margin:0; padding:12px 16px; white-space:nowrap;}
+  @media (max-width:479px){ .toolbar .btn-primary{flex:1 1 100%;} }
+  .pill-row .pill-btn{min-height:40px;}
+  .chip.local{color:var(--accent2); border:1px solid var(--accent2); background:transparent;}
+  .chip.shared{color:var(--warn); border:1px solid var(--warn); background:transparent;}
+  .pt{min-height:48px;}
+  .pt-from{font-size:12px; color:var(--warn); font-weight:600; margin-top:2px;}
+  @media (min-width:900px){ #results{display:grid; grid-template-columns:1fr 1fr; column-gap:24px;} #results .empty{grid-column:1/-1;} }
+  /* audit viewer (Developer 2) */
+  .row-wrap{display:flex; flex-wrap:wrap; gap:8px;} .row-wrap > *{flex:1 1 160px; min-width:0;}
+  .log{padding:10px 0; border-bottom:1px solid var(--border);} .log:last-child{border-bottom:none;}
+  .log .when{font-size:12px; color:var(--muted);}
+  .log .xtra{font-size:12px; color:var(--muted); word-break:break-word;}
+  @media (min-width:900px){ #mainArea{max-width:960px; margin:0 auto;} }
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Patient Care · Audit and access log</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="mcGo('dashboard.html')">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+
+<div class="card hidden" id="gateCard"><div id="gateMsg" class="empty"></div></div>
+
+<div id="mainArea" class="hidden">
+  <div class="card">
+    <h2>Who did what, and who looked</h2>
+    <div class="hint2" style="margin-top:0;">Read-only. "Changes" are things people recorded or changed. "Views" are patient records that were opened. Choose what to look at, then narrow it down.</div>
+    <label for="fScope">Look at</label>
+    <select id="fScope"><option value="patient">One patient</option><option value="staff" id="optStaff">One staff member</option><option value="facility">This whole facility (up to 1000 entries)</option></select>
+    <div id="patBox">
+      <label for="pQ">Find the patient</label>
+      <input type="search" id="pQ" placeholder="Name, phone or reg. no." autocomplete="off">
+      <div id="pResults"></div>
+      <div id="pPicked" class="info-box hidden"></div>
+    </div>
+    <div id="staffBox" class="hidden"><label for="sPick">Staff member</label><select id="sPick"></select></div>
+    <div class="row-wrap">
+      <div><label for="fType">Show</label><select id="fType"><option value="all">Changes and views</option><option value="audit">Changes only</option><option value="access">Views only</option></select></div>
+      <div><label for="fFrom">From date</label><input type="date" id="fFrom"></div>
+      <div><label for="fTo">To date</label><input type="date" id="fTo"></div>
+    </div>
+    <label for="fText">Search the results</label>
+    <input type="search" id="fText" placeholder="e.g. allergy, share, a name" autocomplete="off">
+  </div>
+  <div class="card">
+    <div class="hint2" id="logInfo" style="margin:0 0 6px;"></div>
+    <div id="logList"></div>
+    <button type="button" class="btn-small btn-secondary hidden" id="moreBtn" style="width:100%; margin-top:10px;">Show more</button>
+  </div>
+</div>
+
+<script type="module">
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, collection, onSnapshot, query, where, limit, getDocFromCache } = window.top.MC.api(window);
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDocServerFirst(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDoc(ref) { try { const c = await getDocFromCache(ref); if (c.exists()) return c; } catch (e) {} return getDocServerFirst(ref); }
+  const app = initializeApp({}), auth = getAuth(app), db = getFirestore(app);
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  /*PURE-START*/
+  const ACTION_LABEL = {
+    "patient.register": "Registered a patient", "patient.merge": "Merged two patient records", "patient.edit": "Changed patient contact details",
+    "allergy.add": "Recorded an allergy", "allergy.error": "Marked an allergy as entered in error", "history.add": "Added medical history", "history.resolve": "Marked history as resolved", "history.error": "Marked history as entered in error",
+    "share.grant": "Shared the patient with a facility", "share.revoke": "Stopped sharing the patient", "journey.route": "Sent the patient to the next step",
+    "triage.save": "Recorded triage", "encounter.start": "Started a visit", "encounter.close": "Closed a visit", "encounter.cancel": "Cancelled a visit", "note.sign": "Signed a clinical note", "investigation.review": "Reviewed a test result", "complaint.add": "Recorded a complaint", "diagnosis.add": "Recorded a diagnosis", "diagnosis.change": "Changed a diagnosis", "investigation.request": "Requested a test"
+  };
+  function actionText(a) { return ACTION_LABEL[a] || String(a || "").replace(/[._]/g, " "); }
+  const SKIP = { businessId: 1, facilityId: 1, schemaVersion: 1, createdBy: 1, createdAt: 1, clientCreatedAt: 1, actorUid: 1, actorName: 1, action: 1, recordPath: 1, patientId: 1, at: 1, purpose: 1, kind: 1, id: 1 };
+  function extras(e) {
+    return Object.keys(e).filter(k => !SKIP[k] && e[k] != null && e[k] !== "").slice(0, 6).map(k => k.replace(/([A-Z])/g, " $1").toLowerCase() + ": " + (Array.isArray(e[k]) ? e[k].join(", ") : typeof e[k] === "object" ? "…" : String(e[k]))).join(" · ").slice(0, 300);
+  }
+  function millis(e) { const t = e.clientCreatedAt; return typeof t === "number" ? t : (e.at && e.at.toMillis ? e.at.toMillis() : 0); }
+  function filterLogs(list, f) {
+    const q = String(f.text || "").trim().toLowerCase(), from = f.from ? new Date(f.from + "T00:00:00").getTime() : null, to = f.to ? new Date(f.to + "T23:59:59.999").getTime() : null;
+    return list.filter(e => {
+      if (f.type !== "all" && e.kind !== f.type) return false;
+      const t = millis(e); if (from != null && t < from) return false; if (to != null && t > to) return false;
+      if (q && (actionText(e.action) + " " + (e.action || "") + " " + (e.actorName || "") + " " + (e.purpose || "") + " " + (f.nameOf ? f.nameOf(e.patientId) : "") + " " + extras(e)).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    }).sort((a, b) => millis(b) - millis(a));
+  }
+  function whenText(ms) { if (!ms) return "time unknown"; const d = new Date(ms), p = n => String(n).padStart(2, "0"); return p(d.getDate()) + "/" + p(d.getMonth() + 1) + "/" + d.getFullYear() + " " + p(d.getHours()) + ":" + p(d.getMinutes()); }
+  /*PURE-END*/
+
+  let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, shopsById = {};
+  let patients = [], links = [], staff = [], audit = [], access = [], pickedPid = new URLSearchParams(location.search).get("patient") || null, shown = 50, unsubs = [], errs = {};
+  const can = k => role === "owner" || perms[k] === true;
+  const nameOf = pid => { const p = patients.find(x => x.id === pid); return p ? p.fullName : (pid ? "Patient …" + String(pid).slice(-6) : ""); };
+  function showGate(msg) { $("gateMsg").innerHTML = msg; $("gateCard").classList.remove("hidden"); $("mainArea").classList.add("hidden"); }
+
+  function clearSubs() { unsubs.forEach(u => { try { u(); } catch (e) {} }); unsubs = []; audit = []; access = []; errs = {}; }
+  function subscribe() {
+    clearSubs();
+    const scope = $("fScope").value, base = [where("businessId", "==", businessId), where("facilityId", "==", facilityId)];
+    let extra = null;
+    if (scope === "patient") { if (!pickedPid) { render(); return; } extra = where("patientId", "==", pickedPid); }
+    else if (scope === "staff") { if (!$("sPick").value) { render(); return; } extra = where("actorUid", "==", $("sPick").value); }
+    const cons = base.concat(extra ? [extra] : []).concat([limit(1000)]);
+    const watch = (name, kind, set) => unsubs.push(onSnapshot(query(collection(db, name), ...cons), s => { errs[name] = null; set(s.docs.map(d => ({ id: d.id, kind: kind, ...d.data() }))); render(); },
+      err => { errs[name] = err && err.code === "permission-denied" ? "You do not have permission to read this log." : "The log could not be loaded. Check your internet connection and try again."; set([]); render(); }));
+    watch("pc_audit_logs", "audit", v => { audit = v; }); watch("pc_access_logs", "access", v => { access = v; });
+  }
+  function render() {
+    const scope = $("fScope").value;
+    $("patBox").classList.toggle("hidden", scope !== "patient"); $("staffBox").classList.toggle("hidden", scope !== "staff");
+    if (scope === "patient" && !pickedPid) { $("logInfo").textContent = ""; $("logList").innerHTML = '<div class="empty">Find a patient above to see every change and every view of that patient\'s record.</div>'; $("moreBtn").classList.add("hidden"); return; }
+    if (scope === "staff" && !$("sPick").value) { $("logInfo").textContent = ""; $("logList").innerHTML = '<div class="empty">Choose a staff member.</div>'; $("moreBtn").classList.add("hidden"); return; }
+    const bad = errs.pc_audit_logs || errs.pc_access_logs;
+    if (bad) { $("logInfo").textContent = ""; $("logList").innerHTML = '<div class="empty">' + esc(bad) + "</div>"; $("moreBtn").classList.add("hidden"); return; }
+    const all = filterLogs(audit.concat(access), { type: $("fType").value, from: $("fFrom").value, to: $("fTo").value, text: $("fText").value, nameOf: nameOf });
+    const raw = audit.length + access.length;
+    $("logInfo").textContent = all.length + " entr" + (all.length === 1 ? "y" : "ies") + " shown, newest first" + ((audit.length >= 1000 || access.length >= 1000) ? ". The list is limited to 1000 entries per log and may not include the newest: narrow it by patient or staff member." : "");
+    $("logList").innerHTML = all.length ? all.slice(0, shown).map(e => '<div class="log"><div class="when">' + esc(whenText(millis(e))) + '</div><div class="pt-name">' + esc(e.kind === "access" ? "Opened the record" : actionText(e.action)) + ' <span class="chip ' + (e.kind === "access" ? "" : "ok") + '">' + (e.kind === "access" ? "View" : "Change") + "</span></div>" +
+      '<div class="pt-meta">By ' + esc(e.actorName || "unknown user") + (e.patientId ? " · " + esc(nameOf(e.patientId)) : "") + "</div>" +
+      (e.purpose ? '<div class="xtra">Reason recorded: ' + esc(e.purpose) + "</div>" : "") + (extras(e) ? '<div class="xtra">' + esc(extras(e)) + "</div>" : "") + "</div>").join("") : '<div class="empty">' + (raw ? "Nothing matches these filters." : "No entries recorded for this selection.") + "</div>";
+    $("moreBtn").classList.toggle("hidden", all.length <= shown);
+  }
+  function renderPatients() {
+    const q = $("pQ").value.trim().toLowerCase(); if (!q) { $("pResults").innerHTML = ""; return; }
+    const regs = pid => links.filter(l => l.patientId === pid).map(l => String(l.localRegNo || "").toLowerCase());
+    const hits = patients.filter(p => String(p.fullName || "").toLowerCase().indexOf(q) >= 0 || String(p.phone || "").replace(/\D/g, "").indexOf(q.replace(/\D/g, "") || "~") >= 0 || regs(p.id).some(r => r.indexOf(q) >= 0)).slice(0, 8);
+    $("pResults").innerHTML = hits.length ? hits.map(p => '<div class="pt" data-p="' + esc(p.id) + '"><div class="pt-name">' + esc(p.fullName) + "</div><div class=\"pt-meta\">" + esc((regs(p.id)[0] || "").toUpperCase()) + (p.phone ? " · " + esc(p.phone) : "") + "</div></div>").join("") : '<div class="empty">No patient found.</div>';
+  }
+  function showPicked() { const p = patients.find(x => x.id === pickedPid); $("pPicked").classList.toggle("hidden", !pickedPid); $("pPicked").innerHTML = pickedPid ? "<b>" + esc(p ? p.fullName : nameOf(pickedPid)) + '</b> <a href="#" id="pClear">Choose another</a>' : ""; const c = $("pClear"); if (c) c.onclick = e => { e.preventDefault(); pickedPid = null; $("pQ").value = ""; showPicked(); subscribe(); render(); }; }
+
+  $("fScope").onchange = () => { subscribe(); render(); };
+  $("pQ").addEventListener("input", renderPatients);
+  $("pResults").addEventListener("click", e => { const r = e.target.closest("[data-p]"); if (r) { pickedPid = r.dataset.p; $("pResults").innerHTML = ""; $("pQ").value = ""; showPicked(); subscribe(); } });
+  $("sPick").onchange = () => { subscribe(); render(); };
+  ["fType", "fFrom", "fTo"].forEach(id => $(id).addEventListener("change", () => { shown = 50; render(); })); $("fText").addEventListener("input", () => { shown = 50; render(); });
+  $("moreBtn").onclick = () => { shown += 50; render(); };
+
+  function startData() {
+    onSnapshot(query(collection(db, "pc_patients"), where("businessId", "==", businessId), where("registeredFacilityId", "==", facilityId), limit(3000)), s => { patients = s.docs.map(d => ({ id: d.id, ...d.data() })); showPicked(); render(); }, () => {});
+    onSnapshot(query(collection(db, "pc_patient_facility_links"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), limit(3000)), s => { links = s.docs.map(d => ({ id: d.id, ...d.data() })); }, () => {});
+    if (role === "owner") {
+      onSnapshot(query(collection(db, "users"), where("businessId", "==", businessId)), s => {
+        staff = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.role === "owner" || u.shopId === facilityId).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+        const cur = $("sPick").value; $("sPick").innerHTML = '<option value="">Choose…</option>' + staff.map(u => '<option value="' + esc(u.id) + '">' + esc(u.name || u.email || u.id) + "</option>").join(""); $("sPick").value = cur;
+      }, () => {});
+    } else $("optStaff").remove();
+    if (pickedPid) { $("fScope").value = "patient"; showPicked(); subscribe(); } else render();
+  }
+  function begin() {
+    if (!facility || !(Array.isArray(facility.enabledServices) && facility.enabledServices.indexOf("patient_care") >= 0)) { showGate("Patient Care is not switched on for " + esc(facility ? facility.name : "this shop") + "."); return; }
+    if (!can("audit.view")) { showGate("Only the owner, or someone the owner has given \"View Patient Care audit and access logs\" in Users, can open this page."); return; }
+    $("shopIndicator").textContent = "Patient Care · " + facility.name; $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden"); startData();
+  }
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.mcGo("login.html"); return; }
+    let snap;
+    try { snap = await getDoc(doc(db, "users", user.uid)); } catch (e) { showGate("Could not load your account. Check your connection and reopen this page."); return; }
+    if (!snap.exists()) { window.mcGo("login.html"); return; }
+    me = { id: user.uid, ...snap.data() };
+    if (me.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
+    role = me.role; businessId = me.businessId; perms = me.perms || {};
+    if (role === "owner") {
+      let started = false;
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
+        shopsById = {}; s.docs.forEach(d => { shopsById[d.id] = { id: d.id, ...d.data() }; });
+        const ids = Object.keys(shopsById).sort((a, b) => String(shopsById[a].name).localeCompare(String(shopsById[b].name)));
+        const want = localStorage.getItem("mc_activeShopId");
+        facilityId = shopsById[want] ? want : ids[0]; facility = facilityId ? shopsById[facilityId] : null;
+        if (!started) { started = true; begin(); }
+      });
+    } else {
+      facilityId = me.shopId;
+      try { const sh = await getDoc(doc(db, "shops", facilityId)); facility = sh.exists() ? { id: sh.id, ...sh.data() } : null; } catch (e) { facility = null; }
+      begin();
+    }
+  });
+</script>
+</body>
+</html>
