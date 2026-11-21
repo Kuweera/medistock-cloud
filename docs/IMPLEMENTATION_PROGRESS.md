@@ -143,3 +143,6 @@ Changed: `encounters.html`, `patient.html`, `docs/FIELD_EXPLANATIONS.md` (2 rows
 
 ## Developer 2 · Audit viewer, patient.edit, shared review (2026-11-21)
 Done: audit.html (tests/audit-check.js, 13 checks), contact edit in patient.html (4 new checks in tests/profile-check.js, now 19), two review docs. Tested on the in-memory stand-in only; emulator rules tests not run; not tested on real devices or offline. Needs from Lead: nav.js and sw.js entries for audit.html; index decision; decisions listed in the review docs.
+
+## Developer 2 · Rules v21 screens (2026-11-21)
+Changed: `patient.html`, `patients.html`, `audit.html` (3 labels), `docs/FIELD_EXPLANATIONS.md` (3 rows), spec section 23, `tests/patient-profile-harness.html` (offline mode, write payloads), `tests/patients-harness.html` (?go=). New: `tests/identity-share-check.js` (30 checks). Results: 153/153 unit tests; browser checks list 15, queue 15, profile 19, audit 13, identity-share 30, registration and progressive pass. In-memory stand-in only: rules are NOT evaluated; offline is simulated (server never answers); real sync and real phones untested. **Publish v21 and this build together.**

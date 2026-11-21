@@ -19,6 +19,9 @@ Developer 2 · 2026-11-21 · Brief item 2 (shared patients, consent and origin l
 - The purpose is shown as written at grant time. Granting and revoking each write an audit entry (`share.grant`, `share.revoke`), now readable in the audit viewer.
 - Local and Shared are different chips and never mixed up in one row.
 
+## Update 2026-11-21 (v21)
+Gaps 1 and 2 are addressed: snapshot refresh ("Update shared details", "details as of") and optional expiry (set/extend/remove, "Expired"). Details in spec section 23. Gaps 3-5 remain.
+
 ## Gaps and decisions for the Lead
 1. **Stale snapshots.** `patientSnapshot` is copied when the share is granted. If the source later changes contact details (now possible: "Update contact details"), the receiving facility keeps the old copy. Options: re-grant, or a rule/Function to refresh the snapshot. Not built; needs a decision.
 2. **No consent expiry or "consent given by" display.** The share has a purpose only. If expiry or the patient's consent record is required, it needs new fields (Lead approval).

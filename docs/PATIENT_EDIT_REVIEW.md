@@ -18,6 +18,9 @@ Before this change no page edited `pc_patients` after registration, so `patient.
 | Contact edit button | UI `can("patient.edit")` + rules |
 | Other pages | None use it (not needed) |
 
+## Update 2026-11-21 (v21)
+Identity corrections are now built: name, sex and date of birth change only through "Correct name, sex or date of birth" with a reason and a `pc_patient_corrections` record in the same commit (see spec section 23). Decision 1 below is resolved; decisions 2-3 remain (3 is solved by "Update shared details").
+
 ## Decisions needed
 1. **Identity corrections** (name, sex, date of birth) are deliberately not editable. They affect duplicate matching, shared snapshots and printed records. Propose: a separate, audited "correct identity" action requiring a reason. Needs a decision.
 2. **Facility link / registration number** edits are not offered.

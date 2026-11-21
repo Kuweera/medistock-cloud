@@ -32,6 +32,9 @@ Where a field is explained on the screen itself (a short grey line under the box
 
 | Field | Required or optional | What it means |
 |---|---|---|
+| Share until (optional) | Optional | The last day the other facility can read this patient's allergies and history. Leave empty to share until you stop sharing. Must be a future date. In "Change end date" you can set, extend or remove it. |
+| Share until | Required to save a date | The new last day of sharing. Use "Remove end date" instead to share until you stop. |
+| Reason for the correction | Required (3 to 300 letters) | Why the name, sex or date of birth is being corrected. It is kept with the old and the new values and cannot be edited or deleted. |
 | Find the other record | Not marked | Search for the other record of the same patient that should be joined to this one. |
 | Which record do you keep? | Not marked | Choose which of the two records stays. The other is joined into it and kept for history. |
 | Reason (type or choose) | Required (*) | Why the records are being joined. It is kept in the audit trail. |
