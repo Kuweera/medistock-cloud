@@ -585,14 +585,18 @@ test("v21 shares: a revoked share cannot be refreshed or given an expiry", async
 });
 test("v21 expiry: a share can be given a future end date, extended or cleared, never a past date; once the date has passed the receiving facility can no longer read the patient's shared records", async () => {
   await seedShare21();
-  const f = db("p21consent"), ref = doc(f, "pc_shares", "psh_" + A + "_" + B), u = upd21("p21consent"), allergy = () => getDoc(doc(db("prescriberB"), "pc_allergies", "alsh"));
+  const f = db("p21consent"), ref = doc(f, "pc_shares", "psh_" + A + "_" + B), u = upd21("p21consent"), allergy = () => getDoc(doc(env.authenticatedContext("prescriberB").firestore(), "pc_allergies", "alsh"));   // fresh client each time: no cached result can hide a refusal
   await assertSucceeds(allergy());                                                                   // no expiry: works as before
   await assertFails(updateDoc(ref, Object.assign({ consentExpiresAt: new Date(Date.now() - 86400000) }, u)));
   await assertSucceeds(updateDoc(ref, Object.assign({ consentExpiresAt: new Date(Date.now() + 86400000) }, u)));
   await assertSucceeds(allergy());                                                                   // not yet expired
   await assertSucceeds(updateDoc(ref, Object.assign({ consentExpiresAt: new Date(Date.now() + 5 * 86400000) }, u)));
   await assertSucceeds(updateDoc(ref, Object.assign({ consentExpiresAt: null }, u)));
-  await env.withSecurityRulesDisabled(async ctx => { await updateDoc(doc(ctx.firestore(), "pc_shares", "psh_" + A + "_" + B), { consentExpiresAt: new Date(Date.now() - 1000) }); });
+  await env.withSecurityRulesDisabled(async ctx => {
+    const g = ctx.firestore(), r = doc(g, "pc_shares", "psh_" + A + "_" + B);
+    await updateDoc(r, { consentExpiresAt: new Date(Date.now() - 60000) });
+    const saved = (await getDoc(r)).data(); assert.ok(saved.consentExpiresAt && saved.consentExpiresAt.toMillis() < Date.now(), "fixture: the stored expiry is in the past"); assert.equal(saved.revokedAt === undefined || saved.revokedAt === null, true);
+  });
   await assertFails(allergy());                                                                      // expired
   await assertSucceeds(getDoc(doc(db("prescriberB"), "pc_shares", "psh_" + A + "_" + B)));           // the share itself stays readable, so the screen can say "expired"
 });
