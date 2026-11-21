@@ -102,6 +102,23 @@ const B = "biz1", F = "shop1", yr = new Date().getFullYear(), NOW = Date.now();
     for (const sel of ["#tab-encounters", "#sec-dx", "#sec-tx", "#sec-inv", "#tab-sharing", "#aOpenBtn", "#hOpenBtn", "#newNote"]) assert.equal(await vis(f, sel), false, sel + " hidden for a shared patient");
     assert.doesNotMatch(await page.frameLocator("#f").locator("body").innerText(), /Secret Diagnosis/); ok("Shared patient: read-only, source registration number and allergies shown, other facility's visits/diagnoses/treatment never shown");
   }
+  // ---------- contact details edit (patient.edit)
+  {
+    const { page, f } = await open(390, 844, "?as=nopres&go=" + encodeURIComponent("?id=pold")); await seed(page); await reload(page); await f.locator("#tab-overview:visible").waitFor(); await page.waitForTimeout(500);
+    assert.equal(await vis(f, "#editContactBtn"), false); ok("patient.edit: no Update contact details button without the permission");
+  }
+  {
+    const { page, f } = await open(390, 844, "?go=" + encodeURIComponent("?id=pold")); await seed(page); await reload(page); await f.locator("#tab-overview:visible").waitFor(); await page.waitForTimeout(500);
+    assert.equal(await vis(f, "#editCard"), false); await f.locator("#editContactBtn").click(); assert.equal(await vis(f, "#editCard"), true);
+    assert.equal(await f.locator("#eqPhone").inputValue(), "0772000111"); await f.locator("#eqCancelBtn").click(); assert.equal(await vis(f, "#editCard"), false); ok("Owner: form opens with the saved values and cancels without writing");
+    await f.locator("#editContactBtn").click(); await f.locator("#eqSaveBtn").click(); assert.match(await f.locator("#eqMsg").innerText(), /Nothing was changed/);
+    await f.locator("#eqPhone").fill("12"); await f.locator("#eqSaveBtn").click(); assert.match(await f.locator("#eqMsg").innerText(), /phone/i);
+    assert.equal((await page.evaluate(() => window.__db.all("pc_audit_logs"))).filter(x => x.action === "patient.edit").length, 0); assert.equal((await page.evaluate(() => window.__db.all("pc_patients"))).find(x => x._id === "pold").phone, "0772000111"); ok("No change and invalid phone are refused with a message and nothing is written");
+    await f.locator("#eqPhone").fill("0701 555 666"); await f.locator("#eqVillage").fill("TESTville"); await f.locator("#eqNokName").fill("TEST Kin"); await f.locator("#eqSaveBtn").click(); await page.waitForTimeout(500);
+    const p = (await page.evaluate(() => window.__db.all("pc_patients"))).find(x => x._id === "pold"); assert.equal(p.phone, "0701 555 666"); assert.equal(p.phoneKey, "701555666"); assert.equal(p.village, "TESTville"); assert.equal(p.nextOfKin.name, "TEST Kin");
+    const au = (await page.evaluate(() => window.__db.all("pc_audit_logs"))).filter(x => x.action === "patient.edit"); assert.equal(au.length, 1); assert.deepEqual(au[0].changedFields.sort(), ["nextOfKin", "phone", "village"]); assert.equal(au[0].patientId, "pold");
+    assert.equal(await vis(f, "#editCard"), false); ok("Saving updates contact fields, recomputes phoneKey, leaves name untouched and writes one patient.edit audit entry with the changed field names");
+  }
   // ---------- tablet + desktop
   for (const [w, h, n] of [[768, 1024, "tablet"], [1280, 900, "desktop"], [360, 640, "small-phone"]]) {
     const { page, f } = await open(w, h, "?go=" + encodeURIComponent("?id=pold")); await seed(page); await reload(page); await f.locator("#tab-overview:visible").waitFor(); await page.waitForTimeout(500);
