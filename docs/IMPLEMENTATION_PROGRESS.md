@@ -134,3 +134,6 @@ Lab ledger (Lead, 2026-11-20): laboratory payments and reversals now also write 
 
 ## Developer 2, Stage 1: patient list (2026-11-20)
 Changed: `patients.html`, `docs/PATIENT_MANAGEMENT_SPEC.md` (section 19). New: `tests/list-check.js` (15 browser checks on the in-memory stand-in: 360, 390, 768, 1280 widths; Local/Shared chips; filters; search; shared-record duplicate warning; view-only operator). Existing tests unchanged and still passing (144 offline, registration, progressive, browser, hints checks). **Not run on real Firebase, the emulator or a phone.** No rules or schema change.
+
+## Developer 2, Stage 2: read-first profile (2026-11-21)
+Changed: `patient.html`, `patients.html` (shows source reg no for shared rows), docs. New: `tests/profile-check.js` (15 browser checks), `tests/patient-profile-harness.html`. All earlier tests still pass (144 offline; list, registration, progressive, browser, hints checks). In-memory stand-in only: not run on real Firebase, the emulator or a phone.
