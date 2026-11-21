@@ -27,6 +27,7 @@
     ["pharmacy.html", "Pharmacy"],
     ["guidelines.html", "Guidelines"],
     ["directory.html", "Facility Directory"],
+    ["audit.html", "Audit and access log"],
     ["users.html", "Users"],
     ["shops.html", "Shops"],
     ["backup.html", "Backup & Export"],
