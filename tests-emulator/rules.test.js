@@ -571,7 +571,7 @@ test("v21 shares: the sharing facility can refresh the snapshot of an active sha
   await seedShare21();
   const f = db("p21consent"), ref = doc(f, "pc_shares", "psh_" + A + "_" + B), u = upd21("p21consent");
   await assertSucceeds(updateDoc(ref, Object.assign({ patientSnapshot: { fullName: "New Name" }, snapshotAt: serverTimestamp() }, u)));
-  await assertFails(updateDoc(ref, Object.assign({ patientSnapshot: { fullName: "New Name" }, snapshotAt: new Date() }, u)));
+  await assertFails(updateDoc(ref, Object.assign({ patientSnapshot: { fullName: "New Name" }, snapshotAt: new Date(Date.now() - 3600000) }, u)));   // a client-made time that is not the server time (an exact "now" could coincide with it by chance)
   await assertFails(updateDoc(ref, Object.assign({ patientSnapshot: { fullName: "X" }, snapshotAt: serverTimestamp(), purpose: "other" }, u)));
   await assertFails(updateDoc(ref, Object.assign({ patientSnapshot: "text", snapshotAt: serverTimestamp() }, u)));
   await assertFails(updateDoc(doc(db("p21editor"), "pc_shares", "psh_" + A + "_" + B), Object.assign({ patientSnapshot: { fullName: "X" }, snapshotAt: serverTimestamp() }, upd21("p21editor"))));
