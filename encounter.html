@@ -146,6 +146,10 @@
   .cand-head{font-size:14px; font-weight:700; color:var(--danger); margin-top:14px;}
   .op-actions{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
   .op-actions button{flex:1; min-width:120px;}
+  .ordgrid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px 12px; margin-top:6px;}
+  .ordgrid .l{display:block; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em;}
+  .ordgrid .v{display:block; font-size:13.5px; overflow-wrap:anywhere;}
+  @media (min-width:900px){ .ordgrid{grid-template-columns:repeat(4,minmax(0,1fr));} }
   .breakdown-line .v{text-align:right; max-width:62%;}
   textarea{width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px; font-family:inherit;}
   textarea:focus{outline:none; border-color:var(--accent);}
@@ -1031,7 +1035,7 @@
   const tzOf = () => (facility && facility.timezone) || "Africa/Kampala";
   const SET_LABEL = { outpatient: "Outpatient", home: "At home", inpatient: "Inpatient", procedure_room: "Procedure room" };
   const ST_LABEL = { pending: "Pending", administered: "Given", refused: "Refused", missed: "Missed", held: "Held", not_given: "Not given", cancelled: "Cancelled" };
-  let plans = [], tOrders = [], tEvents = [], rxs = [], dRules = [], drugs = [], obCtx = null, showPlanned = {}, draftTimer = null;
+  let plans = [], tOrders = [], tEvents = [], rxs = [], dRules = [], drugs = [], obCtx = null, showPlanned = {}, expandedOrd = {}, draftTimer = null;
   const todayIso = () => isoDate(new Date());
   function ageMonths() { const b = ageBase({ dobPrecision: enc.patientDobPrecision, dob: enc.patientDob, dobApprox: enc.patientDobApprox }); return b ? Math.floor((Date.now() - b.getTime()) / (30.4375 * 864e5)) : null; }
   function latestWeight() { const t = triage.filter(x => x.status === "active" && x.weightKg != null).sort((a, b) => (b.recordedAt || 0) - (a.recordedAt || 0))[0]; return t ? t.weightKg : null; }
@@ -1064,27 +1068,59 @@
   function rxUpdateOp(rx, status, reason, extra) {
     return ["u", doc(db, "prescriptions", rx.id), Object.assign({ status: status, endedAt: serverTimestamp(), endedBy: me.id, endReason: reason }, extra || {}, upd()), "keep", "optional"];
   }
-  function orderTitle(o) {
-    return o.kind === "procedure" ? esc(o.procedureName) : esc(o.medicineName) + (o.strength ? " " + esc(o.strength) : "") + " — " + esc(o.doseValue) + " " + esc(o.doseUnit || "") + (o.route ? " · " + esc(o.route) : "");
+  // ---------- Stage 4: one readable line per medicine; the actions appear only when it is opened ----------
+  const ordMs = v => v && typeof v.toMillis === "function" ? v.toMillis() : (typeof v === "number" ? v : 0);
+  function dOnly(ms, tz) { if (!ms) return "—"; try { return new Intl.DateTimeFormat("en-GB", { timeZone: tz || undefined, day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(ms)); } catch (e) { return new Date(ms).toLocaleDateString("en-GB"); } }
+  const spanCache = {};
+  // planned last dose and length of the course, worked out from the same schedule the planned doses come from
+  function orderSpan(o) {
+    const k = o.id + "|" + (o.version || 1) + "|" + (o.totalEvents || 0); if (spanCache[k]) return spanCache[k];
+    let r = { endMs: null, days: null };
+    try { if (o.scheduleType !== "prn") { const full = PCS.generate({ scheduleType: o.scheduleType, startAt: o.startAt, tz: o.tz, sched: o.sched, doseValue: o.doseValue }); if (full.length) { const last = full[full.length - 1].plannedAt; r = { endMs: last, days: new Set(full.map(e => e.plannedDay)).size }; } } } catch (e) {}
+    return (spanCache[k] = r);
   }
-  function orderHtml(o) {
+  // what the pharmacy has done with a medicine order (information only; it never means the patient took it)
+  function rxInfo(o) {
+    if (o.kind === "procedure") return null; const rx = rxOf(o.id); if (!rx) return null;
+    const n = rxDispensed(rx), q = Number(rx.qtyPrescribed) || 0, u = rx.qtyUnit ? " " + rx.qtyUnit : "";
+    if (rx.status === "pending") return { chip: "At pharmacy: not dispensed yet", cls: "warn", text: "Sent to the pharmacy. Nothing has been dispensed yet." + (rx.qtyUnknown ? " The pharmacy will state the quantity." : "") };
+    if (rx.status === "partially_dispensed") return { chip: "Partly dispensed " + n + "/" + q, cls: "warn", text: n + u + " of " + q + u + " dispensed, " + Math.max(0, q - n) + u + " still outstanding." };
+    if (rx.status === "completed") return { chip: "Fully dispensed", cls: "ok", text: "Fully dispensed by the pharmacy (" + n + u + ")." };
+    if (rx.status === "cancelled") return { chip: "Pharmacy order cancelled", cls: "", text: "The pharmacy prescription was cancelled" + (rx.endReason ? ": " + rx.endReason : "") + ". Nothing was dispensed." };
+    if (rx.status === "superseded") return { chip: "Replaced at pharmacy", cls: "", text: "Replaced by a newer version of this order." };
+    return null;
+  }
+  function orderHtml(o, p) {
     const evs = evsOf(o.id), cnt = s => evs.filter(e => e.status === s).length;
-    const active = o.status === "active", canRx = can("treatment.prescribe");
+    const active = o.status === "active", canRx = can("treatment.prescribe"), med = o.kind !== "procedure", open = !!expandedOrd[o.id];
     const st = { active: "Active", stopped: "Stopped", completed: "Completed", superseded: "Replaced by a newer version", cancelled: "Cancelled" }[o.status] || o.status;
-    let h = '<div class="cand" style="' + (active ? "" : "opacity:.7;") + '"><div class="pt-name">' + orderTitle(o) + ' <span class="chip ' + (active ? "ok" : "") + '">' + esc(st) + "</span>" + (o.version > 1 ? ' <span class="chip">Version ' + esc(o.version) + "</span>" : "") +
-      (o.scheduleType === "weight" ? ' <span class="chip warn">Weight-based</span>' : "") + (o.dosingCheck === "not_checked" ? ' <span class="chip warn">Dose not automatically checked</span>' : (o.dosingCheck === "rule" ? ' <span class="chip ok">Checked against dosing rule' + (o.checkedRuleVersion ? " v" + esc(o.checkedRuleVersion) : "") + "</span>" : "")) +
-      (o.guidelineRef ? ' <span class="chip">From guideline: ' + esc(o.guidelineRef.guidelineTitle) + " v" + esc(o.guidelineRef.guidelineVersion) + "</span>" : "") + (o.abbreviation ? ' <span class="chip">' + esc(o.abbreviation.code) + " = " + esc(o.abbreviation.meaning) + "</span>" : "") + "</div>" +
-      '<div class="pt-meta">' + esc(PCS.describe(o)) + "<br>" + (o.instructions ? esc(PCAB.expandText(o.instructions)) + "<br>" : "") + (o.kind === "procedure" && (o.materials || o.responsible) ? "Materials: " + esc(o.materials || "-") + " · By: " + esc(o.responsible || "-") + "<br>" : "") +
-      (o.scheduleType === "prn" ? "As needed: given " + esc(evsOf(o.id).length) + " planned entries; PRN doses are recorded on the Treatment screen." : "Planned " + esc(o.totalEvents || evs.length) + " · written " + evs.length + " · given " + cnt("administered") + " · pending " + cnt("pending") + (cnt("held") ? " · held " + cnt("held") : "") + ((cnt("missed") + cnt("refused") + cnt("not_given")) ? " · not given " + (cnt("missed") + cnt("refused") + cnt("not_given")) : "")) +
-      "<br>Prescribed by " + esc(o.prescriberName || "") + " · " + esc(stampText(null, o.prescribedAt)) + (o.endReason ? "<br>Ended: " + esc(o.endReason) : "") +
-      (o.warnings && o.warnings.length ? '<br><span style="color:var(--warn);">Prescribed with warnings: ' + o.warnings.map(esc).join(" · ") + (o.overrideReason ? " — Reason: " + esc(o.overrideReason) : "") + "</span>" : "") + "</div>";
-    if (showPlanned[o.id] && evs.length) h += '<div class="pt-meta" style="margin-top:6px;">' + evs.slice().sort((a, b) => a.plannedAt - b.plannedAt).slice(0, 40).map(e => esc(e.plannedLocal) + " " + esc(ST_LABEL[e.status] || e.status)).join("<br>") + "</div>";
+    const sp = orderSpan(o), endedMs = ordMs(o.endedAt), ri = rxInfo(o);
+    const dur = o.scheduleType === "prn" ? "As needed" : o.scheduleType === "once" ? "Single dose" : sp.days == null ? "—" : sp.days < 1 ? "—" : sp.days + " day" + (sp.days === 1 ? "" : "s");
+    const endTxt = active ? (o.scheduleType === "prn" ? "No fixed end" : dOnly(sp.endMs, o.tz)) : (endedMs ? dOnly(endedMs, o.tz) : "just now");
+    const fields = [med ? ["Dose", esc(o.doseValue) + " " + esc(o.doseUnit || "")] : ["Type", esc(o.category ? String(o.category).charAt(0).toUpperCase() + String(o.category).slice(1) : "Procedure")], med ? ["Route", esc(o.route || "—")] : ["Responsible", esc(o.responsible || "—")],
+      ["Frequency", esc(PCS.describe(o))], ["Duration", esc(dur)], ["Starts", esc(dOnly(o.startAt, o.tz))], [active ? "Ends" : st === "Replaced by a newer version" ? "Replaced" : "Ended", esc(endTxt)], ["Care setting", esc(SET_LABEL[p && p.careSetting] || "—")], ["Status", esc(st)]];
+    let h = '<div class="cand ord" style="' + (active ? "" : "opacity:.8;") + '"><div class="pt-name">' + (med ? esc(o.medicineName) + (o.strength ? " " + esc(o.strength) : "") : esc(o.procedureName)) + ' <span class="chip ' + (active ? "ok" : "") + '">' + esc(st) + "</span>" +
+      (o.version > 1 ? ' <span class="chip">Version ' + esc(o.version) + "</span>" : "") + (ri ? ' <span class="chip ' + ri.cls + '">' + esc(ri.chip) + "</span>" : "") +
+      (o.scheduleType === "weight" ? ' <span class="chip warn">Weight-based</span>' : "") + (o.dosingCheck === "not_checked" ? ' <span class="chip warn">Dose not automatically checked</span>' : "") + "</div>" +
+      '<div class="ordgrid">' + fields.map(f => '<div><span class="l">' + f[0] + "</span><span class=\"v\">" + f[1] + "</span></div>").join("") + "</div>";
+    if (open) {
+      h += '<div class="pt-meta" style="margin-top:8px;">' + (o.instructions ? esc(PCAB.expandText(o.instructions)) + "<br>" : "") + (!med && o.materials ? "Materials: " + esc(o.materials) + "<br>" : "") +
+        (o.scheduleType === "prn" ? "As needed: " + esc(evs.length) + " planned entries; PRN doses are recorded on the Treatment screen." : "Planned " + esc(o.totalEvents || evs.length) + " · written " + evs.length + " · given " + cnt("administered") + " · pending " + cnt("pending") + (cnt("held") ? " · held " + cnt("held") : "") + ((cnt("missed") + cnt("refused") + cnt("not_given")) ? " · not given " + (cnt("missed") + cnt("refused") + cnt("not_given")) : "") + (cnt("cancelled") ? " · cancelled " + cnt("cancelled") : "")) +
+        (ri ? "<br>" + esc(ri.text) + (active ? " Dispensing is not the same as giving the dose: doses given are recorded on Treatment &amp; MAR." : "") : "") +
+        "<br>Prescribed by " + esc(o.prescriberName || "") + " · " + esc(stampText(null, o.prescribedAt)) + (o.endReason ? "<br>" + (o.status === "completed" ? "Completed" : o.status === "superseded" ? "Replaced" : "Stopped") + (o.endedByName ? " by " + esc(o.endedByName) : "") + ": " + esc(o.endReason) : "") + "</div>" +
+        '<div class="pt-meta" style="margin-top:4px;">' + (o.dosingCheck === "rule" ? '<span class="chip ok">Checked against dosing rule' + (o.checkedRuleVersion ? " v" + esc(o.checkedRuleVersion) : "") + "</span> " : "") +
+        (o.guidelineRef ? '<span class="chip">From guideline: ' + esc(o.guidelineRef.guidelineTitle) + " v" + esc(o.guidelineRef.guidelineVersion) + "</span> " : "") + (o.abbreviation ? '<span class="chip">' + esc(o.abbreviation.code) + " = " + esc(o.abbreviation.meaning) + "</span>" : "") +
+        (o.warnings && o.warnings.length ? '<br><span style="color:var(--warn);">Prescribed with warnings: ' + o.warnings.map(esc).join(" · ") + (o.overrideReason ? " — Reason: " + esc(o.overrideReason) : "") + "</span>" : "") + "</div>";
+      if (showPlanned[o.id] && evs.length) h += '<div class="pt-meta" style="margin-top:6px;">' + evs.slice().sort((a, b) => a.plannedAt - b.plannedAt).slice(0, 40).map(e => esc(e.plannedLocal) + " " + esc(ST_LABEL[e.status] || e.status)).join("<br>") + "</div>";
+    }
     const acts = [];
-    if (evs.length) acts.push('<button class="btn-small btn-secondary" data-oplan="' + esc(o.id) + '">' + (showPlanned[o.id] ? "Hide" : "Show") + " planned times</button>");
-    if (active && canRx && o.scheduleType !== "prn" && (o.totalEvents || 0) > evs.length) acts.push('<button class="btn-small btn-secondary" data-oext="' + esc(o.id) + '">Write the next days</button>');
-    if (active && canRx && isOpen()) acts.push('<button class="btn-small btn-secondary" data-ochg="' + esc(o.id) + '">Change (new version)</button>');
-    if (active && canRx) acts.push('<button class="btn-small btn-secondary" data-ostop="' + esc(o.id) + '">Stop</button><button class="btn-small btn-secondary" data-odone="' + esc(o.id) + '">Mark completed</button>');
-    return h + (acts.length ? '<div class="op-actions">' + acts.join("") + "</div>" : "") + "</div>";
+    if (open) {
+      if (evs.length) acts.push('<button class="btn-small btn-secondary" data-oplan="' + esc(o.id) + '">' + (showPlanned[o.id] ? "Hide" : "Show") + " planned times</button>");
+      if (active && canRx && o.scheduleType !== "prn" && (o.totalEvents || 0) > evs.length) acts.push('<button class="btn-small btn-secondary" data-oext="' + esc(o.id) + '">Write the next days</button>');
+      if (active && canRx && isOpen()) acts.push('<button class="btn-small btn-secondary" data-ochg="' + esc(o.id) + '">Change (new version)</button>');
+      if (active && canRx) acts.push('<button class="btn-small btn-secondary" data-ostop="' + esc(o.id) + '">Stop (discontinue early)</button><button class="btn-small btn-secondary" data-odone="' + esc(o.id) + '">Complete (course finished)</button>');
+    }
+    return h + (acts.length ? '<div class="op-actions">' + acts.join("") + "</div>" : "") + '<div class="op-actions"><button class="btn-small btn-secondary" data-oxp="' + esc(o.id) + '" aria-expanded="' + open + '">' + (open ? "Hide details" : (active && canRx ? "Details and actions" : "Details")) + "</button></div></div>";
   }
   function renderTreat() {
     scheduleGuidance();
@@ -1096,7 +1132,7 @@
       return '<div class="card"><h2>' + esc(p.title) + ' <span class="chip ' + (active ? "ok" : "") + '">' + esc({ active: "Active", completed: "Completed", stopped: "Stopped", cancelled: "Cancelled" }[p.status] || p.status) + "</span>" + (p.priority === "urgent" ? ' <span class="chip warn">Urgent</span>' : "") + (reviewDue ? ' <span class="chip bad">Review due</span>' : "") + "</h2>" +
         '<div class="pt-meta">' + esc(SET_LABEL[p.careSetting] || "") + " · started " + esc(stampText(null, p.startAt)) + (p.expectedEnd ? " · expected end " + esc(PCF.toTyped(p.expectedEnd)) : "") + (p.reviewDate ? " · review " + esc(PCF.toTyped(p.reviewDate)) : "") + " · by " + esc(p.prescriberName || "") +
         ((p.diagnosisNames || []).length ? "<br>For: " + p.diagnosisNames.map(esc).join(", ") : "") + (p.clinicalNotes ? "<br>" + esc(p.clinicalNotes) : "") + (p.endReason ? "<br>Ended: " + esc(p.endReason) : "") + "</div>" +
-        (os.length ? os.map(orderHtml).join("") : '<div class="empty">No orders in this plan yet.</div>') +
+        (os.length ? os.map(o => orderHtml(o, p)).join("") : '<div class="empty">No orders in this plan yet.</div>') +
         (active && canRx ? '<div class="op-actions">' + (isOpen() ? '<button class="btn-small btn-primary" data-addmed="' + esc(p.id) + '">Add medicine</button><button class="btn-small btn-primary" data-addproc="' + esc(p.id) + '">Add procedure</button>' : "") +
           '<button class="btn-small btn-secondary" data-pdone="' + esc(p.id) + '">Complete plan</button><button class="btn-small btn-secondary" data-pstop="' + esc(p.id) + '">Stop plan</button></div>' : "") + "</div>";
     }).join("") : '<div class="card"><div class="empty">No treatment plan yet for this patient.</div></div>';
@@ -1558,6 +1594,7 @@
     else if (ds.addproc) openOrder(ds.addproc, "procedure", null);
     else if (ds.pdone) endPlan(ds.pdone, "completed");
     else if (ds.pstop) endPlan(ds.pstop, "stopped");
+    else if (ds.oxp) { expandedOrd[ds.oxp] = !expandedOrd[ds.oxp]; renderTreat(); }
     else if (ds.oplan) { showPlanned[ds.oplan] = !showPlanned[ds.oplan]; renderTreat(); }
     else if (ds.oext) extendOrder(ds.oext);
     else if (ds.ochg) { const o = tOrders.find(x => x.id === ds.ochg); if (o) openOrder(o.planId, o.kind, o); }
