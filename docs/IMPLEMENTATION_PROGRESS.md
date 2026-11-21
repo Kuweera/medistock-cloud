@@ -137,3 +137,6 @@ Changed: `patients.html`, `docs/PATIENT_MANAGEMENT_SPEC.md` (section 19). New: `
 
 ## Developer 2, Stage 2: read-first profile (2026-11-21)
 Changed: `patient.html`, `patients.html` (shows source reg no for shared rows), docs. New: `tests/profile-check.js` (15 browser checks), `tests/patient-profile-harness.html`. All earlier tests still pass (144 offline; list, registration, progressive, browser, hints checks). In-memory stand-in only: not run on real Firebase, the emulator or a phone.
+
+## Developer 2, Stage 3: journey and department queues (2026-11-21)
+Changed: `encounters.html`, `patient.html`, `docs/FIELD_EXPLANATIONS.md` (2 rows), spec section 21. New: `docs/PATIENT_JOURNEY_PROPOSAL.md`, `tests/journey.test.js` (9 unit tests, logic taken from the page), `tests/queue-check.js` (15 browser checks), `tests/queue-harness.html`. `tests/profile-check.js` extended. Results: 153/153 offline tests; list, profile, queue, registration, progressive, browser, hints, guidance, follow-up, lab, order-form, required, test-request and treatment checks all pass. Stand-in only: the v20 rules emulator tests (`tests-emulator/rules.test.js`) were NOT run here (no emulator); a unit test checks that the choices offered equal the rules' enums.

@@ -58,6 +58,8 @@ Where a field is explained on the screen itself (a short grey line under the box
 | Reason for visit (type or choose) | Not marked | Why the patient came, in a few words. |
 | Source of these ranges | Required (*) | Where the normal ranges for vital signs come from, for example a guideline or the facility policy. |
 | Effective from | Not marked | The date from which these ranges are used. |
+| Next step | Not marked | Where the patient goes next after this activity (for example pharmacy, laboratory or discharge). Choose only the steps this patient needs. It only informs the next team; it does not order anything. |
+| Note for the next team (optional) | Not marked | A short message (up to 140 characters) shown to the next team, for example "Fasting sample needed". |
 | Lowest and highest normal value (per vital sign) | Not marked | The lowest and highest value counted as normal for each vital sign (one pair of boxes per vital sign). Values outside the range are highlighted. |
 
 ## The visit screen: triage, complaints, earlier medicines, notes, tests, diagnosis, treatment plan and orders, follow-up, closing (`encounter.html`)
