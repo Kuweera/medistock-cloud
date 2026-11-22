@@ -705,3 +705,45 @@ test("v23 consumables: the supplies user reads the consumable order; a consumabl
   e.set(doc(db("prescriber"), "pc_treatment_events", "c9_a"), Object.assign(stamp("prescriber"), { orderId: "c9", patientId: "p1", status: "pending", idKey: "a", plannedAt: 1, plannedDay: "2026-11-20" }));
   await assertFails(e.commit());
 });
+
+// ======================= v24 (Lead): guideline import (sources and sections) =======================
+const SHA = "ab12cd34ef56ab78" + "0".repeat(48);
+const src24 = (uid, extra) => Object.assign(stamp(uid), { id: "gsrc_" + SHA.slice(0, 16), fileName: "ucg.pdf", fileType: "pdf", fileSizeBytes: 1000, sha256: SHA, pageCount: 3, extractionMethod: "text", ocrUsed: false,
+  ocrPages: [], extractionWarnings: [], sectionCount: 1, sourceTitle: "TEST source", sourceOrg: "TEST org", jurisdiction: "TEST", sourceEdition: "2099", status: "imported" }, extra || {});
+const sec24 = (uid, extra) => Object.assign(stamp(uid), { sourceId: "gsrc_" + SHA.slice(0, 16), seq: 1, kind: "paragraph", headingPath: ["TEST"], text: "TEST text", ocr: false, reviewStatus: "unreviewed" }, extra || {});
+const srcId24 = "gsrc_" + SHA.slice(0, 16), secId24 = srcId24 + "_s00001";
+test("v24 import: a guidelines.manage user saves a source and its section in one commit; the same file again, a wrong id, missing source details or a status other than imported are refused", async () => {
+  const f = db("author"), b = writeBatch(f);
+  b.set(doc(f, "guideline_sources", srcId24), src24("author")); b.set(doc(f, "guideline_sections", secId24), sec24("author"));
+  await assertSucceeds(b.commit());
+  await assertFails(setDoc(doc(f, "guideline_sources", srcId24), src24("author")));                                   // second import of the same file is an overwrite, not a create
+  await assertFails(setDoc(doc(f, "guideline_sources", "gsrc_wrong"), src24("author")));
+  await assertFails(setDoc(doc(f, "guideline_sources", "gsrc_" + "9".repeat(16)), src24("author", { sha256: "9".repeat(64), sourceOrg: "" })));
+  await assertFails(setDoc(doc(f, "guideline_sources", "gsrc_" + "8".repeat(16)), src24("author", { sha256: "8".repeat(64), status: "rejected" })));
+});
+test("v24 import: sections need an existing source of the same business, the right id and kind; users without guidelines.manage and other businesses are refused", async () => {
+  await env.withSecurityRulesDisabled(async ctx => { await setDoc(doc(ctx.firestore(), "guideline_sources", srcId24), Object.assign(src24("author"), { createdAt: new Date() })); });
+  const f = db("author");
+  await assertSucceeds(setDoc(doc(f, "guideline_sections", secId24), sec24("author")));
+  await assertFails(setDoc(doc(f, "guideline_sections", srcId24 + "_s2"), sec24("author", { seq: 2 })));                // id not in the agreed form
+  await assertFails(setDoc(doc(f, "guideline_sections", srcId24 + "_s00002"), sec24("author", { seq: 2, kind: "script" })));
+  await assertFails(setDoc(doc(f, "guideline_sections", srcId24 + "_s00003"), sec24("author", { seq: 3, sourceId: "gsrc_missing000000" })));
+  await assertFails(setDoc(doc(db("approver"), "guideline_sections", srcId24 + "_s00004"), sec24("approver", { seq: 4 })));   // approve is not manage
+  await assertFails(setDoc(doc(db("stranger"), "guideline_sections", srcId24 + "_s00005"), Object.assign(sec24("stranger", { seq: 5 }), { businessId: B2, facilityId: C })));
+});
+test("v24 import: manage and approve users read sources and sections, others do not; only an approver can reject (with a reason); sections can only be marked used or discarded; nothing is deleted", async () => {
+  await env.withSecurityRulesDisabled(async ctx => { const g = ctx.firestore();
+    await setDoc(doc(g, "guideline_sources", srcId24), Object.assign(src24("author"), { createdAt: new Date() }));
+    await setDoc(doc(g, "guideline_sections", secId24), Object.assign(sec24("author"), { createdAt: new Date() })); });
+  await assertSucceeds(getDoc(doc(db("author"), "guideline_sources", srcId24)));
+  await assertSucceeds(getDoc(doc(db("approver"), "guideline_sections", secId24)));
+  await assertFails(getDoc(doc(db("nurse"), "guideline_sources", srcId24)));
+  await assertFails(getDoc(doc(db("stranger"), "guideline_sources", srcId24)));
+  const u = uid => ({ updatedAt: serverTimestamp(), updatedBy: uid });
+  await assertSucceeds(updateDoc(doc(db("author"), "guideline_sections", secId24), Object.assign({ reviewStatus: "used", usedInGuidelineId: "gl_k1_v1" }, u("author"))));
+  await assertFails(updateDoc(doc(db("author"), "guideline_sections", secId24), Object.assign({ text: "changed" }, u("author"))));
+  await assertFails(updateDoc(doc(db("author"), "guideline_sources", srcId24), Object.assign({ status: "rejected", rejectedReason: "bad scan", rejectedBy: "author" }, u("author"))));
+  await assertFails(updateDoc(doc(db("approver"), "guideline_sources", srcId24), Object.assign({ status: "rejected", rejectedReason: "x", rejectedBy: "approver" }, u("approver"))));
+  await assertSucceeds(updateDoc(doc(db("approver"), "guideline_sources", srcId24), Object.assign({ status: "rejected", rejectedReason: "bad scan", rejectedBy: "approver", rejectedAt: Date.now() }, u("approver"))));
+  await assertFails(deleteDoc(doc(db("author"), "guideline_sections", secId24)));
+});
