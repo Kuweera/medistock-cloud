@@ -747,3 +747,16 @@ test("v24 import: manage and approve users read sources and sections, others do 
   await assertSucceeds(updateDoc(doc(db("approver"), "guideline_sources", srcId24), Object.assign({ status: "rejected", rejectedReason: "bad scan", rejectedBy: "approver", rejectedAt: Date.now() }, u("approver"))));
   await assertFails(deleteDoc(doc(db("author"), "guideline_sections", secId24)));
 });
+
+test("v24 import: retire needs a reason and the approver's own uid; the planned section count of an imported source may only grow; a 400-section batch is accepted", async () => {
+  const f = db("author"), b = writeBatch(f);
+  b.set(doc(f, "guideline_sources", srcId24), src24("author", { sectionCount: 400 }));
+  for (let i = 1; i <= 399; i++) b.set(doc(f, "guideline_sections", srcId24 + "_s" + String(i).padStart(5, "0")), sec24("author", { seq: i }));
+  await assertSucceeds(b.commit());
+  const u = uid => ({ updatedAt: serverTimestamp(), updatedBy: uid });
+  await assertSucceeds(updateDoc(doc(db("author"), "guideline_sources", srcId24), Object.assign({ sectionCount: 450 }, u("author"))));
+  await assertFails(updateDoc(doc(db("author"), "guideline_sources", srcId24), Object.assign({ sectionCount: 10 }, u("author"))));
+  await assertFails(updateDoc(doc(db("author"), "guideline_sources", srcId24), Object.assign({ sectionCount: 460, sourceTitle: "changed" }, u("author"))));
+  await assertFails(updateDoc(doc(db("approver"), "guideline_sources", srcId24), Object.assign({ status: "retired", retiredBy: "approver" }, u("approver"))));            // no reason
+  await assertSucceeds(updateDoc(doc(db("approver"), "guideline_sources", srcId24), Object.assign({ status: "retired", retiredReason: "replaced by new edition", retiredBy: "approver", retiredByName: "A", retiredAt: Date.now() }, u("approver"))));
+});
