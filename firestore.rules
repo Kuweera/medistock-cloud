@@ -1,6 +1,7 @@
 rules_version = '2';
 
 // MediStock Cloud — multi-shop roles & security (v19 verified in CI run #68; v20 journey field proposed)
+// v23 (Lead, PROPOSED): attendance for facility-administered doses (arrival, did-not-attend, undo, correction) and consumables as kind 'consumable' orders supplied through the pending prescription / pharmacy engine (Option B).
 // v22 (Lead, PROPOSED): pc_treatment_orders.administrationMode optional, one of take_home | facility_administered | inpatient_mar (set at creation only; the update rule already refuses changing it).
 // v21 (verified in CI 2026-11-21): patient identity corrections need a correction record (pc_patient_corrections); an active share's snapshot can be refreshed; optional share expiry (consentExpiresAt) enforced on reads.
 // v19 (Lead Developer, owner decisions 2026-11-20; see docs/DATA_CONTRACT_V19.md): (1) the clinician may create a PENDING prescription document in the same
@@ -1061,6 +1062,7 @@ service cloud.firestore {
     function evOrderOk(d) {
       return d.orderId is string && existsAfter(ordPath(d.orderId))
         && getAfter(ordPath(d.orderId)).data.status == 'active'
+        && getAfter(ordPath(d.orderId)).data.kind != 'consumable'   // v23: consumables have no dose schedule
         && getAfter(ordPath(d.orderId)).data.patientId == d.patientId
         && getAfter(ordPath(d.orderId)).data.facilityId == d.facilityId;
     }
@@ -1138,7 +1140,7 @@ service cloud.firestore {
         && planActiveOk(request.resource.data)
         && request.resource.data.status == 'active'
         && request.resource.data.prescriberId == request.auth.uid
-        && request.resource.data.kind in ['medicine', 'procedure']
+        && request.resource.data.kind in ['medicine', 'procedure', 'consumable']
         && request.resource.data.scheduleType in ['once', 'interval', 'daily', 'fixed', 'weight', 'prn', 'taper', 'elapsed', 'custom']
         && request.resource.data.get('administrationMode', '') in ['', 'take_home', 'facility_administered', 'inpatient_mar']   // v22: optional care mode; missing = today's behaviour
         && request.resource.data.version is int
@@ -1149,6 +1151,13 @@ service cloud.firestore {
           (request.resource.data.kind == 'medicine'
             && request.resource.data.medicineName is string && request.resource.data.medicineName.size() > 0
             && request.resource.data.doseValue is number && request.resource.data.doseValue > 0)
+          ||
+          // v23 (Option B): a consumable is an ordinary stock item supplied through the pending prescription and the pharmacy engine
+          (request.resource.data.kind == 'consumable'
+            && request.resource.data.scheduleType == 'once'
+            && request.resource.data.medicineId is string && request.resource.data.medicineId.size() > 0
+            && request.resource.data.medicineName is string && request.resource.data.medicineName.size() > 0
+            && request.resource.data.quantityPrescribed is number && request.resource.data.quantityPrescribed > 0)
         )
         && (request.resource.data.scheduleType != 'weight'
             || (request.resource.data.ruleId is string && request.resource.data.weightKg is number
@@ -1200,7 +1209,36 @@ service cloud.firestore {
             && getAfter(marPath(request.resource.data.lastRecordId)).data.outcome == request.resource.data.status
             && getAfter(marPath(request.resource.data.lastRecordId)).data.status == 'active'
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['status', 'lastRecordId', 'actualAt', 'actualDoseValue', 'administeredBy', 'administeredByName', 'updatedAt', 'updatedBy']))
+                 .hasOnly(['status', 'lastRecordId', 'actualAt', 'actualDoseValue', 'administeredBy', 'administeredByName',
+                           'attendance', 'attendanceAt', 'attendanceBy', 'attendanceByName', 'updatedAt', 'updatedBy'])
+            // v23 A2: attendance keys only for "did not attend" (pending -> missed) with its MAR record in the same commit
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['attendance', 'attendanceAt', 'attendanceBy', 'attendanceByName'])
+                || (resource.data.status == 'pending' && request.resource.data.status == 'missed'
+                    && request.resource.data.get('attendance', null) == 'did_not_attend'
+                    && resource.data.get('attendance', null) == null
+                    && request.resource.data.get('attendanceBy', null) == request.auth.uid
+                    && getAfter(marPath(request.resource.data.lastRecordId)).data.get('attendance', null) == 'did_not_attend'
+                    && getAfter(marPath(request.resource.data.lastRecordId)).data.outcome == 'missed'
+                    && get(ordPath(resource.data.orderId)).data.get('administrationMode', '') == 'facility_administered')))
+          ||
+          // v23 A1: arrival of a patient at a facility-administered dose; status stays pending
+          (resource.data.status == 'pending' && request.resource.data.status == 'pending'
+            && request.resource.data.get('attendance', null) == 'attended'
+            && resource.data.get('attendance', null) == null
+            && request.resource.data.get('attendanceBy', null) == request.auth.uid
+            && request.resource.data.get('attendanceAt', null) is number
+            && hasPerm(resource.data.businessId, 'treatment.administer')
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['attendance', 'attendanceAt', 'attendanceBy', 'attendanceByName', 'updatedAt', 'updatedBy'])
+            && get(ordPath(resource.data.orderId)).data.get('administrationMode', '') == 'facility_administered')
+          ||
+          // v23 A4: undo a wrong arrival while still pending
+          (resource.data.status == 'pending' && request.resource.data.status == 'pending'
+            && resource.data.get('attendance', null) == 'attended'
+            && request.resource.data.get('attendance', null) == null
+            && hasPerm(resource.data.businessId, 'treatment.administer')
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['attendance', 'attendanceAt', 'attendanceBy', 'attendanceByName', 'updatedAt', 'updatedBy']))
           ||
           (resource.data.status == 'held' && request.resource.data.status == 'pending'
             && (hasPerm(resource.data.businessId, 'treatment.administer') || hasPerm(resource.data.businessId, 'treatment.prescribe'))
@@ -1214,7 +1252,12 @@ service cloud.firestore {
           (resource.data.status in ['administered', 'refused', 'missed', 'not_given'] && request.resource.data.status == 'pending'
             && hasPerm(resource.data.businessId, 'mar.amend')
             && getAfter(marPath(resource.data.lastRecordId)).data.status == 'entered_in_error'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'updatedBy']))
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'attendance', 'attendanceAt', 'attendanceBy', 'attendanceByName', 'updatedAt', 'updatedBy'])
+            // v23 A3: a corrected "did not attend" must clear the attendance; nothing else may change attendance here
+            && ((resource.data.get('attendance', null) == 'did_not_attend' && request.resource.data.get('attendance', null) == null)
+                || (resource.data.get('attendance', null) != 'did_not_attend'
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['attendance', 'attendanceAt', 'attendanceBy', 'attendanceByName']))))
         );
       allow delete: if false;
     }
@@ -1229,6 +1272,8 @@ service cloud.firestore {
         && request.resource.data.status == 'active'
         && request.resource.data.administeredBy == request.auth.uid
         && request.resource.data.outcome in ['administered', 'refused', 'missed', 'held', 'not_given']
+        && (request.resource.data.get('attendance', null) == null
+            || (request.resource.data.attendance == 'did_not_attend' && request.resource.data.outcome == 'missed'))   // v23 A5
         && request.resource.data.actualAt is number
         && (request.resource.data.outcome == 'administered'
             || (request.resource.data.get('omissionReason', null) is string && request.resource.data.omissionReason.size() >= 3))
@@ -1294,7 +1339,7 @@ service cloud.firestore {
         || (myProfile().role == 'operator' && myProfile().active == true && myProfile().get('perms', {}).get('dispense.perform', false) == true));
     }
     function dispenserOrderReadOk(d) {
-      return d.kind == 'medicine' && canAccessShop(d.businessId, d.facilityId) && hasPerm(d.businessId, 'dispense.view');
+      return d.kind in ['medicine', 'consumable'] && canAccessShop(d.businessId, d.facilityId) && hasPerm(d.businessId, 'dispense.view');
     }
     function rxStatusOk(d) {
       return d.status in ['partially_dispensed', 'completed']
@@ -1332,7 +1377,7 @@ service cloud.firestore {
         && (request.resource.data.get('drugId', null) == null || request.resource.data.drugId is string)
         && existsAfter(ordPath(rxId))
         && getAfter(ordPath(rxId)).data.status == 'active'
-        && getAfter(ordPath(rxId)).data.kind == 'medicine'
+        && getAfter(ordPath(rxId)).data.kind in ['medicine', 'consumable']
         && getAfter(ordPath(rxId)).data.businessId == request.resource.data.businessId
         && getAfter(ordPath(rxId)).data.facilityId == request.resource.data.facilityId
         && getAfter(ordPath(rxId)).data.patientId == request.resource.data.patientId
@@ -1387,7 +1432,7 @@ service cloud.firestore {
         && request.resource.data.lastRequestId is string
         && exists(ordPath(rxId))
         && get(ordPath(rxId)).data.status == 'active'
-        && get(ordPath(rxId)).data.kind == 'medicine'
+        && get(ordPath(rxId)).data.kind in ['medicine', 'consumable']
         && get(ordPath(rxId)).data.businessId == request.resource.data.businessId
         && get(ordPath(rxId)).data.facilityId == request.resource.data.facilityId
         && get(ordPath(rxId)).data.patientId == request.resource.data.patientId
