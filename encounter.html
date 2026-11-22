@@ -444,6 +444,8 @@
       <h2 id="obTitle">Add an order</h2>
       <div class="hint2" id="req-order">For a medicine, required: the medicine, the dose, the unit, how it is given, when it starts, and the details of the chosen pattern. For a procedure, required: the procedure and when it starts. Everything else is optional.</div>
       <div id="obPlanLine" class="pt-meta"></div>
+      <div id="obModeBox"><label>How will this treatment be given? *</label><select id="obMode"></select>
+        <div class="fhelp" id="obModeHelp" style="font-size:12.5px;color:#34495e;background:#f3f7fb;border-radius:8px;padding:8px 10px;margin:6px 0 8px;line-height:1.4"></div></div>
       <div id="obMedBox">
         <label>Medicine * (type or choose from this shop's medicines)</label><input type="text" id="obMed" list="drugList" placeholder="Type or choose" autocomplete="off">
         <div class="row"><div><label>Formulation</label><input type="text" id="obForm" list="formList" autocomplete="off"></div><div><label>Strength</label><input type="text" id="obStrength" placeholder="e.g. 500 mg" autocomplete="off"></div></div>
@@ -1068,6 +1070,28 @@
   function rxUpdateOp(rx, status, reason, extra) {
     return ["u", doc(db, "prescriptions", rx.id), Object.assign({ status: status, endedAt: serverTimestamp(), endedBy: me.id, endReason: reason }, extra || {}, upd()), "keep", "optional"];
   }
+  // ---------- Stage 5: administrationMode (rules v22/v23). Care setting and medicine route are separate; this says WHO records WHAT. ----------
+  const MODE_LABEL = { take_home: "Take-home", facility_administered: "Given at the facility", inpatient_mar: "Ward chart (MAR)" };
+  const MODE_OPTS = { take_home: "Patient takes it home: the pharmacy supplies it, staff do not record each dose", facility_administered: "Given at the facility on scheduled visits: attendance and each dose are recorded", inpatient_mar: "Given on the ward: each dose is recorded on the administration chart (MAR)" };
+  const MODE_HELP = { take_home: "A prescription goes to the pharmacy. No planned doses are created and nothing is added to the administration chart. Supplying the medicine is not the same as giving it.",
+    facility_administered: "Planned visits are created. Staff record when the patient arrives or does not attend, and then what was actually given: date, time, dose, route and who gave it.",
+    inpatient_mar: "Planned doses are created for the ward chart. Staff record each dose given, refused, held or missed, with the reason." };
+  // a sensible starting choice from the care setting; the clinician can change it. The route (injection, tablet...) never decides it.
+  // plans always carry a care setting; an old plan without one keeps TODAY's behaviour (planned doses on the ward chart)
+  function defaultMode(plan, kind) {
+    const cs = plan && plan.careSetting;
+    if (cs === "inpatient") return "inpatient_mar";
+    if (cs === "procedure_room") return "facility_administered";
+    if (cs === "outpatient" || cs === "home") return kind === "procedure" ? "facility_administered" : "take_home";
+    return "inpatient_mar";
+  }
+  function fillModeBox(plan, kind, base) {
+    const modes = kind === "procedure" ? ["facility_administered", "inpatient_mar"] : ["take_home", "facility_administered", "inpatient_mar"];
+    $("obMode").innerHTML = modes.map(m => '<option value="' + m + '">' + esc(MODE_OPTS[m]) + "</option>").join("");
+    const want = base && base.administrationMode && modes.indexOf(base.administrationMode) >= 0 ? base.administrationMode : defaultMode(plan, kind);
+    $("obMode").value = modes.indexOf(want) >= 0 ? want : modes[0]; showModeHelp();
+  }
+  function showModeHelp() { $("obModeHelp").textContent = MODE_HELP[$("obMode").value] || ""; }
   // ---------- Stage 4: one readable line per medicine; the actions appear only when it is opened ----------
   const ordMs = v => v && typeof v.toMillis === "function" ? v.toMillis() : (typeof v === "number" ? v : 0);
   function dOnly(ms, tz) { if (!ms) return "—"; try { return new Intl.DateTimeFormat("en-GB", { timeZone: tz || undefined, day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(ms)); } catch (e) { return new Date(ms).toLocaleDateString("en-GB"); } }
@@ -1100,12 +1124,12 @@
     const fields = [med ? ["Dose", esc(o.doseValue) + " " + esc(o.doseUnit || "")] : ["Type", esc(o.category ? String(o.category).charAt(0).toUpperCase() + String(o.category).slice(1) : "Procedure")], med ? ["Route", esc(o.route || "—")] : ["Responsible", esc(o.responsible || "—")],
       ["Frequency", esc(PCS.describe(o))], ["Duration", esc(dur)], ["Starts", esc(dOnly(o.startAt, o.tz))], [active ? "Ends" : st === "Replaced by a newer version" ? "Replaced" : "Ended", esc(endTxt)], ["Care setting", esc(SET_LABEL[p && p.careSetting] || "—")], ["Status", esc(st)]];
     let h = '<div class="cand ord" style="' + (active ? "" : "opacity:.8;") + '"><div class="pt-name">' + (med ? esc(o.medicineName) + (o.strength ? " " + esc(o.strength) : "") : esc(o.procedureName)) + ' <span class="chip ' + (active ? "ok" : "") + '">' + esc(st) + "</span>" +
-      (o.version > 1 ? ' <span class="chip">Version ' + esc(o.version) + "</span>" : "") + (ri ? ' <span class="chip ' + ri.cls + '">' + esc(ri.chip) + "</span>" : "") +
+      (o.version > 1 ? ' <span class="chip">Version ' + esc(o.version) + "</span>" : "") + (o.administrationMode ? ' <span class="chip">' + esc(MODE_LABEL[o.administrationMode] || o.administrationMode) + "</span>" : "") + (ri ? ' <span class="chip ' + ri.cls + '">' + esc(ri.chip) + "</span>" : "") +
       (o.scheduleType === "weight" ? ' <span class="chip warn">Weight-based</span>' : "") + (o.dosingCheck === "not_checked" ? ' <span class="chip warn">Dose not automatically checked</span>' : "") + "</div>" +
       '<div class="ordgrid">' + fields.map(f => '<div><span class="l">' + f[0] + "</span><span class=\"v\">" + f[1] + "</span></div>").join("") + "</div>";
     if (open) {
       h += '<div class="pt-meta" style="margin-top:8px;">' + (o.instructions ? esc(PCAB.expandText(o.instructions)) + "<br>" : "") + (!med && o.materials ? "Materials: " + esc(o.materials) + "<br>" : "") +
-        (o.scheduleType === "prn" ? "As needed: " + esc(evs.length) + " planned entries; PRN doses are recorded on the Treatment screen." : "Planned " + esc(o.totalEvents || evs.length) + " · written " + evs.length + " · given " + cnt("administered") + " · pending " + cnt("pending") + (cnt("held") ? " · held " + cnt("held") : "") + ((cnt("missed") + cnt("refused") + cnt("not_given")) ? " · not given " + (cnt("missed") + cnt("refused") + cnt("not_given")) : "") + (cnt("cancelled") ? " · cancelled " + cnt("cancelled") : "")) +
+        (o.administrationMode === "take_home" ? "Take-home: the pharmacy supplies it and the patient takes it at home. Staff do not record each dose." : o.scheduleType === "prn" ? "As needed: " + esc(evs.length) + " planned entries; PRN doses are recorded on the Treatment screen." : "Planned " + esc(o.totalEvents || evs.length) + " · written " + evs.length + " · given " + cnt("administered") + (o.administrationMode === "facility_administered" ? " · arrived " + evs.filter(e => e.attendance === "attended").length + " · did not attend " + evs.filter(e => e.attendance === "did_not_attend").length : "") + " · pending " + cnt("pending") + (cnt("held") ? " · held " + cnt("held") : "") + ((cnt("missed") + cnt("refused") + cnt("not_given")) ? " · not given or missed " + (cnt("missed") + cnt("refused") + cnt("not_given")) : "") + (cnt("cancelled") ? " · cancelled " + cnt("cancelled") : "")) +
         (ri ? "<br>" + esc(ri.text) + (active ? " Dispensing is not the same as giving the dose: doses given are recorded on Treatment &amp; MAR." : "") : "") +
         "<br>Prescribed by " + esc(o.prescriberName || "") + " · " + esc(stampText(null, o.prescribedAt)) + (o.endReason ? "<br>" + (o.status === "completed" ? "Completed" : o.status === "superseded" ? "Replaced" : "Stopped") + (o.endedByName ? " by " + esc(o.endedByName) : "") + ": " + esc(o.endReason) : "") + "</div>" +
         '<div class="pt-meta" style="margin-top:4px;">' + (o.dosingCheck === "rule" ? '<span class="chip ok">Checked against dosing rule' + (o.checkedRuleVersion ? " v" + esc(o.checkedRuleVersion) : "") + "</span> " : "") +
@@ -1297,7 +1321,7 @@
     obCtx = { planId: planId, kind: kind, base: base || null, pre: pre || null, block: false, hard: false };
     $("obCard").classList.remove("hidden"); $("obTitle").textContent = base ? "Change this order (saved as a new version)" : (kind === "medicine" ? "Add a medicine" : "Add a procedure");
     $("obPlanLine").textContent = "Plan: " + plan.title;
-    $("obMedBox").classList.toggle("hidden", kind !== "medicine"); $("obProcBox").classList.toggle("hidden", kind !== "procedure"); $("obQtyBox").classList.toggle("hidden", kind !== "medicine");
+    fillModeBox(plan, kind, base); $("obMedBox").classList.toggle("hidden", kind !== "medicine"); $("obProcBox").classList.toggle("hidden", kind !== "procedure"); $("obQtyBox").classList.toggle("hidden", kind !== "medicine");
     const types = kind === "medicine" ? SCHED_MED : SCHED_PROC; $("obType").innerHTML = types.map(t => '<option value="' + t[0] + '">' + t[1] + "</option>").join("");
     const b = base || pre || {}; $("obAbbr").value = ""; $("obAbbrHelp").innerHTML = "";
     $("obMed").value = b.medicineName || ""; $("obForm").value = b.formulation || ""; $("obStrength").value = b.strength || ""; $("obDose").value = b.doseValue != null ? b.doseValue : ""; $("obUnit").value = b.doseUnit || ""; $("obRoute").value = b.route || "";
@@ -1335,11 +1359,12 @@
     if (base) { changeReason = $("obChangeReason").value.trim(); if (changeReason.length < 3) { m.textContent = "Say why the order is being changed."; return; } }
     if (base && kind === "medicine" && rxDispensed(rxOf(base.id)) > 0 && !window.confirm(rxDispensed(rxOf(base.id)) + " of this medicine has already been dispensed on the earlier version. The new version is a NEW prescription at the pharmacy and does not count what was already given. Continue?")) return;
     const d = drugByName(name), wi = o.scheduleType === "weight" ? weightInfo() : null;
-    const oref = doc(collection(db, "pc_treatment_orders")), full = o.scheduleType === "prn" ? [] : PCS.generate(o);
+    const mode = $("obMode").value; if (["take_home", "facility_administered", "inpatient_mar"].indexOf(mode) < 0 || (kind === "procedure" && mode === "take_home")) { m.textContent = "Choose how this treatment will be given."; return; }
+    const oref = doc(collection(db, "pc_treatment_orders")), full = o.scheduleType === "prn" || mode === "take_home" ? [] : PCS.generate(o);
     const horizon = Math.max(Date.now(), o.startAt) + 7 * 864e5, win = full.filter(e => e.plannedAt <= horizon);
     const warnings = []; document.querySelectorAll("#obSafety .alert-box").forEach(x => warnings.push(x.textContent.slice(0, 220)));
     const order = Object.assign(stamp(), { planId: plan.id, encounterId: encId, patientId: enc.patientId, patientName: enc.patientName, encounterNo: enc.encounterNo, kind: kind, version: base ? (base.version || 1) + 1 : 1, supersedes: base ? base.id : null, status: "active",
-      prescriberId: me.id, prescriberName: myName, prescribedAt: Date.now(), scheduleType: o.scheduleType, sched: o.sched, startAt: o.startAt, tz: o.tz, totalEvents: full.length, instructions: $("obInstr").value.trim(), warnings: warnings, overrideReason: override || null });
+      prescriberId: me.id, prescriberName: myName, prescribedAt: Date.now(), scheduleType: o.scheduleType, sched: o.sched, startAt: o.startAt, tz: o.tz, totalEvents: full.length, administrationMode: mode, instructions: $("obInstr").value.trim(), warnings: warnings, overrideReason: override || null });
     if (kind === "medicine") Object.assign(order, { medicineId: d ? d.id : null, medicineName: name, generic: (d && d.generic) || "", formulation: $("obForm").value.trim() || (d && d.dosageForm) || "", strength: $("obStrength").value.trim(), doseValue: dose, doseUnit: o.doseUnit, route: o.route, quantityPrescribed: $("obQty").value.trim() === "" ? null : Number($("obQty").value) });
     else Object.assign(order, { procedureName: name, category: $("obCat").value, materials: $("obMat").value.trim(), responsible: $("obWho").value.trim(), durationMinutes: $("obMinutes").value.trim() === "" ? null : Number($("obMinutes").value), doseValue: null });
     { const rl = kind === "medicine" ? PCS.ruleFor(medNames(), dRules, todayIso()) : null, ab = ($("obAbbr").value || "").trim(), pe = PCAB.explain(ab);
@@ -1365,7 +1390,7 @@
     win.forEach(e => ops.push(["s", doc(db, "pc_treatment_events", oref.id + "_" + e.idKey), Object.assign(stamp(), { orderId: oref.id, idKey: e.idKey, idx: e.idx, planId: plan.id, encounterId: encId, patientId: enc.patientId, patientName: enc.patientName, kind: kind, label: name, plannedAt: e.plannedAt, plannedLocal: e.plannedLocal, plannedDay: e.plannedDay, tz: e.tz,
       plannedDoseValue: e.doseValue != null ? e.doseValue : order.doseValue, doseUnit: o.doseUnit || "", route: o.route || "", instructions: order.instructions, status: "pending" })]));
     commitOps(ops); closeOrder();
-    ok((kind === "medicine" ? "Medicine order" : "Procedure order") + " saved on this phone" + (win.length ? " with " + win.length + " planned administration" + (win.length === 1 ? "" : "s") + (full.length > win.length ? " (the rest are written later: tap 'Write the next days')" : "") : "") + "." +
+    ok((kind === "medicine" ? "Medicine order" : "Procedure order") + " saved on this phone" + (mode === "take_home" ? " as a TAKE-HOME medicine: no planned doses are created and staff do not record each dose" : "") + (win.length ? " with " + win.length + " planned administration" + (win.length === 1 ? "" : "s") + (full.length > win.length ? " (the rest are written later: tap 'Write the next days')" : "") : "") + "." +
       (kind === "medicine" ? " Next step: the pharmacy now has this as a pending prescription. Nothing has been dispensed yet." : " Next step: the responsible clinical team carries out this procedure."));
   }
   // What happens to the pharmacy prescription when its order ends. Returns { ops: [optional prescription update], text }.
@@ -1571,6 +1596,7 @@
   Object.keys(CAT_LABEL).forEach(k => { const o = document.createElement("option"); o.value = k; o.textContent = CAT_LABEL[k]; $("oCat").appendChild(o); });
   $("pSaveBtn").onclick = savePlan; $("obSaveBtn").onclick = saveOrder; $("obCancelBtn").onclick = closeOrder;
   $("obType").addEventListener("change", renderSchedFields);
+  $("obMode").addEventListener("change", showModeHelp);
   $("obAbbr").addEventListener("input", () => { const x = PCAB.explain($("obAbbr").value); $("obAbbrHelp").innerHTML = x.text ? '<span style="color:' + (x.ok ? "var(--accent)" : "var(--warn)") + '">' + esc(x.text) + "</span>" : ""; });
   $("obAbbr").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); applyAbbrev(); } });
   $("abbrList").innerHTML = PCAB.all().filter(a => a.kind === "frequency" || a.kind === "timing").map(a => '<option value="' + esc(a.abbr) + '">' + esc(a.meaning) + "</option>").join("");

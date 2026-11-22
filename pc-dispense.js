@@ -20,7 +20,7 @@
   var FRIENDLY = {
     order_missing: "This prescription could not be found.",
     order_inactive: "This prescription has been stopped or replaced, so it cannot be dispensed.",
-    not_medicine: "Only medicine orders can be dispensed.",
+    not_medicine: "Only medicine or consumable orders can be supplied from the pharmacy.",
     wrong_facility: "This prescription belongs to another facility.",
     already_complete: "This prescription has already been dispensed.",
     over_outstanding: "The quantity is more than what is still outstanding on this prescription.",
@@ -212,7 +212,7 @@
       if (!orderSnap.exists()) throw PCDError("order_missing", FRIENDLY.order_missing);
       var order = orderSnap.data();
       if (order.businessId !== p.businessId || order.facilityId !== p.facilityId) throw PCDError("wrong_facility", FRIENDLY.wrong_facility);
-      if (order.kind !== "medicine") throw PCDError("not_medicine", FRIENDLY.not_medicine);
+      if (order.kind !== "medicine" && order.kind !== "consumable") throw PCDError("not_medicine", FRIENDLY.not_medicine);
       var rx = rxSnap.exists() ? rxSnap.data() : null;
       if (order.status !== "active") throw PCDError("order_inactive", FRIENDLY.order_inactive);
       if (rx && (rx.businessId !== p.businessId || rx.facilityId !== p.facilityId)) throw PCDError("wrong_facility", FRIENDLY.wrong_facility);
@@ -370,7 +370,7 @@
     }
     if (q && getDocs) {
       var base = function (c, f) { return q(tools.collection(db, c), where("businessId", "==", ctx.businessId), where(f, "==", ctx.facilityId), lim(1)); };
-      await probe("Read medicine orders", function () { return getDocs(q(tools.collection(db, "pc_treatment_orders"), where("businessId", "==", ctx.businessId), where("facilityId", "==", ctx.facilityId), where("kind", "==", "medicine"), where("status", "==", "active"), lim(1))); });
+      await probe("Read medicine orders", function () { return getDocs(q(tools.collection(db, "pc_treatment_orders"), where("businessId", "==", ctx.businessId), where("facilityId", "==", ctx.facilityId), where("kind", "in", ["medicine", "consumable"]), where("status", "==", "active"), lim(1))); });
       await probe("Read prescriptions", function () { return getDocs(base("prescriptions", "facilityId")); });
       await probe("Read dispensing records", function () { return getDocs(base("dispense_records", "facilityId")); });
       await probe("Read medicines and batches", function () { return getDocs(base("drugs", "shopId")).then(function () { return getDocs(base("batches", "shopId")); }); });
@@ -432,7 +432,7 @@
     });
     var inRx = prescriptions.filter(function (x) { return rxSet[x.id]; });
     var received = (orders || []).filter(function (o) {
-      if (o.kind !== "medicine" || !o.prescribedAt) return false;
+      if ((o.kind !== "medicine" && o.kind !== "consumable") || !o.prescribedAt) return false;
       return !month || localDay(new Date(o.prescribedAt)).slice(0, 7) === month;
     });
     return {

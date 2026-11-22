@@ -258,6 +258,7 @@
       <button type="button" class="pill-btn selected" data-f="due">Due and late</button>
       <button type="button" class="pill-btn" data-f="today">Today</button>
       <button type="button" class="pill-btn" data-f="done">Given / not given</button>
+      <button type="button" class="pill-btn" data-f="appt">Appointments</button>
       <button type="button" class="pill-btn" data-f="prn">As needed (PRN)</button>
       <button type="button" class="pill-btn" data-f="plans">Active plans</button>
     </div>
@@ -332,27 +333,40 @@
   // ---------- list ----------
   function allEvents() { const m = {}; Object.keys(dayEvents).forEach(d => dayEvents[d].forEach(e => { m[e.id] = e; })); held.forEach(e => { m[e.id] = e; }); evMap = m; return Object.keys(m).map(k => m[k]); }
   function stateOf(e) { return PCS.dueState(e, Date.now(), GRACE, SOON); }
+  // ---- Stage 5: attendance (administrationMode facility_administered only). Attendance is NOT administration and dispensing never sets it. ----
+  function modeOf(e) { const o = orders.find(x => x.id === e.orderId); return (o && o.administrationMode) || ""; }
+  const isFac = e => modeOf(e) === "facility_administered";
+  const isApptEv = e => e.attendance === "did_not_attend" || ((e.status === "pending" || e.status === "held") && (isFac(e) || e.attendance === "attended"));
+  // overdue appointment is DERIVED (never stored): pending, past the grace time, nobody has recorded arrival
+  const overdueAppt = e => e.status === "pending" && isFac(e) && !e.attendance && stateOf(e) === "delayed";
+  function attChip(e) {
+    if (e.attendance === "did_not_attend") return ["Did not attend", "bad"];
+    if ((e.status === "pending" || e.status === "held") && e.attendance === "attended") return ["Arrived", "ok"];
+    if (overdueAppt(e)) return ["Overdue: not arrived", "bad"];
+    return null;
+  }
   function render() {
     const now = Date.now(), evs = allEvents(), q = $("q").value.trim().toLowerCase(), kf = $("kindF").value;
     const flt = e => (!kf || e.kind === kf) && (!q || (String(e.patientName) + " " + e.label).toLowerCase().indexOf(q) >= 0);
     const tl = todayLocal();
     const due = evs.filter(e => { const s = stateOf(e); return s === "due" || s === "delayed" || s === "held"; });
-    document.querySelectorAll("#tabs .pill-btn").forEach(b => { const n = { due: due.length, today: 0, done: 0, prn: orders.filter(o => o.scheduleType === "prn").length, plans: plans.length }[b.dataset.f]; const base = { due: "Due and late", today: "Today", done: "Given / not given", prn: "As needed (PRN)", plans: "Active plans" }[b.dataset.f]; b.textContent = base + (n ? " (" + n + ")" : ""); });
+    document.querySelectorAll("#tabs .pill-btn").forEach(b => { const n = { due: due.length, today: 0, done: 0, prn: orders.filter(o => o.scheduleType === "prn" && o.administrationMode !== "take_home").length, plans: plans.length, appt: evs.filter(overdueAppt).length }[b.dataset.f]; const base = { due: "Due and late", today: "Today", done: "Given / not given", appt: "Appointments", prn: "As needed (PRN)", plans: "Active plans" }[b.dataset.f]; b.textContent = base + (n ? " (" + n + ")" : ""); });
     $("extBox").classList.add("hidden");
     if (filter === "prn") return renderPrn();
     if (filter === "plans") return renderPlans();
     let rows;
     if (filter === "due") rows = due;
     else if (filter === "today") rows = evs.filter(e => e.plannedDay === tl && e.status !== "cancelled");
+    else if (filter === "appt") rows = evs.filter(isApptEv);
     else rows = evs.filter(e => ["administered", "refused", "missed", "not_given"].indexOf(e.status) >= 0);
     rows = rows.filter(flt).sort((a, b) => filter === "done" ? (b.actualAt || b.plannedAt) - (a.actualAt || a.plannedAt) : a.plannedAt - b.plannedAt);
-    $("info").textContent = filter === "due" ? "Pending administrations that are due within " + SOON + " minutes or more than " + GRACE + " minutes late, and held ones." : filter === "today" ? "Everything planned for today." : "Recorded outcomes in the selected period.";
+    $("info").textContent = filter === "appt" ? "Scheduled visits for treatment given at this facility: who has not arrived, who has arrived and is waiting, and who did not attend. Attendance is recorded separately from giving the treatment." : filter === "due" ? "Pending administrations that are due within " + SOON + " minutes or more than " + GRACE + " minutes late, and held ones." : filter === "today" ? "Everything planned for today." : "Recorded outcomes in the selected period.";
     $("list").innerHTML = rows.length ? rows.map(cardHtml).join("") : '<div class="empty">Nothing here.</div>';
     prescriberBanner();
   }
   function cardHtml(e) {
     const s = stateOf(e), al = e.kind === "medicine" ? allergyFor(e.patientId, [e.label]) : [];
-    return '<div class="pt' + (selId === e.id ? " sel" : "") + '" data-ev="' + esc(e.id) + '"><div class="pt-name">' + esc(hhmm(e.plannedAt)) + (e.plannedDay !== todayLocal() ? " (" + esc(e.plannedDay) + ")" : "") + " · " + esc(e.patientName) + ' <span class="chip ' + (ST_CLASS[s] || "") + '">' + esc(ST[s] || s) + "</span>" + (al.length ? ' <span class="chip bad">ALLERGY</span>' : "") + "</div>" +
+    return '<div class="pt' + (selId === e.id ? " sel" : "") + '" data-ev="' + esc(e.id) + '"><div class="pt-name">' + esc(hhmm(e.plannedAt)) + (e.plannedDay !== todayLocal() ? " (" + esc(e.plannedDay) + ")" : "") + " · " + esc(e.patientName) + (e.attendance === "did_not_attend" ? "" : ' <span class="chip ' + (ST_CLASS[s] || "") + '">' + esc(ST[s] || s) + "</span>") + (attChip(e) ? ' <span class="chip ' + attChip(e)[1] + '">' + esc(attChip(e)[0]) + "</span>" : "") + (al.length ? ' <span class="chip bad">ALLERGY</span>' : "") + "</div>" +
       '<div class="pt-meta">' + esc(e.label) + (e.kind === "medicine" ? " — " + esc(e.plannedDoseValue) + " " + esc(e.doseUnit || "") + (e.route ? " · " + esc(e.route) : "") : "") + (e.instructions ? "<br>" + esc(e.instructions) : "") + "</div></div>";
   }
   function renderPlans() {
@@ -367,7 +381,7 @@
   function renderPrn() {
     $("info").textContent = "Medicines ordered to be given only when needed. Tap one to record a dose.";
     const q = $("q").value.trim().toLowerCase();
-    const rows = orders.filter(o => o.scheduleType === "prn" && (!q || (String(o.patientName) + " " + o.medicineName).toLowerCase().indexOf(q) >= 0));
+    const rows = orders.filter(o => o.scheduleType === "prn" && o.administrationMode !== "take_home" && (!q || (String(o.patientName) + " " + o.medicineName).toLowerCase().indexOf(q) >= 0));
     $("list").innerHTML = rows.length ? rows.map(o => '<div class="pt" data-prn="' + esc(o.id) + '"><div class="pt-name">' + esc(o.patientName) + " · " + esc(o.medicineName) + "</div>" +
       '<div class="pt-meta">' + esc(o.doseValue) + " " + esc(o.doseUnit || "") + (o.route ? " · " + esc(o.route) : "") + "<br>" + esc(PCS.describe(o)) + "</div></div>").join("") : '<div class="empty">No as-needed orders.</div>';
   }
@@ -430,6 +444,9 @@
     const recs = selRecs.filter(r => r.status === "active").sort((a, b) => (b.clientCreatedAt || 0) - (a.clientCreatedAt || 0));
     if (e.status === "pending" || e.status === "held") {
       if (can("treatment.administer")) {
+        if (isFac(e) && e.status === "pending") h += e.attendance === "attended"
+          ? '<h3 class="sub">Attendance</h3><div class="cand"><div class="pt-name">Arrived at ' + esc(hhmm(e.attendanceAt)) + '</div><div class="pt-meta">Recorded by ' + esc(e.attendanceByName || "") + '. The dose is still pending: record what was given below.</div></div><button class="btn-small btn-secondary" style="width:100%;" data-att="undo">Arrived by mistake: undo</button>'
+          : '<h3 class="sub">Did the patient come?</h3><div class="hint2">Attendance is not the same as giving the treatment. For "did not attend", write the reason in the Reason box below first.</div><div class="op-actions"><button class="btn-small btn-secondary" data-att="arrive">Patient arrived</button><button class="btn-small btn-secondary" data-att="dna">Patient did not attend</button></div>';
         h += '<h3 class="sub">Record what happened</h3>' + SEP_NOTE + nowFields("a") +
           (e.kind === "medicine" ? '<label>Dose actually given (' + esc(e.doseUnit || "") + ")</label>" + '<div class="hint2">Shows the planned dose. Change it only if you gave a different amount.</div><input type="number" inputmode="decimal" step="any" id="aDose" value="' + esc(e.plannedDoseValue != null ? e.plannedDoseValue : "") + '">' : "") +
           "<label>Observations</label><textarea id=\"aObs\" rows=\"2\"></textarea><label>Reaction or side effect (if any)</label><textarea id=\"aAdv\" rows=\"2\"></textarea>" +
@@ -440,7 +457,7 @@
         if (e.status === "held" ) h += '<button class="btn-small btn-secondary" id="relBtn" style="width:100%; margin-top:8px;">Release the hold (back to pending)</button>';
       } else h += '<div class="pt-meta">You do not have permission to record administrations.</div>';
     } else {
-      h += '<h3 class="sub">Recorded</h3>' + (recs.length ? recs.map(r => '<div class="cand"><div class="pt-name">' + esc(ST[r.outcome] || r.outcome) + " at " + esc(hhmm(r.actualAt)) + (r.actualDoseValue != null && r.outcome === "administered" ? " · " + esc(r.actualDoseValue) + " " + esc(r.doseUnit || "") : "") + '</div><div class="pt-meta">By ' + esc(r.administeredByName || "") + (r.actualAt - e.plannedAt > GRACE * 60000 && r.outcome === "administered" ? " · given late" : "") +
+      h += '<h3 class="sub">Recorded</h3>' + (recs.length ? recs.map(r => '<div class="cand"><div class="pt-name">' + esc(r.attendance === "did_not_attend" ? "Did not attend" : (ST[r.outcome] || r.outcome)) + " at " + esc(hhmm(r.actualAt)) + (r.actualDoseValue != null && r.outcome === "administered" ? " · " + esc(r.actualDoseValue) + " " + esc(r.doseUnit || "") : "") + '</div><div class="pt-meta">By ' + esc(r.administeredByName || "") + (r.actualAt - e.plannedAt > GRACE * 60000 && r.outcome === "administered" ? " · given late" : "") +
         (r.observations ? "<br>" + esc(r.observations) : "") + (r.adverseReaction ? "<br>Reaction: " + esc(r.adverseReaction) : "") + (r.omissionReason ? "<br>Reason: " + esc(r.omissionReason) : "") + "</div></div>").join("") : '<div class="pt-meta">Record details are loading or not on this phone yet.</div>');
       if (can("mar.amend") && recs.length && e.status !== "cancelled") h += '<button class="btn-small btn-secondary" id="fixBtn" style="width:100%; margin-top:8px;">This record is wrong: correct it</button>';
       if (e.status === "cancelled") h += '<div class="pt-meta">Cancelled' + (e.cancelReason ? ": " + esc(e.cancelReason) : "") + "</div>";
@@ -448,29 +465,46 @@
     h += '<button class="btn-small btn-secondary" id="closeActBtn" style="width:100%; margin-top:8px;">Close</button>';
     card.innerHTML = h; PCF.initDates();
     card.querySelectorAll("[data-out]").forEach(b => { b.onclick = () => record(e, b.dataset.out); });
+    card.querySelectorAll("[data-att]").forEach(b => { b.onclick = () => { const a = b.dataset.att; if (a === "arrive") arrive(e); else if (a === "undo") undoArrival(e); else record(e, "missed", true); }; });
     if ($("fixBtn")) $("fixBtn").onclick = () => correct(e, recs[0]);
     if ($("relBtn")) $("relBtn").onclick = () => commit([["u", doc(db, "pc_treatment_events", e.id), Object.assign({ status: "pending" }, upd())], auditOp(e, "mar.release")]).then(() => ok("Hold released."));
     $("closeActBtn").onclick = () => { selId = null; card.classList.add("hidden"); render(); };
   }
-  function record(e, outcome) {
+  // Patient arrived: the dose stays pending (rules A1). Only the attendance keys change.
+  function arrive(e) {
+    if (!isFac(e) || e.status !== "pending" || e.attendance) return;
+    commit([["u", doc(db, "pc_treatment_events", e.id), Object.assign({ attendance: "attended", attendanceAt: Date.now(), attendanceBy: me.id, attendanceByName: myName }, upd())], auditOp(e, "attendance.arrived")]);
+    ok("Arrival recorded on this phone: " + e.patientName + " arrived for " + e.label + ". The dose is still pending.");
+  }
+  // wrong arrival (rules A4): clears the four attendance keys while the dose is still pending
+  function undoArrival(e) {
+    if (e.status !== "pending" || e.attendance !== "attended") return;
+    commit([["u", doc(db, "pc_treatment_events", e.id), Object.assign({ attendance: null, attendanceAt: null, attendanceBy: null, attendanceByName: null }, upd())], auditOp(e, "attendance.undo")]);
+    ok("Arrival removed. " + e.patientName + " is not marked as arrived.");
+  }
+  function record(e, outcome, dna) {
     const at = readTime("a"); if (isNaN(at)) { alert("Type the date as DD/MM/YYYY and choose the time."); return; }
     if (at > Date.now() + 5 * 60000) { alert("The time cannot be in the future."); return; }
     const reason = ($("aReason") && $("aReason").value.trim()) || "";
     if (outcome !== "administered" && reason.length < 3) { alert("Give the reason (at least a few letters)."); return; }
     if (outcome === "administered" && $("aAlg") && !$("aAlg").checked) { alert("This medicine matches a recorded allergy. Tick the box only if a clinician has authorised it."); return; }
     let dose = null; if (e.kind === "medicine" && outcome === "administered") { dose = Number($("aDose").value); if (!(dose > 0)) { alert("Enter the dose actually given."); return; } }
+    if (dna && (!isFac(e) || e.status !== "pending" || e.attendance || outcome !== "missed")) return;
     const rref = doc(collection(db, "pc_mar_records"));
     const rec = Object.assign(stamp(), { eventId: e.id, orderId: e.orderId, planId: e.planId || null, encounterId: e.encounterId || null, patientId: e.patientId, patientName: e.patientName, label: e.label, kind: e.kind, outcome: outcome, plannedAt: e.plannedAt, actualAt: at,
       actualDoseValue: dose, doseUnit: e.doseUnit || "", route: e.route || "", prescribedDoseValue: e.plannedDoseValue != null ? e.plannedDoseValue : null, observations: ($("aObs").value || "").trim(), adverseReaction: ($("aAdv").value || "").trim(), omissionReason: outcome === "administered" ? null : reason, status: "active", administeredBy: me.id, administeredByName: myName });
-    commit([["s", rref, rec], ["u", doc(db, "pc_treatment_events", e.id), Object.assign({ status: outcome, lastRecordId: rref.id, actualAt: at, actualDoseValue: dose, administeredBy: me.id, administeredByName: myName }, upd())], auditOp(e, "mar." + outcome, { recordId: rref.id, reason: reason || null })]);
-    ok("Recorded on this phone: " + (ST[outcome] || outcome) + " — " + e.label + " for " + e.patientName + ".");
+    // "did not attend" (rules A2): ONE batch = the administration record (missed + reason + attendance) and the event closed as missed with the attendance keys
+    const evUpd = { status: outcome, lastRecordId: rref.id, actualAt: at, actualDoseValue: dose, administeredBy: me.id, administeredByName: myName };
+    if (dna) { rec.attendance = "did_not_attend"; Object.assign(evUpd, { attendance: "did_not_attend", attendanceAt: Date.now(), attendanceBy: me.id, attendanceByName: myName }); }
+    commit([["s", rref, rec], ["u", doc(db, "pc_treatment_events", e.id), Object.assign(evUpd, upd())], auditOp(e, dna ? "attendance.did_not_attend" : "mar." + outcome, { recordId: rref.id, reason: reason || null })]);
+    ok(dna ? "Recorded on this phone: " + e.patientName + " DID NOT ATTEND for " + e.label + ". Reason saved. This is not a missed dose by staff." : "Recorded on this phone: " + (ST[outcome] || outcome) + " — " + e.label + " for " + e.patientName + ".");
     selId = null; $("actCard").classList.add("hidden");
   }
   function correct(e, rec) {
     const reason = (window.prompt("Why is this record wrong? (it stays on record, marked as entered in error, and the administration goes back to pending)") || "").trim();
     if (reason.length < 3) { if (reason) alert("Please give a short reason."); return; }
-    commit([["u", doc(db, "pc_mar_records", rec.id), Object.assign({ status: "entered_in_error", errorReason: reason }, upd())], ["u", doc(db, "pc_treatment_events", e.id), Object.assign({ status: "pending" }, upd())], auditOp(e, "mar.correct", { recordId: rec.id, reason: reason })]);
-    ok("Record marked as entered in error. The administration is pending again."); selId = null; $("actCard").classList.add("hidden");
+    commit([["u", doc(db, "pc_mar_records", rec.id), Object.assign({ status: "entered_in_error", errorReason: reason }, upd())], ["u", doc(db, "pc_treatment_events", e.id), Object.assign({ status: "pending" }, e.attendance === "did_not_attend" ? { attendance: null, attendanceAt: null, attendanceBy: null, attendanceByName: null } : {}, upd())], auditOp(e, "mar.correct", { recordId: rec.id, reason: reason })]);
+    ok("Record marked as entered in error. The administration is pending again" + (e.attendance === "did_not_attend" ? " and the 'did not attend' mark is removed." : ".")); selId = null; $("actCard").classList.add("hidden");
   }
 
   // ---------- as-needed (PRN) doses ----------
