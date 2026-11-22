@@ -125,6 +125,7 @@ Where a field is explained on the screen itself (a short grey line under the box
 | Strength | Optional | The strength, for example 500 mg. |
 | How much for each dose? | Required (*) | How much the patient takes each time. |
 | Unit of the dose | Required (*) | The unit of the dose, for example tablet or ml. |
+| How will this treatment be given? | Required (*) | Who records what. **Take-home**: the pharmacy supplies it and staff do not record each dose. **Given at the facility**: planned visits are created, staff record arrival or non-attendance and then what was given. **Given on the ward**: each dose is recorded on the administration chart. It starts from the care setting of the plan and does not depend on the route. |
 | How is it given? | Required (*) | How the medicine enters the body. |
 | Procedure (type or choose) | Required (*) | The procedure to order. Choose from the list or type a name. |
 | Category | Optional | The group the procedure belongs to, for example wound dressing or injection care. |
