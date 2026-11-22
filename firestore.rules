@@ -1768,10 +1768,21 @@ service cloud.firestore {
         && pcUpdateStamped()
         && hasPerm(resource.data.businessId, 'guidelines.approve')
         && isMemberOfBusiness(resource.data.businessId)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'rejectedReason', 'rejectedBy', 'rejectedByName', 'rejectedAt', 'updatedAt', 'updatedBy'])
-        && (request.resource.data.status == 'retired'
-            || (request.resource.data.rejectedReason is string && request.resource.data.rejectedReason.size() >= 3
-                && request.resource.data.rejectedBy == request.auth.uid));
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'rejectedReason', 'rejectedBy', 'rejectedByName', 'rejectedAt',
+             'retiredReason', 'retiredBy', 'retiredByName', 'retiredAt', 'updatedAt', 'updatedBy'])
+        && ((request.resource.data.status == 'rejected'
+              && request.resource.data.get('rejectedReason', null) is string && request.resource.data.rejectedReason.size() >= 3
+              && request.resource.data.get('rejectedBy', null) == request.auth.uid)
+            || (request.resource.data.status == 'retired'
+              && request.resource.data.get('retiredReason', null) is string && request.resource.data.retiredReason.size() >= 3
+              && request.resource.data.get('retiredBy', null) == request.auth.uid));
+      // more chapters of the same file may be added later (sections create is allowed against an existing source); the planned count may only grow
+      allow update: if resource.data.status == 'imported' && request.resource.data.status == 'imported'
+        && request.resource.data.get('sectionCount', -1) is int && request.resource.data.sectionCount > resource.data.sectionCount
+        && pcUpdateStamped()
+        && hasPerm(resource.data.businessId, 'guidelines.manage')
+        && isMemberOfBusiness(resource.data.businessId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sectionCount', 'updatedAt', 'updatedBy']);
       allow delete: if false;
     }
     match /guideline_sections/{secId} {
