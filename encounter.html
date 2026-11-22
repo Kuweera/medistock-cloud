@@ -478,6 +478,23 @@
       <button class="btn-small btn-secondary" id="obCancelBtn" style="width:100%; margin-top:8px;">Cancel</button>
       <div class="msg" id="obMsg"></div>
     </div>
+    <div class="card hidden" id="cnCard">
+      <h2>Request a consumable</h2>
+      <div id="cnPlanLine" class="pt-meta"></div>
+      <div class="hint2">Consumables are items in your main stock, the same list used for selling. Pick one; the pharmacy or stores person supplies it and the stock and money are handled there.</div>
+      <label for="cnSearch">Find the item in your stock *</label>
+      <input id="cnSearch" type="text" placeholder="Type a name, generic name or class" autocomplete="off">
+      <label class="chk" style="display:flex;gap:8px;align-items:center;margin:6px 0;"><input type="checkbox" id="cnOnly" style="width:auto;"> <span>Only first aid / consumable items</span></label>
+      <div id="cnResults"></div>
+      <div id="cnPicked" class="cand hidden"></div>
+      <label for="cnQty">Quantity needed *</label>
+      <input id="cnQty" type="number" min="0" step="any" inputmode="decimal" placeholder="How many">
+      <label for="cnNote">Note for the person who supplies it</label>
+      <textarea id="cnNote" rows="2" placeholder="Optional"></textarea>
+      <div id="cnMsg" class="msg"></div>
+      <button class="btn-primary" id="cnSaveBtn">Send request</button>
+      <button class="btn-small btn-secondary" id="cnCancelBtn" style="width:100%; margin-top:8px;">Cancel</button>
+    </div>
     <div id="planList"></div>
   </div>
 
@@ -1070,6 +1087,40 @@
   function rxUpdateOp(rx, status, reason, extra) {
     return ["u", doc(db, "prescriptions", rx.id), Object.assign({ status: status, endedAt: serverTimestamp(), endedBy: me.id, endReason: reason }, extra || {}, upd()), "keep", "optional"];
   }
+  // ---------- Stage 6: consumables are ordinary stock items (drugs/batches). The clinician requests; the pharmacy/stores person supplies through the same dispensing engine. ----------
+  let cnPlan = null, cnPick = null;
+  const CONS_CLASS = /consumable|first aid|suppl|dressing|disposable/i;
+  const isConsItem = d => CONS_CLASS.test(String(d.drugClass || ""));
+  const stockLine = d => { const n = Number(d.currentStockBase) || 0; return n > 0 ? "In stock: " + n + " " + (d.baseUnit || "") : "None in stock now"; };
+  function openConsumable(planId) {
+    const plan = plans.find(p => p.id === planId); if (!plan) return; cnPlan = planId; cnPick = null; closeOrder();
+    $("cnCard").classList.remove("hidden"); $("cnPlanLine").textContent = "Plan: " + plan.title; $("cnSearch").value = ""; $("cnQty").value = ""; $("cnNote").value = ""; $("cnMsg").textContent = ""; $("cnPicked").classList.add("hidden");
+    $("cnOnly").checked = drugs.some(isConsItem); renderCnResults(); $("cnCard").scrollIntoView({ block: "start" });
+  }
+  function closeConsumable() { cnPlan = null; cnPick = null; $("cnCard").classList.add("hidden"); }
+  // same matching as selling: name, generic name or class contains the typed text
+  function renderCnResults() {
+    const q = $("cnSearch").value.trim().toLowerCase(), only = $("cnOnly").checked;
+    const list = drugs.filter(d => (!only || isConsItem(d)) && (!q || [d.name, d.generic, d.drugClass].some(x => String(x || "").toLowerCase().indexOf(q) >= 0))).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 12);
+    $("cnResults").innerHTML = list.length ? list.map(d => '<button type="button" class="cand" style="width:100%;text-align:left;" data-cnpick="' + esc(d.id) + '"><div class="pt-name">' + esc(d.name) + '</div><div class="pt-meta">' + esc(d.drugClass || "No class") + " · " + esc(stockLine(d)) + "</div></button>").join("") : '<div class="empty">No matching item in stock. Add it in Inventory first.</div>';
+    $("cnPicked").classList.toggle("hidden", !cnPick); if (cnPick) $("cnPicked").innerHTML = '<div class="pt-name">Selected: ' + esc(cnPick.name) + '</div><div class="pt-meta">' + esc(stockLine(cnPick)) + (Number(cnPick.currentStockBase) > 0 ? "" : ". You can still send the request; the supplier will see there is none.") + "<br>Quantity is counted in: " + esc(cnPick.baseUnit || "units") + "</div>";
+  }
+  function saveConsumable() {
+    const m = $("cnMsg"); m.className = "msg"; m.textContent = "";
+    const plan = plans.find(p => p.id === cnPlan); if (!plan || plan.status !== "active" || !isOpen()) { m.className = "msg err"; m.textContent = "This plan is not open for new orders."; return; }
+    if (!cnPick) { m.className = "msg err"; m.textContent = "Pick an item from your stock."; return; }
+    const qty = Number($("cnQty").value); if (!(qty > 0)) { m.className = "msg err"; m.textContent = "Enter how many are needed (more than 0)."; return; }
+    const d = cnPick, oref = doc(collection(db, "pc_treatment_orders")), now = Date.now(), note = $("cnNote").value.trim();
+    const order = Object.assign(stamp(), { planId: plan.id, encounterId: encId, patientId: enc.patientId, patientName: enc.patientName, encounterNo: enc.encounterNo, kind: "consumable", version: 1, supersedes: null, status: "active",
+      prescriberId: me.id, prescriberName: myName, prescribedAt: now, scheduleType: "once", sched: {}, startAt: now, tz: (facility && facility.timezone) || "Africa/Kampala", totalEvents: 0,
+      medicineId: d.id, medicineName: d.name, generic: d.generic || "", quantityPrescribed: qty, quantityUnit: d.baseUnit || "", instructions: note, warnings: [] });
+    const rx = Object.assign(stamp(), { id: oref.id, orderId: oref.id, patientId: enc.patientId, patientName: enc.patientName, encounterId: encId, encounterNo: enc.encounterNo, planId: plan.id,
+      status: "pending", qtyPrescribed: qty, qtyDispensed: 0, qtyOutstanding: qty, qtyUnknown: false, qtySetBy: "prescriber", qtyReturned: 0, lastRequestId: null, qtyUnit: d.baseUnit || "",
+      drugId: d.id, drugName: d.name, prescribedName: d.name, medicineName: d.name, instructions: note, prescriberId: me.id, prescriberName: myName, prescribedAt: now, orderVersion: 1, supersedes: null });
+    commitOps([["s", oref, order], ["s", doc(db, "prescriptions", oref.id), rx, "keep"], auditOp("order.add", "pc_treatment_orders/" + oref.id, { name: d.name, kind: "consumable", qty: qty })]);
+    closeConsumable();
+    ok("Consumable requested: " + qty + " " + (d.baseUnit || "") + " of " + d.name + ". Next step: it is now in the pharmacy / stores queue as a pending request. Nothing has been supplied yet.");
+  }
   // ---------- Stage 5: administrationMode (rules v22/v23). Care setting and medicine route are separate; this says WHO records WHAT. ----------
   const MODE_LABEL = { take_home: "Take-home", facility_administered: "Given at the facility", inpatient_mar: "Ward chart (MAR)" };
   const MODE_OPTS = { take_home: "Patient takes it home: the pharmacy supplies it, staff do not record each dose", facility_administered: "Given at the facility on scheduled visits: attendance and each dose are recorded", inpatient_mar: "Given on the ward: each dose is recorded on the administration chart (MAR)" };
@@ -1105,31 +1156,31 @@
   }
   // what the pharmacy has done with a medicine order (information only; it never means the patient took it)
   function rxInfo(o) {
-    if (o.kind === "procedure") return null; const rx = rxOf(o.id); if (!rx) return null;
+    if (o.kind === "procedure") return null; const rx = rxOf(o.id); if (!rx) return null; const cons = o.kind === "consumable";
     const n = rxDispensed(rx), q = Number(rx.qtyPrescribed) || 0, u = rx.qtyUnit ? " " + rx.qtyUnit : "";
-    if (rx.status === "pending") return { chip: "At pharmacy: not dispensed yet", cls: "warn", text: "Sent to the pharmacy. Nothing has been dispensed yet." + (rx.qtyUnknown ? " The pharmacy will state the quantity." : "") };
-    if (rx.status === "partially_dispensed") return { chip: "Partly dispensed " + n + "/" + q, cls: "warn", text: n + u + " of " + q + u + " dispensed, " + Math.max(0, q - n) + u + " still outstanding." };
-    if (rx.status === "completed") return { chip: "Fully dispensed", cls: "ok", text: "Fully dispensed by the pharmacy (" + n + u + ")." };
+    if (rx.status === "pending") return { chip: cons ? "At supplies: not issued yet" : "At pharmacy: not dispensed yet", cls: "warn", text: cons ? "Requested from the pharmacy / stores. Nothing has been supplied yet." : "Sent to the pharmacy. Nothing has been dispensed yet." + (rx.qtyUnknown ? " The pharmacy will state the quantity." : "") };
+    if (rx.status === "partially_dispensed") return { chip: (cons ? "Partly supplied " : "Partly dispensed ") + n + "/" + q, cls: "warn", text: n + u + " of " + q + u + (cons ? " supplied, " : " dispensed, ") + Math.max(0, q - n) + u + " still outstanding." };
+    if (rx.status === "completed") return { chip: cons ? "Supplied" : "Fully dispensed", cls: "ok", text: cons ? "Fully supplied (" + n + u + ")." : "Fully dispensed by the pharmacy (" + n + u + ")." };
     if (rx.status === "cancelled") return { chip: "Pharmacy order cancelled", cls: "", text: "The pharmacy prescription was cancelled" + (rx.endReason ? ": " + rx.endReason : "") + ". Nothing was dispensed." };
     if (rx.status === "superseded") return { chip: "Replaced at pharmacy", cls: "", text: "Replaced by a newer version of this order." };
     return null;
   }
   function orderHtml(o, p) {
     const evs = evsOf(o.id), cnt = s => evs.filter(e => e.status === s).length;
-    const active = o.status === "active", canRx = can("treatment.prescribe"), med = o.kind !== "procedure", open = !!expandedOrd[o.id];
+    const active = o.status === "active", canRx = can("treatment.prescribe"), cons = o.kind === "consumable", med = o.kind === "medicine", open = !!expandedOrd[o.id];
     const st = { active: "Active", stopped: "Stopped", completed: "Completed", superseded: "Replaced by a newer version", cancelled: "Cancelled" }[o.status] || o.status;
     const sp = orderSpan(o), endedMs = ordMs(o.endedAt), ri = rxInfo(o);
-    const dur = o.scheduleType === "prn" ? "As needed" : o.scheduleType === "once" ? "Single dose" : sp.days == null ? "—" : sp.days < 1 ? "—" : sp.days + " day" + (sp.days === 1 ? "" : "s");
-    const endTxt = active ? (o.scheduleType === "prn" ? "No fixed end" : dOnly(sp.endMs, o.tz)) : (endedMs ? dOnly(endedMs, o.tz) : "just now");
-    const fields = [med ? ["Dose", esc(o.doseValue) + " " + esc(o.doseUnit || "")] : ["Type", esc(o.category ? String(o.category).charAt(0).toUpperCase() + String(o.category).slice(1) : "Procedure")], med ? ["Route", esc(o.route || "—")] : ["Responsible", esc(o.responsible || "—")],
-      ["Frequency", esc(PCS.describe(o))], ["Duration", esc(dur)], ["Starts", esc(dOnly(o.startAt, o.tz))], [active ? "Ends" : st === "Replaced by a newer version" ? "Replaced" : "Ended", esc(endTxt)], ["Care setting", esc(SET_LABEL[p && p.careSetting] || "—")], ["Status", esc(st)]];
-    let h = '<div class="cand ord" style="' + (active ? "" : "opacity:.8;") + '"><div class="pt-name">' + (med ? esc(o.medicineName) + (o.strength ? " " + esc(o.strength) : "") : esc(o.procedureName)) + ' <span class="chip ' + (active ? "ok" : "") + '">' + esc(st) + "</span>" +
+    const dur = cons ? "Single request" : o.scheduleType === "prn" ? "As needed" : o.scheduleType === "once" ? "Single dose" : sp.days == null ? "—" : sp.days < 1 ? "—" : sp.days + " day" + (sp.days === 1 ? "" : "s");
+    const endTxt = cons && active ? "When supplied" : active ? (o.scheduleType === "prn" ? "No fixed end" : dOnly(sp.endMs, o.tz)) : (endedMs ? dOnly(endedMs, o.tz) : "just now");
+    const fields = [cons ? ["Item", esc(o.medicineName)] : med ? ["Dose", esc(o.doseValue) + " " + esc(o.doseUnit || "")] : ["Type", esc(o.category ? String(o.category).charAt(0).toUpperCase() + String(o.category).slice(1) : "Procedure")], cons ? ["Quantity", esc(o.quantityPrescribed) + " " + esc(o.quantityUnit || "")] : med ? ["Route", esc(o.route || "—")] : ["Responsible", esc(o.responsible || "—")],
+      ["Frequency", cons ? "Once" : esc(PCS.describe(o))], ["Duration", esc(dur)], ["Starts", esc(dOnly(o.startAt, o.tz))], [active ? "Ends" : st === "Replaced by a newer version" ? "Replaced" : "Ended", esc(endTxt)], ["Care setting", esc(SET_LABEL[p && p.careSetting] || "—")], ["Status", esc(st)]];
+    let h = '<div class="cand ord" style="' + (active ? "" : "opacity:.8;") + '"><div class="pt-name">' + (o.kind === "procedure" ? esc(o.procedureName) : esc(o.medicineName) + (o.strength ? " " + esc(o.strength) : "")) + (cons ? ' <span class="chip">Consumable</span>' : "") + ' <span class="chip ' + (active ? "ok" : "") + '">' + esc(st) + "</span>" +
       (o.version > 1 ? ' <span class="chip">Version ' + esc(o.version) + "</span>" : "") + (o.administrationMode ? ' <span class="chip">' + esc(MODE_LABEL[o.administrationMode] || o.administrationMode) + "</span>" : "") + (ri ? ' <span class="chip ' + ri.cls + '">' + esc(ri.chip) + "</span>" : "") +
       (o.scheduleType === "weight" ? ' <span class="chip warn">Weight-based</span>' : "") + (o.dosingCheck === "not_checked" ? ' <span class="chip warn">Dose not automatically checked</span>' : "") + "</div>" +
       '<div class="ordgrid">' + fields.map(f => '<div><span class="l">' + f[0] + "</span><span class=\"v\">" + f[1] + "</span></div>").join("") + "</div>";
     if (open) {
-      h += '<div class="pt-meta" style="margin-top:8px;">' + (o.instructions ? esc(PCAB.expandText(o.instructions)) + "<br>" : "") + (!med && o.materials ? "Materials: " + esc(o.materials) + "<br>" : "") +
-        (o.administrationMode === "take_home" ? "Take-home: the pharmacy supplies it and the patient takes it at home. Staff do not record each dose." : o.scheduleType === "prn" ? "As needed: " + esc(evs.length) + " planned entries; PRN doses are recorded on the Treatment screen." : "Planned " + esc(o.totalEvents || evs.length) + " · written " + evs.length + " · given " + cnt("administered") + (o.administrationMode === "facility_administered" ? " · arrived " + evs.filter(e => e.attendance === "attended").length + " · did not attend " + evs.filter(e => e.attendance === "did_not_attend").length : "") + " · pending " + cnt("pending") + (cnt("held") ? " · held " + cnt("held") : "") + ((cnt("missed") + cnt("refused") + cnt("not_given")) ? " · not given or missed " + (cnt("missed") + cnt("refused") + cnt("not_given")) : "") + (cnt("cancelled") ? " · cancelled " + cnt("cancelled") : "")) +
+      h += '<div class="pt-meta" style="margin-top:8px;">' + (o.instructions ? esc(PCAB.expandText(o.instructions)) + "<br>" : "") + (o.kind === "procedure" && o.materials ? "Materials: " + esc(o.materials) + "<br>" : "") +
+        (cons ? "Requested from stock. The pharmacy or stores person supplies it; stock and money are recorded there." : o.administrationMode === "take_home" ? "Take-home: the pharmacy supplies it and the patient takes it at home. Staff do not record each dose." : o.scheduleType === "prn" ? "As needed: " + esc(evs.length) + " planned entries; PRN doses are recorded on the Treatment screen." : "Planned " + esc(o.totalEvents || evs.length) + " · written " + evs.length + " · given " + cnt("administered") + (o.administrationMode === "facility_administered" ? " · arrived " + evs.filter(e => e.attendance === "attended").length + " · did not attend " + evs.filter(e => e.attendance === "did_not_attend").length : "") + " · pending " + cnt("pending") + (cnt("held") ? " · held " + cnt("held") : "") + ((cnt("missed") + cnt("refused") + cnt("not_given")) ? " · not given or missed " + (cnt("missed") + cnt("refused") + cnt("not_given")) : "") + (cnt("cancelled") ? " · cancelled " + cnt("cancelled") : "")) +
         (ri ? "<br>" + esc(ri.text) + (active ? " Dispensing is not the same as giving the dose: doses given are recorded on Treatment &amp; MAR." : "") : "") +
         "<br>Prescribed by " + esc(o.prescriberName || "") + " · " + esc(stampText(null, o.prescribedAt)) + (o.endReason ? "<br>" + (o.status === "completed" ? "Completed" : o.status === "superseded" ? "Replaced" : "Stopped") + (o.endedByName ? " by " + esc(o.endedByName) : "") + ": " + esc(o.endReason) : "") + "</div>" +
         '<div class="pt-meta" style="margin-top:4px;">' + (o.dosingCheck === "rule" ? '<span class="chip ok">Checked against dosing rule' + (o.checkedRuleVersion ? " v" + esc(o.checkedRuleVersion) : "") + "</span> " : "") +
@@ -1139,10 +1190,11 @@
     }
     const acts = [];
     if (open) {
-      if (evs.length) acts.push('<button class="btn-small btn-secondary" data-oplan="' + esc(o.id) + '">' + (showPlanned[o.id] ? "Hide" : "Show") + " planned times</button>");
+      if (evs.length && !cons) acts.push('<button class="btn-small btn-secondary" data-oplan="' + esc(o.id) + '">' + (showPlanned[o.id] ? "Hide" : "Show") + " planned times</button>");
       if (active && canRx && o.scheduleType !== "prn" && (o.totalEvents || 0) > evs.length) acts.push('<button class="btn-small btn-secondary" data-oext="' + esc(o.id) + '">Write the next days</button>');
-      if (active && canRx && isOpen()) acts.push('<button class="btn-small btn-secondary" data-ochg="' + esc(o.id) + '">Change (new version)</button>');
-      if (active && canRx) acts.push('<button class="btn-small btn-secondary" data-ostop="' + esc(o.id) + '">Stop (discontinue early)</button><button class="btn-small btn-secondary" data-odone="' + esc(o.id) + '">Complete (course finished)</button>');
+      if (active && canRx && isOpen() && !cons) acts.push('<button class="btn-small btn-secondary" data-ochg="' + esc(o.id) + '">Change (new version)</button>');
+      if (active && canRx && cons) acts.push('<button class="btn-small btn-secondary" data-ostop="' + esc(o.id) + '">Cancel request (not needed)</button>');
+      else if (active && canRx) acts.push('<button class="btn-small btn-secondary" data-ostop="' + esc(o.id) + '">Stop (discontinue early)</button><button class="btn-small btn-secondary" data-odone="' + esc(o.id) + '">Complete (course finished)</button>');
     }
     return h + (acts.length ? '<div class="op-actions">' + acts.join("") + "</div>" : "") + '<div class="op-actions"><button class="btn-small btn-secondary" data-oxp="' + esc(o.id) + '" aria-expanded="' + open + '">' + (open ? "Hide details" : (active && canRx ? "Details and actions" : "Details")) + "</button></div></div>";
   }
@@ -1157,7 +1209,7 @@
         '<div class="pt-meta">' + esc(SET_LABEL[p.careSetting] || "") + " · started " + esc(stampText(null, p.startAt)) + (p.expectedEnd ? " · expected end " + esc(PCF.toTyped(p.expectedEnd)) : "") + (p.reviewDate ? " · review " + esc(PCF.toTyped(p.reviewDate)) : "") + " · by " + esc(p.prescriberName || "") +
         ((p.diagnosisNames || []).length ? "<br>For: " + p.diagnosisNames.map(esc).join(", ") : "") + (p.clinicalNotes ? "<br>" + esc(p.clinicalNotes) : "") + (p.endReason ? "<br>Ended: " + esc(p.endReason) : "") + "</div>" +
         (os.length ? os.map(o => orderHtml(o, p)).join("") : '<div class="empty">No orders in this plan yet.</div>') +
-        (active && canRx ? '<div class="op-actions">' + (isOpen() ? '<button class="btn-small btn-primary" data-addmed="' + esc(p.id) + '">Add medicine</button><button class="btn-small btn-primary" data-addproc="' + esc(p.id) + '">Add procedure</button>' : "") +
+        (active && canRx ? '<div class="op-actions">' + (isOpen() ? '<button class="btn-small btn-primary" data-addmed="' + esc(p.id) + '">Add medicine</button><button class="btn-small btn-primary" data-addproc="' + esc(p.id) + '">Add procedure</button><button class="btn-small btn-primary" data-addcons="' + esc(p.id) + '">Add consumable</button>' : "") +
           '<button class="btn-small btn-secondary" data-pdone="' + esc(p.id) + '">Complete plan</button><button class="btn-small btn-secondary" data-pstop="' + esc(p.id) + '">Stop plan</button></div>' : "") + "</div>";
     }).join("") : '<div class="card"><div class="empty">No treatment plan yet for this patient.</div></div>';
   }
@@ -1377,7 +1429,7 @@
       // The pharmacy fills both at the first dispensing. lastRequestId null is written so the later-dispensing rule can compare it.
       const qty = order.quantityPrescribed > 0 ? Number(order.quantityPrescribed) : 0;
       ops.push(["s", doc(db, "prescriptions", oref.id), Object.assign(stamp(), { id: oref.id, orderId: oref.id, patientId: enc.patientId, patientName: enc.patientName, encounterId: encId, encounterNo: enc.encounterNo, planId: plan.id,
-        status: "pending", qtyPrescribed: qty, qtyDispensed: 0, qtyOutstanding: qty, qtyUnknown: qty === 0, qtySetBy: "prescriber", qtyReturned: 0, lastRequestId: null,
+        status: "pending", qtyPrescribed: qty, qtyDispensed: 0, qtyOutstanding: qty, qtyUnknown: qty === 0, qtySetBy: "prescriber", qtyReturned: 0, lastRequestId: null, qtyUnit: d ? (d.baseUnit || "") : "",
         drugId: d ? d.id : null, drugName: d ? d.name : name, prescribedName: name, medicineName: name, formulation: order.formulation || "", strength: order.strength || "", route: order.route || "",
         dose: order.doseValue + (order.doseUnit ? " " + order.doseUnit : ""), instructions: order.instructions || "", prescriberId: me.id, prescriberName: myName, prescribedAt: order.prescribedAt, orderVersion: order.version, supersedes: order.supersedes || null }), "keep"]);
     }
@@ -1395,8 +1447,8 @@
   }
   // What happens to the pharmacy prescription when its order ends. Returns { ops: [optional prescription update], text }.
   function rxEnding(o, status, reason) {
-    if (o.kind !== "medicine") return { ops: [], text: "" };
-    const rx = rxOf(o.id), n = rxDispensed(rx), word = status === "stopped" ? "stopped" : "completed";
+    if (o.kind === "procedure") return { ops: [], text: "" };
+    const rx = rxOf(o.id), n = rxDispensed(rx), word = status === "stopped" ? (o.kind === "consumable" ? "cancelled" : "stopped") : "completed";
     if (!rx) return { ops: [], text: " The pharmacy will see that this order is " + word + "." };
     if (rxCancellable(rx)) return { ops: [rxUpdateOp(rx, "cancelled", reason)], text: " Nothing had been dispensed, so the pharmacy prescription is cancelled." };
     if (n > 0) return { ops: [], text: " " + n + " " + (rx.qtyUnit || "") + " of " + (rx.qtyPrescribed || "?") + " had already been dispensed and stays on record. The pharmacy will show it as " + (status === "stopped" ? "stopped, do not dispense" : "completed, do not dispense more") + "." };
@@ -1414,7 +1466,7 @@
     const cx = evsOf(id).filter(e => e.status === "pending" || e.status === "held");
     cx.forEach(e => ops.push(["u", doc(db, "pc_treatment_events", e.id), Object.assign({ status: "cancelled", cancelReason: (stopped ? "Order stopped: " : "Order completed: ") + reason }, upd())]));
     const future = cx.length ? " " + cx.length + " planned administration" + (cx.length === 1 ? "" : "s") + " cancelled." : "";
-    const msg = stopped ? "STOPPED before the course finished: " + name + ". Reason saved: " + reason + "." + future + rxe.text + " The order and every dose already given are kept."
+    const msg = stopped && o.kind === "consumable" ? "CANCELLED, no longer needed: " + name + ". Reason saved: " + reason + "." + rxe.text + " The request and anything already supplied are kept." : stopped ? "STOPPED before the course finished: " + name + ". Reason saved: " + reason + "." + future + rxe.text + " The order and every dose already given are kept."
                         : "COMPLETED, the course has finished: " + name + "." + future + rxe.text + " The order history is kept.";
     commitOps(ops, fell => { if (fell) { const el = $("doneMsg"); el.className = "msg ok"; el.textContent = (stopped ? "STOPPED: " : "COMPLETED: ") + name + ". The pharmacy had already started dispensing, so its prescription was not changed and will show this order as " + (stopped ? "stopped, do not dispense" : "completed") + "."; } });
     ok(msg);
@@ -1597,6 +1649,8 @@
   $("pSaveBtn").onclick = savePlan; $("obSaveBtn").onclick = saveOrder; $("obCancelBtn").onclick = closeOrder;
   $("obType").addEventListener("change", renderSchedFields);
   $("obMode").addEventListener("change", showModeHelp);
+  $("cnSearch").addEventListener("input", renderCnResults); $("cnOnly").addEventListener("change", renderCnResults); $("cnSaveBtn").addEventListener("click", saveConsumable); $("cnCancelBtn").addEventListener("click", closeConsumable);
+  $("cnResults").addEventListener("click", ev => { const b = ev.target.closest("[data-cnpick]"); if (!b) return; cnPick = drugs.find(x => x.id === b.dataset.cnpick) || null; renderCnResults(); $("cnQty").focus(); });
   $("obAbbr").addEventListener("input", () => { const x = PCAB.explain($("obAbbr").value); $("obAbbrHelp").innerHTML = x.text ? '<span style="color:' + (x.ok ? "var(--accent)" : "var(--warn)") + '">' + esc(x.text) + "</span>" : ""; });
   $("obAbbr").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); applyAbbrev(); } });
   $("abbrList").innerHTML = PCAB.all().filter(a => a.kind === "frequency" || a.kind === "timing").map(a => '<option value="' + esc(a.abbr) + '">' + esc(a.meaning) + "</option>").join("");
@@ -1618,13 +1672,14 @@
     const t = e.target.closest("button"); if (!t) return; const ds = t.dataset;
     if (ds.addmed) openOrder(ds.addmed, "medicine", null);
     else if (ds.addproc) openOrder(ds.addproc, "procedure", null);
+    else if (ds.addcons) openConsumable(ds.addcons);
     else if (ds.pdone) endPlan(ds.pdone, "completed");
     else if (ds.pstop) endPlan(ds.pstop, "stopped");
     else if (ds.oxp) { expandedOrd[ds.oxp] = !expandedOrd[ds.oxp]; renderTreat(); }
     else if (ds.oplan) { showPlanned[ds.oplan] = !showPlanned[ds.oplan]; renderTreat(); }
     else if (ds.oext) extendOrder(ds.oext);
     else if (ds.ochg) { const o = tOrders.find(x => x.id === ds.ochg); if (o) openOrder(o.planId, o.kind, o); }
-    else if (ds.ostop) { const r = (window.prompt("STOP this order (discontinue before the course finishes). Why is it being stopped?") || "").trim(); if (r.length < 3) { if (r) alert("Please give a short reason."); } else stopOrder(ds.ostop, "stopped", r); }
+    else if (ds.ostop) { const r = (window.prompt((tOrders.find(x => x.id === ds.ostop) || {}).kind === "consumable" ? "Cancel this consumable request. Why is it not needed?" : "STOP this order (discontinue before the course finishes). Why is it being stopped?") || "").trim(); if (r.length < 3) { if (r) alert("Please give a short reason."); } else stopOrder(ds.ostop, "stopped", r); }
     else if (ds.odone) { const oo = tOrders.find(x => x.id === ds.odone), rr = oo && oo.kind === "medicine" ? rxOf(oo.id) : null;
       if (window.confirm("Mark this " + (oo && oo.kind === "procedure" ? "procedure" : "medicine") + " as COMPLETED? This means the intended course has finished. Pending administrations will be cancelled." + (rxCancellable(rr) ? "\n\nNothing has been dispensed yet, so the pharmacy prescription will be cancelled. Use Stop if the treatment is being discontinued." : "") + "\n\n(Completing a single medicine does not complete the whole plan.)")) stopOrder(ds.odone, "completed", "Course completed"); }
   });

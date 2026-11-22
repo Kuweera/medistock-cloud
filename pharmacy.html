@@ -274,6 +274,7 @@
 
   function chipsOf(r) {
     const i = info(r); let c = "";
+    if (r.order && r.order.kind === "consumable") c += '<span class="chip">Consumable</span>';
     if (r.order && !r.order.medicineId && !(r.rx && r.rx.drugId)) c += '<span class="chip warn">Not linked to stock list</span>';
     if (r.group !== "done" && r.group !== "stopped" && !r.q.known) c += '<span class="chip warn">No quantity stated</span>';
     if (r.order && r.order.warnings && r.order.warnings.length) c += '<span class="chip warn">Prescriber warning</span>';
@@ -325,7 +326,7 @@
     } else body = g.rows.map(cardHtml).join("");
     return '<div class="rxgroup" data-g="' + esc(g.key) + '"><div class="rxhead"><div class="pt-name">' + esc(i.patientName) + (reg ? " · " + esc(reg) : "") + "</div>" +
       '<div class="pt-meta">Prescription from ' + (i.encounterNo ? "Visit " + esc(i.encounterNo) : "a visit with no number") + " · " + esc((facility && facility.name) || "") + (prescribers ? " · Prescriber: " + esc(prescribers) : "") + (i.prescribedAt ? " · " + esc(fmtWhen(i.prescribedAt)) : "") +
-      "<br>" + g.rows.length + " medicine" + (g.rows.length === 1 ? "" : "s") + (parts.length ? ": " + esc(parts.join(", ")) : "") + "</div></div>" + body + "</div>";
+      "<br>" + g.rows.length + (g.rows.some(r => r.order && r.order.kind === "consumable") ? " item" : " medicine") + (g.rows.length === 1 ? "" : "s") + (parts.length ? ": " + esc(parts.join(", ")) : "") + "</div></div>" + body + "</div>";
   }
   function resolveRegNos(rows) {
     rows.forEach(r => {
@@ -641,7 +642,7 @@
         : R.duplicate ? '<div class="info-box">This dispensing was already confirmed earlier. Nothing was taken off stock a second time.</div>' : '<div class="info-box">Confirmed by the server. Stock has been reduced.</div>') +
       '<div class="recordtext">' + esc(R.text) + "</div>" +
       '<div class="row" style="margin-top:10px"><button type="button" class="btn-small btn-secondary" data-act="share">Share / copy</button><button type="button" class="btn-small btn-secondary" data-act="print">Print</button></div>' +
-      '<button type="button" class="btn-small btn-secondary" data-act="gocons" style="margin-top:8px;width:100%">Record consumables used (optional)</button><button type="button" class="btn-primary" data-act="close">Done</button>';
+      '<button type="button" class="btn-primary" data-act="close">Done</button>';
   }
 
   // ---------------------------------------------------------------- confirming
@@ -745,7 +746,7 @@
     const use = $("consUseCard"), stock = $("consStockCard");
     if (!canUseCons() && !can("dispense.view")) { use.innerHTML = '<div class="empty">You do not have permission to use consumables.</div>'; stock.innerHTML = ""; return; }
     const act = consItems.filter(i => i.active !== false), rows = allRows().filter(r => r.rx && num(r.rx.qtyDispensed) > 0 || r.group === "waiting" || r.group === "partial");
-    let h = "<h2>Consumables used</h2><div class=\"hint2\">Pick only what was <b>actually used</b> and how many. Nothing is added for you. This is separate from the medicines dispensed and takes stock from the consumables list below.</div>";
+    let h = "<h2>Consumables used (old store)</h2><div class=\"alert-box\" id=\"consLegacy\"><b>Legacy screen.</b> New consumable requests are made by the clinician in the treatment plan (\"Add consumable\") and supplied from the prescription queue, from the main inventory. This old store is kept for existing records only; do not use it for new work.</div><div class=\"hint2\">Pick only what was <b>actually used</b> and how many. Nothing is added for you. This is separate from the medicines dispensed and takes stock from the consumables list below.</div>";
     h += '<label>For which patient / prescription (optional)</label><select id="cxOrder"><option value="">— not linked —</option>' + rows.map(r => { const i = info(r); return '<option value="' + esc(r.id) + '"' + (consCtx.orderId === r.id ? " selected" : "") + ">" + esc(i.patientName + " · " + i.medicine) + "</option>"; }).join("") + "</select>";
     h += '<label>Procedure / reason</label><input type="text" id="cxProc" value="' + esc(consCtx.procedure) + '" placeholder="e.g. IM injection, wound dressing">';
     if (consBundles.length) h += '<div class="hint2" style="margin-top:8px">Suggestions (these only fill the boxes below; you can change or clear them):</div><div class="pill-row">' + consBundles.filter(b => b.active !== false).map(b => '<button type="button" class="pill-btn" data-cx="bundle" data-b="' + esc(b.id) + '">' + esc(b.name) + "</button>").join("") + "</div>";
@@ -828,7 +829,7 @@
   // ---------------------------------------------------------------- reports
   function ensureStopped() {
     if (stoppedLoaded) return; stoppedLoaded = true;
-    ["stopped", "superseded"].forEach(st => onSnapshot(query(collection(db, "pc_treatment_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("kind", "==", "medicine"), where("status", "==", st), limit(300)), s => { s.docs.forEach(x => stoppedOrders.set(x.id, { id: x.id, ...x.data() })); renderList(); if (tab === "reports") renderReports(); }, () => {}));
+    ["stopped", "superseded"].forEach(st => onSnapshot(query(collection(db, "pc_treatment_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("kind", "in", ["medicine", "consumable"]), where("status", "==", st), limit(300)), s => { s.docs.forEach(x => stoppedOrders.set(x.id, { id: x.id, ...x.data() })); renderList(); if (tab === "reports") renderReports(); }, () => {}));
   }
   function ensureDone() {
     if (doneLoaded) return; doneLoaded = true;
@@ -864,7 +865,7 @@
     renderSync();
     const mark = s => { const b = $("netBadge"); b.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)"; b.className = "badge " + (s.metadata.fromCache ? "offline" : "online"); };
     const denied = err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view prescriptions, or the Phase 5 security rules are not published yet." : "Could not load prescriptions. Check your internet connection.") + "</div>"; };
-    onSnapshot(query(collection(db, "pc_treatment_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("kind", "==", "medicine"), where("status", "==", "active"), limit(500)), { includeMetadataChanges: true }, s => { orders = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); mark(s); renderList(); if (D && !D.result) { D.order = orders.get(D.id) || D.order; D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row; } }, denied);
+    onSnapshot(query(collection(db, "pc_treatment_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("kind", "in", ["medicine", "consumable"]), where("status", "==", "active"), limit(500)), { includeMetadataChanges: true }, s => { orders = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); mark(s); renderList(); if (D && !D.result) { D.order = orders.get(D.id) || D.order; D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row; } }, denied);
     onSnapshot(query(collection(db, "prescriptions"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "partially_dispensed"), limit(500)), s => { rxPartial = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); renderList(); if (D && !D.result) { D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row; renderAct(); } }, () => {});
     // Stage 3: prescriptions the clinician created at prescribing (status pending, nothing dispensed yet): they tell the pharmacy whether the quantity or the medicine was left open
     onSnapshot(query(collection(db, "prescriptions"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "pending"), limit(500)), s => { rxPending = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); renderList(); if (D && !D.result) { D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row; renderAct(); } }, () => {});
