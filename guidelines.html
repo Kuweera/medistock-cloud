@@ -204,8 +204,9 @@
   <div id="editorTab" class="hidden"><div class="card" id="edCard"></div></div>
 
   <div id="importTab" class="hidden">
-    <div class="card">
-      <h2>Import entries from a file</h2>
+    <div id="docImport"></div>
+    <div class="card" id="jsonImportCard">
+      <h2>Import entries from a JSON file</h2>
       <div class="hint2" style="margin-top:0">Use this to load entries that you have copied from an approved source. Nothing is invented for you: the file must contain real, sourced information. Every imported entry is saved as a <b>draft</b>, and an authorised person must check and approve it before staff can see it.</div>
       <div class="row" style="margin-top:8px"><button type="button" class="btn-small btn-secondary" id="tplBtn">Download blank template</button></div>
       <label for="impFile">Choose the file</label><input type="file" id="impFile" accept=".json,application/json">
@@ -218,6 +219,8 @@
 </div>
 
 <script src="pc-guidelines.js"></script>
+<script src="pc-import.js"></script>
+<script src="pc-import-ui.js"></script>
 <script type="module">
   const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, collection, onSnapshot, serverTimestamp, query, where, limit, writeBatch, getDocFromCache } = window.top.MC.api(window);
   async function getDoc(ref) { try { const c = await getDocFromCache(ref); if (c.exists()) return c; } catch (e) {} return _getDoc(ref); }
@@ -573,7 +576,9 @@
     if (!facility || !(Array.isArray(facility.enabledServices) && facility.enabledServices.indexOf("patient_care") >= 0)) { showGate("Patient Care is not switched on for " + esc(facility ? facility.name : "this shop") + "."); return; }
     $("shopIndicator").textContent = "Guidelines · " + facility.name;
     $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
-    $("fStatusBox").classList.toggle("hidden", !canManage()); $("tabImport").classList.toggle("hidden", !canManage());
+    $("fStatusBox").classList.toggle("hidden", !canManage()); $("tabImport").classList.toggle("hidden", !(canManage() || canApprove()));
+    $("jsonImportCard").classList.toggle("hidden", !canManage());
+    PCIUI.init({ db, doc, collection, writeBatch, serverTimestamp, getDoc, query, where, onSnapshot, stamp, commit, note, friendlyError: PCG.friendlyError, ctx: () => ({ me, myName, businessId, facilityId }), canManage, canApprove });
     const mark = s => { const b = $("netBadge"); b.textContent = s.metadata.fromCache ? "offline (saved copy)" : "online (synced)"; b.className = "badge " + (s.metadata.fromCache ? "offline" : "online"); };
     const rows = s => s.docs.map(x => ({ id: x.id, ...x.data(), _pending: !!(x.metadata && x.metadata.hasPendingWrites) }));
     const denied = err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to open the guidelines, or the Guidelines security rules are not published yet." : "Could not load the guidelines. Check your internet connection.") + "</div>"; };
