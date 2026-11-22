@@ -125,6 +125,9 @@ Where a field is explained on the screen itself (a short grey line under the box
 | Strength | Optional | The strength, for example 500 mg. |
 | How much for each dose? | Required (*) | How much the patient takes each time. |
 | Unit of the dose | Required (*) | The unit of the dose, for example tablet or ml. |
+| Find the item in your stock | Required (*) | Search the main stock list, the same list used for selling, by name, generic name or class. A consumable is an ordinary stock item (for example class "First aid / Consumable"). You cannot type an item that is not in stock; add it in Inventory first. |
+| Quantity needed | Required (*) | How many of the item are needed, counted in the unit shown under the item (for example Piece). The pharmacy or stores person supplies it, and stock and money are recorded at that point. |
+| Note for the person who supplies it | Optional | Anything the supplier should know, for example what the item is for. |
 | How will this treatment be given? | Required (*) | Who records what. **Take-home**: the pharmacy supplies it and staff do not record each dose. **Given at the facility**: planned visits are created, staff record arrival or non-attendance and then what was given. **Given on the ward**: each dose is recorded on the administration chart. It starts from the care setting of the plan and does not depend on the route. |
 | How is it given? | Required (*) | How the medicine enters the body. |
 | Procedure (type or choose) | Required (*) | The procedure to order. Choose from the list or type a name. |
