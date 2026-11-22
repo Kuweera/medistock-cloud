@@ -619,3 +619,88 @@ test("v22 administrationMode: optional on a new order; only the three agreed val
   await assertFails(updateDoc(doc(f, "pc_treatment_orders", "m1"), { administrationMode: "inpatient_mar", updatedBy: "prescriber", updatedAt: serverTimestamp() }));
   await assertSucceeds(updateDoc(doc(f, "pc_treatment_orders", "m1"), { status: "stopped", endedBy: "prescriber", endedAt: serverTimestamp(), endReason: "not needed", updatedBy: "prescriber", updatedAt: serverTimestamp() }));
 });
+
+// ======================= v23 (Lead): attendance for facility-administered doses; consumables as orders (Option B) =======================
+async function seed23(mode, evStatus, evExtra) {
+  await seedV19();
+  await env.withSecurityRulesDisabled(async ctx => {
+    const f = ctx.firestore();
+    await setDoc(doc(f, "pc_treatment_orders", "o23"), Object.assign(orderDoc("prescriber"), { createdAt: new Date() }, mode === null ? {} : { administrationMode: mode }));
+    await setDoc(doc(f, "pc_treatment_events", "o23_a"), Object.assign({ businessId: B, facilityId: A, orderId: "o23", patientId: "p1", status: evStatus || "pending", idKey: "a", plannedAt: 1700000000000, plannedDay: "2026-11-20" }, evExtra || {}));
+  });
+}
+const arrive23 = (uid, extra) => updateDoc(doc(db(uid), "pc_treatment_events", "o23_a"), Object.assign({ attendance: "attended", attendanceAt: 1700000100000, attendanceBy: uid, attendanceByName: uid, updatedAt: serverTimestamp(), updatedBy: uid }, extra || {}));
+function dna23(uid, o) {
+  o = o || {};
+  const f = db(uid), b = writeBatch(f);
+  if (!o.noMar) b.set(doc(f, "pc_mar_records", "mr23"), Object.assign(stamp(uid), { orderId: "o23", eventId: "o23_a", patientId: "p1", outcome: "missed", omissionReason: o.reason === undefined ? "did not come" : o.reason, attendance: "did_not_attend", status: "active", administeredBy: uid, actualAt: 1700000200000 }, o.mar || {}));
+  b.update(doc(f, "pc_treatment_events", "o23_a"), Object.assign({ status: "missed", lastRecordId: "mr23", actualAt: 1700000200000, administeredBy: uid, administeredByName: uid, attendance: "did_not_attend", attendanceAt: 1700000200000, attendanceBy: uid, attendanceByName: uid, updatedAt: serverTimestamp(), updatedBy: uid }, o.ev || {}));
+  return b.commit();
+}
+test("v23 attendance: arrival on a pending facility-administered dose is allowed for treatment.administer and keeps the status pending; undo is allowed", async () => {
+  await seed23("facility_administered");
+  await assertSucceeds(arrive23("nurse"));
+  await assertSucceeds(updateDoc(doc(db("nurse"), "pc_treatment_events", "o23_a"), { attendance: null, updatedAt: serverTimestamp(), updatedBy: "nurse" }));
+});
+test("v23 attendance: arrival is refused for take_home, inpatient_mar and missing-mode orders, for non-pending events, for users without treatment.administer, for another uid, with status change or extra keys", async () => {
+  for (const mode of ["take_home", "inpatient_mar", null]) { await seed23(mode); await assertFails(arrive23("nurse")); await env.clearFirestore(); }
+  await seed23("facility_administered", "administered"); await assertFails(arrive23("nurse")); await env.clearFirestore();
+  await seed23("facility_administered");
+  await assertFails(arrive23("prescriber"));                                   // no treatment.administer
+  await assertFails(arrive23("nurse", { attendanceBy: "prescriber" }));         // someone else's uid
+  await assertFails(arrive23("nurse", { status: "administered" }));             // status change
+  await assertFails(arrive23("nurse", { actualDoseValue: 5 }));                 // extra key
+  await assertFails(arrive23("nurse", { attendance: "maybe" }));
+});
+test("v23 attendance: DID NOT ATTEND needs its MAR record (missed, reason of 3+ characters) in the same commit and a facility-administered pending dose", async () => {
+  await seed23("facility_administered");
+  await assertSucceeds(dna23("nurse"));
+});
+test("v23 attendance: did-not-attend refused without the MAR record, with a short reason, after arrival, with another status, or on a non-facility order", async () => {
+  await seed23("facility_administered"); await assertFails(dna23("nurse", { noMar: true })); await env.clearFirestore();
+  await seed23("facility_administered"); await assertFails(dna23("nurse", { reason: "ab" })); await env.clearFirestore();
+  await seed23("facility_administered", "pending", { attendance: "attended", attendanceBy: "nurse", attendanceAt: 1 }); await assertFails(dna23("nurse")); await env.clearFirestore();
+  await seed23("facility_administered"); await assertFails(dna23("nurse", { ev: { status: "refused" }, mar: { outcome: "refused" } })); await env.clearFirestore();
+  await seed23("inpatient_mar"); await assertFails(dna23("nurse")); await env.clearFirestore();
+  await seed23("facility_administered"); await assertFails(dna23("nurse", { mar: { attendance: "attended" } }));
+});
+test("v23 attendance: the administration record may carry attendance only as did_not_attend with outcome missed", async () => {
+  await seed23("facility_administered");
+  const f = db("nurse"), mk = (id, extra) => setDoc(doc(f, "pc_mar_records", id), Object.assign(stamp("nurse"), { orderId: "o23", eventId: "o23_a", patientId: "p1", outcome: "missed", omissionReason: "no show", status: "active", administeredBy: "nurse", actualAt: 1 }, extra));
+  await assertFails(mk("x1", { attendance: "attended" }));
+  await assertFails(mk("x2", { attendance: "did_not_attend", outcome: "refused" }));
+  await assertSucceeds(mk("x3", { attendance: "did_not_attend" }));
+});
+test("v23 attendance: correcting a did-not-attend record (mar.amend) returns the dose to pending and must clear the attendance", async () => {
+  await seed23("facility_administered");
+  await assertSucceeds(dna23("nurse"));
+  const fixer = "amender";
+  await env.withSecurityRulesDisabled(async ctx => {
+    await setDoc(doc(ctx.firestore(), "users", fixer), { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "mar.amend": true } });
+    await updateDoc(doc(ctx.firestore(), "pc_mar_records", "mr23"), { status: "entered_in_error", errorReason: "wrong patient" });
+  });
+  const ref = doc(env.authenticatedContext(fixer).firestore(), "pc_treatment_events", "o23_a"), u = { updatedAt: serverTimestamp(), updatedBy: fixer };
+  await assertFails(updateDoc(ref, Object.assign({ status: "pending" }, u)));                                  // attendance not cleared
+  await assertSucceeds(updateDoc(ref, Object.assign({ status: "pending", attendance: null }, u)));
+});
+test("v23 consumables: a clinician creates a consumable order with its pending prescription in one commit; kind 'consumable' is checked for quantity, item and schedule", async () => {
+  await seedV19();
+  const cons = extra => Object.assign({ kind: "consumable", medicineId: "d1", medicineName: "TEST gauze", quantityPrescribed: 3, scheduleType: "once" }, extra || {});
+  const strip = o => { const t = Object.assign({}, o); return t; };
+  const mk = (id, oExtra) => { const f = db("prescriber"), b = writeBatch(f); const o = orderDoc("prescriber", cons(oExtra)); delete o.doseValue; b.set(doc(f, "pc_treatment_orders", id), o); b.set(doc(f, "prescriptions", id), rxPending("prescriber", id, { medicineName: "TEST gauze" })); return b.commit(); };
+  await assertSucceeds(mk("c1"));
+  await assertFails(mk("c2", { quantityPrescribed: 0 }));
+  await assertFails(mk("c3", { medicineId: null }));
+  await assertFails(mk("c4", { scheduleType: "daily" }));
+});
+test("v23 consumables: the supplies user reads the consumable order; a consumable order cannot have dose events; other kinds are still refused", async () => {
+  await seedV19();
+  const f = db("prescriber"), b = writeBatch(f), o = orderDoc("prescriber", { kind: "consumable", medicineId: "d1", medicineName: "TEST gauze", quantityPrescribed: 3 }); delete o.doseValue;
+  b.set(doc(f, "pc_treatment_orders", "c9"), o); b.set(doc(f, "prescriptions", "c9"), rxPending("prescriber", "c9", { medicineName: "TEST gauze" }));
+  await b.commit();
+  await assertSucceeds(getDoc(doc(db("pharm"), "pc_treatment_orders", "c9")));
+  await assertFails(setDoc(doc(db("prescriber"), "pc_treatment_orders", "c10"), orderDoc("prescriber", { kind: "bogus" })));
+  const e = writeBatch(db("prescriber"));
+  e.set(doc(db("prescriber"), "pc_treatment_events", "c9_a"), Object.assign(stamp("prescriber"), { orderId: "c9", patientId: "p1", status: "pending", idKey: "a", plannedAt: 1, plannedDay: "2026-11-20" }));
+  await assertFails(e.commit());
+});
