@@ -676,8 +676,9 @@ test("v23 attendance: correcting a did-not-attend record (mar.amend) returns the
   await assertSucceeds(dna23("nurse"));
   const fixer = "amender";
   await env.withSecurityRulesDisabled(async ctx => {
-    await setDoc(doc(ctx.firestore(), "users", fixer), { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "mar.amend": true } });
-    await updateDoc(doc(ctx.firestore(), "pc_mar_records", "mr23"), { status: "entered_in_error", errorReason: "wrong patient" });
+    const g = ctx.firestore();   // one Firestore object per context
+    await setDoc(doc(g, "users", fixer), { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "mar.amend": true } });
+    await updateDoc(doc(g, "pc_mar_records", "mr23"), { status: "entered_in_error", errorReason: "wrong patient" });
   });
   const ref = doc(env.authenticatedContext(fixer).firestore(), "pc_treatment_events", "o23_a"), u = { updatedAt: serverTimestamp(), updatedBy: fixer };
   await assertFails(updateDoc(ref, Object.assign({ status: "pending" }, u)));                                  // attendance not cleared
