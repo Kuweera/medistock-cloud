@@ -77,6 +77,12 @@
             var po = inBatch("pc_treatment_orders", r.id); if (!po || ["stopped", "completed", "superseded"].indexOf(po[2].status) < 0) return deny("prescription update needs the order stop/replace in the same batch");
           }
         }
+        // STAND-IN of the v22 administrationMode rules: enum at creation; no planned doses for a take-home order (Lead: take-home creates a prescription and no events and no MAR rows)
+        for (var k = 0; k < ops.length; k++) {
+          var q = ops[k]; if (q[0] !== "set") continue;
+          if (q[1].coll === "pc_treatment_orders" && q[2].administrationMode != null && ["take_home", "facility_administered", "inpatient_mar"].indexOf(q[2].administrationMode) < 0) return deny("administrationMode value");
+          if (q[1].coll === "pc_treatment_events") { var oo = inBatch("pc_treatment_orders", q[2].orderId); var od = oo ? oo[2] : store.get("pc_treatment_orders/" + q[2].orderId); if (od && od.administrationMode === "take_home") return deny("take_home order cannot have dose events"); }
+        }
         window.__batches = (window.__batches || []).concat([ops.map(function (o) { return o[0] + " " + o[1].path; })]);
         ops.forEach(function (o) { write(o[0], o[1], o[2]); }); notifyAll(); return Promise.resolve(); }; return w; }
   };

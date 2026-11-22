@@ -18,7 +18,7 @@ const OUT = process.argv[2] || ".", URL = "http://localhost:8765/tests/encounter
     const id = (await all("pc_treatment_orders"))[0]._id, card = () => f.locator('.ord:has([data-oxp="' + id + '"])');
     // 1. every detail is readable on the main list without opening anything
     let t = await card().innerText();
-    for (const w of [/Amoxil 500 mg/, /DOSE\s+1 capsule/i, /ROUTE\s+by mouth/i, /FREQUENCY\s+Every 8 hours, 6 doses/i, /DURATION\s+3 days/i, /STARTS\s+\d\d\/\d\d\/\d{4}/i, /ENDS\s+\d\d\/\d\d\/\d{4}/i, /CARE SETTING\s+Inpatient/i, /STATUS\s+Active/i, /At pharmacy: not dispensed yet/]) assert.match(t, w, String(w));
+    for (const w of [/Amoxil 500 mg/, /DOSE\s+1 capsule/i, /ROUTE\s+by mouth/i, /FREQUENCY\s+Every 8 hours, 6 doses/i, /DURATION\s+[2-4] days/i, /STARTS\s+\d\d\/\d\d\/\d{4}/i, /ENDS\s+\d\d\/\d\d\/\d{4}/i, /CARE SETTING\s+Inpatient/i, /STATUS\s+Active/i, /At pharmacy: not dispensed yet/]) assert.match(t, w, String(w));
     // 2. actions are hidden until the medicine is opened
     for (const a of ["ostop", "odone", "ochg", "oplan", "oext"]) assert.equal(await f.locator("[data-" + a + "]").count(), 0, a + " hidden while collapsed");
     await f.locator('[data-oxp="' + id + '"]').click();

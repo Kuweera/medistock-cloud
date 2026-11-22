@@ -52,3 +52,14 @@ test("Dispense, partial reversal, dispense again: outstanding always equals pres
   await dispense(tools, 3, 900); rx = db.get("prescriptions", "o1"); assert.equal(rx.status, "completed"); assert.equal(db.get("drugs", "d1").currentStockBase, 30);
   assert.equal(db.all("stock_transactions").reduce((s, t) => s + t.baseUnitsChange, 0), -10, "net stock movement is -10");
 });
+
+// Stage 5 prerequisite for Stage 6: the engine accepts consumable orders (kind "consumable"), still refuses other kinds
+test("A consumable order (pending prescription) can be supplied: same stock, money and prescription path; a procedure order is still refused", async () => {
+  const { db, tools } = setup();
+  db.put("pc_treatment_orders", "o1", Object.assign(JSON.parse(JSON.stringify(db.get("pc_treatment_orders", "o1"))), { kind: "consumable", medicineName: "IV cannula 20G" }));
+  await dispense(tools, 4, 400); const rx = db.get("prescriptions", "o1");
+  assert.equal(rx.status, "partially_dispensed"); assert.equal(db.get("drugs", "d1").currentStockBase, 36); assert.equal(db.all("stock_transactions").length, 1); assert.equal(money(db).sales, 1200);
+  const rec = await ret(tools, db, 4); assert.equal(db.get("drugs", "d1").currentStockBase, 40); assert.equal(db.get("prescriptions", "o1").status, "pending");
+  db.put("pc_treatment_orders", "o1", Object.assign(JSON.parse(JSON.stringify(db.get("pc_treatment_orders", "o1"))), { kind: "procedure" }));
+  await assert.rejects(dispense(tools, 1, 0), e => e.code === "not_medicine"); assert.equal(db.get("drugs", "d1").currentStockBase, 40);
+});
