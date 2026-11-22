@@ -81,3 +81,13 @@ Note (2026-11-22): v23 passed emulator CI.
 - READ is business-wide for `guidelines.manage` and `guidelines.approve` holders (decision for R1 question 2). Nothing is deleted. Sections are reviewer-only raw extracts; clinical use still needs a `guidelines` draft and approval.
 - `guidelines` additive fields `sourceDocId`, `sourceSectionIds`, `sourcePages`: already accepted by the existing create and draft-edit rules (they do not restrict extra keys).
 - NOT yet written (later stages): `pc_reference_ranges` and keys `ranges.manage` / `ranges.approve` (Stage 3), `pc_reminder_settings`, `pc_reminder_log` (Stage 4).
+
+## 12. Reference range sources: OWNER DECISION, 2026-11-22
+Note: v24 (guideline import rules) passed emulator CI.
+The owner accepted the Lead's recommendation. The app ships NO reference values.
+- Adult routine blood counts and chemistry: ONE primary source is chosen by the laboratory manager from the published East African adult studies (CLSI-derived intervals for healthy adults in Eastern and Southern Africa; Ugandan blood donor study; Kenya urban CBC study) or from a Ministry of Health / national referral laboratory controlled document if one exists. Candidate list and links are in the Lead's message of 2026-11-22; the approver must read the source itself.
+- Anaemia and pregnancy haemoglobin cut-offs: WHO "Guideline on haemoglobin cutoffs to define anaemia in individuals and populations" (2024).
+- Method for adopting a range: CLSI EP28-A3c (verify a published range on the laboratory's own healthy patients).
+- Children: no suitable source found. No child range is entered until the owner provides one. Shows "No reference range available".
+- Every entered range needs: a named source (>= 3 characters), unit, effective and review dates, and approval by a second person (`ranges.approve`). A range is never applied to a group (age, sex, pregnancy) the source did not cover.
+- Not decided yet: who the laboratory manager is, and which Ministry document (if any) applies.
