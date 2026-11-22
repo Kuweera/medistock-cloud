@@ -62,3 +62,14 @@ New collection: `pc_patient_corrections`. New optional fields: `pc_patients.iden
 
 ## 9. Order care mode (v22, PROPOSED, approved for Developer 3 on 2026-11-21)
 `pc_treatment_orders.administrationMode` (optional, set at creation only): `take_home` | `facility_administered` | `inpatient_mar`. Missing = today's behaviour for every existing order. `take_home`: prescription + dispensing, **no administration events and no MAR rows**; adherence at home is not tracked by staff. `facility_administered`: events are scheduled and staff record each dose (outpatient injections, procedures). `inpatient_mar`: events plus the ward MAR. The rule accepts only these values and the existing update rule already refuses changing it later (a wrong mode means stop the order and prescribe again). Dispensing is still never administration, whatever the mode. Status: awaiting CI.
+
+## 10. Rules v23 (Lead, PROPOSED, awaiting CI): attendance and consumables Option B (2026-11-22)
+Note: v22 (`administrationMode`) passed emulator CI (58/58).
+**Attendance** (`pc_treatment_events`, optional fields `attendance` = `attended` | `did_not_attend`, `attendanceAt` (ms), `attendanceBy` (uid), `attendanceByName`; `pc_mar_records.attendance` = `did_not_attend` only):
+- A1 arrival: pending event stays pending; needs `treatment.administer`; order `administrationMode == facility_administered`; `attendanceBy == uid`; only the attendance keys change. Reception cannot record arrival (Q1).
+- A2 did not attend: pending -> missed, with the MAR record (`outcome missed`, `attendance did_not_attend`, reason 3+ chars) in the same commit; refused after an arrival.
+- A3 correction (`mar.amend`): a did-not-attend event returning to pending must clear `attendance`.
+- A4 undo of a wrong arrival while pending. A5 MAR `attendance` only with `did_not_attend` + `missed`.
+- "Overdue" stays derived in the screen; the system never records did-not-attend by itself. Procedures are eligible (mode is checked, not kind) (Q2).
+**Consumables (Option B):** `pc_treatment_orders.kind = 'consumable'` (needs `medicineId`, `medicineName`, `quantityPrescribed` > 0, `scheduleType 'once'`); kind accepted as `medicine` or `consumable` in three dispensing rules: pending prescription create (C2), `dispenserOrderReadOk` (C3), AND the first-dispensing create path (rules ~L1390, missed in the request). Consumable orders cannot have dose events (`evOrderOk`). Supply needs `dispense.perform` (Q3). Order fields reuse `medicineId/medicineName/quantityPrescribed` (Q4). **Not in the rules, in Developer 3's code:** `pc-dispense.js` L215 (`not_medicine` error), L367 (probe) and L429 (report filter) check `kind === "medicine"` and must accept `consumable`.
+Q5 (open for the owner): a nurse who records a used consumable without `treatment.prescribe` can no longer do so in the new flow; a prescribe-capable colleague or a role change is needed.
