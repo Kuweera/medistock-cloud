@@ -1,6 +1,7 @@
 rules_version = '2';
 
 // MediStock Cloud — multi-shop roles & security (v19 verified in CI run #68; v20 journey field proposed)
+// v24 (Lead, PROPOSED): guideline_sources and guideline_sections (import of guideline files; reviewer-only raw extracts).
 // v23 (Lead, PROPOSED): attendance for facility-administered doses (arrival, did-not-attend, undo, correction) and consumables as kind 'consumable' orders supplied through the pending prescription / pharmacy engine (Option B).
 // v22 (Lead, PROPOSED): pc_treatment_orders.administrationMode optional, one of take_home | facility_administered | inpatient_mar (set at creation only; the update rule already refuses changing it).
 // v21 (verified in CI 2026-11-21): patient identity corrections need a correction record (pc_patient_corrections); an active share's snapshot can be refreshed; optional share expiry (consentExpiresAt) enforced on reads.
@@ -1735,6 +1736,64 @@ service cloud.firestore {
           && request.resource.data.retiredReason is string && request.resource.data.retiredReason.size() >= 3
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'retiredReason', 'retiredBy', 'retiredByName', 'retiredAt', 'updatedAt', 'updatedBy']))
       );
+      allow delete: if false;
+    }
+
+    // =====================================================================================
+    // v24 (Lead, PROPOSED): guideline import. Raw extracts for REVIEWERS ONLY; clinical use happens only through a guidelines draft + approval.
+    // Read is business-wide for guidelines.manage / guidelines.approve (same reach as scope 'national' guidelines). Nothing is ever deleted.
+    // =====================================================================================
+    function gsrcPath(id) { return /databases/$(database)/documents/guideline_sources/$(id); }
+    function gsrcReadOk(d) {
+      return isMemberOfBusiness(d.businessId)
+        && (hasPerm(d.businessId, 'guidelines.manage') || hasPerm(d.businessId, 'guidelines.approve'));
+    }
+    match /guideline_sources/{srcId} {
+      allow read: if gsrcReadOk(resource.data);
+      allow create: if request.resource.data.status == 'imported'
+        && pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'guidelines.manage')
+        && request.resource.data.sha256 is string && request.resource.data.sha256.size() == 64
+        && srcId == 'gsrc_' + request.resource.data.sha256[0:16]
+        && request.resource.data.fileName is string && request.resource.data.fileName.size() > 0
+        && request.resource.data.fileSizeBytes is int && request.resource.data.fileSizeBytes >= 0
+        && request.resource.data.sectionCount is int && request.resource.data.sectionCount >= 0
+        && request.resource.data.sourceTitle is string && request.resource.data.sourceTitle.size() >= 3
+        && request.resource.data.sourceOrg is string && request.resource.data.sourceOrg.size() > 0
+        && request.resource.data.jurisdiction is string && request.resource.data.jurisdiction.size() > 0
+        && request.resource.data.sourceEdition is string && request.resource.data.sourceEdition.size() > 0
+        && request.resource.data.extractionMethod in ['text', 'ocr', 'mixed', 'table_sheet'];
+      // only a status change to rejected / retired, by an approver; a rejection carries a reason
+      allow update: if request.resource.data.status in ['rejected', 'retired'] && resource.data.status == 'imported'
+        && pcUpdateStamped()
+        && hasPerm(resource.data.businessId, 'guidelines.approve')
+        && isMemberOfBusiness(resource.data.businessId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'rejectedReason', 'rejectedBy', 'rejectedByName', 'rejectedAt', 'updatedAt', 'updatedBy'])
+        && (request.resource.data.status == 'retired'
+            || (request.resource.data.rejectedReason is string && request.resource.data.rejectedReason.size() >= 3
+                && request.resource.data.rejectedBy == request.auth.uid));
+      allow delete: if false;
+    }
+    match /guideline_sections/{secId} {
+      allow read: if gsrcReadOk(resource.data);
+      allow create: if request.resource.data.reviewStatus == 'unreviewed'
+        && pcCreateOk(request.resource.data)
+        && hasPerm(request.resource.data.businessId, 'guidelines.manage')
+        && request.resource.data.sourceId is string
+        && request.resource.data.seq is int && request.resource.data.seq >= 0 && request.resource.data.seq < 100000
+        && secId.size() == request.resource.data.sourceId.size() + 7
+        && secId[0:request.resource.data.sourceId.size() + 2] == request.resource.data.sourceId + '_s'
+        && request.resource.data.kind in ['heading', 'paragraph', 'table']
+        && request.resource.data.text is string && request.resource.data.text.size() <= 100000
+        && request.resource.data.get('tableRows', []).size() <= 500
+        && request.resource.data.ocr is bool
+        && existsAfter(gsrcPath(request.resource.data.sourceId))
+        && getAfter(gsrcPath(request.resource.data.sourceId)).data.businessId == request.resource.data.businessId;
+      allow update: if request.resource.data.reviewStatus in ['unreviewed', 'used', 'discarded']
+        && pcUpdateStamped()
+        && hasPerm(resource.data.businessId, 'guidelines.manage')
+        && isMemberOfBusiness(resource.data.businessId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reviewStatus', 'usedInGuidelineId', 'updatedAt', 'updatedBy']);
       allow delete: if false;
     }
   }
