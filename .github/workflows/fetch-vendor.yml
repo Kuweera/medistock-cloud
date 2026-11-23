@@ -23,6 +23,7 @@ jobs:
           curl -fsSL -o eng.traineddata https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata
           for f in pdfjs-dist-*.tgz mammoth-*.tgz tesseract.js-5*.tgz tesseract.js-core-*.tgz xlsx.tgz; do d="x_${f%.tgz}"; mkdir "$d"; tar -xzf "$f" -C "$d"; done
           ls
+          find x_xlsx -maxdepth 3 | head -30
       - name: Copy the needed files
         run: |
           set -e
@@ -32,17 +33,17 @@ jobs:
           # pdf.js: classic script (non-module) build
           need $P/x_pdfjs-dist-3.11.174/package/build/pdf.min.js $V/pdfjs-3.11.174/
           need $P/x_pdfjs-dist-3.11.174/package/build/pdf.worker.min.js $V/pdfjs-3.11.174/
-          need $P/x_pdfjs-dist-3.11.174/package/LICENSE $V/pdfjs-3.11.174/
+          need "$(find $P/x_pdfjs-dist-3.11.174 -maxdepth 2 -iname 'LICENSE*' | head -1)" $V/pdfjs-3.11.174/
           need $P/x_mammoth-1.8.0/package/mammoth.browser.min.js $V/mammoth-1.8.0/
-          need $P/x_mammoth-1.8.0/package/LICENSE $V/mammoth-1.8.0/
-          need $P/x_xlsx-0.20.3/package/dist/xlsx.full.min.js $V/sheetjs-0.20.3/
-          need $P/x_xlsx-0.20.3/package/LICENSE $V/sheetjs-0.20.3/
+          need "$(find $P/x_mammoth-1.8.0 -maxdepth 2 -iname 'LICENSE*' | head -1)" $V/mammoth-1.8.0/
+          need "$(find $P/x_xlsx -name xlsx.full.min.js | head -1)" $V/sheetjs-0.20.3/
+          need "$(find $P/x_xlsx -maxdepth 2 -iname 'LICENSE*' | head -1)" $V/sheetjs-0.20.3/
           need $P/x_tesseract.js-5.1.1/package/dist/worker.min.js $V/tesseract-5.1.1/
           need $P/x_tesseract.js-5.1.1/package/dist/tesseract.min.js $V/tesseract-5.1.1/
-          need $P/x_tesseract.js-5.1.1/package/LICENSE.md $V/tesseract-5.1.1/
+          need "$(find $P/x_tesseract.js-5.1.1 -maxdepth 2 -iname 'LICENSE*' | head -1)" $V/tesseract-5.1.1/
           cp $P/x_tesseract.js-core-5.1.1/package/tesseract-core*.js $V/tesseract-5.1.1/core/
           cp $P/x_tesseract.js-core-5.1.1/package/tesseract-core*.wasm $V/tesseract-5.1.1/core/ 2>/dev/null || true
-          need $P/x_tesseract.js-core-5.1.1/package/LICENSE $V/tesseract-5.1.1/core/
+          need "$(find $P/x_tesseract.js-core-5.1.1 -maxdepth 2 -iname 'LICENSE*' | head -1)" $V/tesseract-5.1.1/core/
           need $P/eng.traineddata $V/tesseract-5.1.1/lang/
           gzip -k -9 $V/tesseract-5.1.1/lang/eng.traineddata
           find $V -type f | sort
@@ -69,4 +70,3 @@ jobs:
           git add vendor
           git commit -m "Add vendored libraries (pdf.js, mammoth, SheetJS, tesseract.js) with manifest" || echo "nothing to commit"
           git push
-          
