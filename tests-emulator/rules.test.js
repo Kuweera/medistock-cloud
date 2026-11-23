@@ -37,6 +37,9 @@ const users = {
   dispReport: { role: "operator", businessId: B, shopId: A, active: true, perms: { "dispense.view": true, "dispense.report": true } },
   p21editor: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "patient.edit": true } },
   p21consent: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "patient.consent": true } },
+  labMgr: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "ranges.manage": true } },
+  labLead: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "ranges.approve": true } },
+  labBoth: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "ranges.manage": true, "ranges.approve": true } },
   rules0: { role: "operator", businessId: B, shopId: A, active: true, perms: { "treatment.prescribe": true } }
 };
 // one Firestore object per user for the whole run: building a new one on every call made the SDK refuse to mix documents ("different Firestore instance")
@@ -759,4 +762,85 @@ test("v24 import: retire needs a reason and the approver's own uid; the planned 
   await assertFails(updateDoc(doc(db("author"), "guideline_sources", srcId24), Object.assign({ sectionCount: 460, sourceTitle: "changed" }, u("author"))));
   await assertFails(updateDoc(doc(db("approver"), "guideline_sources", srcId24), Object.assign({ status: "retired", retiredBy: "approver" }, u("approver"))));            // no reason
   await assertSucceeds(updateDoc(doc(db("approver"), "guideline_sources", srcId24), Object.assign({ status: "retired", retiredReason: "replaced by new edition", retiredBy: "approver", retiredByName: "A", retiredAt: Date.now() }, u("approver"))));
+});
+
+// ======================= v25 (Lead): reference ranges (all values below are obviously fake test values) =======================
+const rr25 = (uid, extra) => Object.assign(stamp(uid), { rangeKey: "k1", version: 1, approvalStatus: "draft", subjectType: "lab_test", subjectId: "t1", paramKey: "", paramLabel: "TEST", unit: "TESTunit",
+  refMin: 1, refMax: 2, sex: "any", minAgeMonths: null, maxAgeMonths: null, pregnancy: "any", source: "TEST source", effectiveDate: "2099-01-01", reviewDate: "" }, extra || {});
+const rrU = uid => ({ updatedAt: serverTimestamp(), updatedBy: uid });
+async function seedRR(id, extra) { await env.withSecurityRulesDisabled(async ctx => { await setDoc(doc(ctx.firestore(), "pc_reference_ranges", id), Object.assign(rr25("labMgr"), { createdAt: new Date() }, extra || {})); }); }
+test("v25 ranges: ranges.manage creates a DRAFT; missing key, wrong status, wrong id, bad subject, empty unit, short source, bad lists, no bounds, min>max, bad ages and another facility are refused", async () => {
+  const f = db("labMgr"), mk = (id, extra) => setDoc(doc(f, "pc_reference_ranges", id), rr25("labMgr", extra));
+  await assertSucceeds(mk("rr_k1_v1"));
+  await assertFails(setDoc(doc(db("labLead"), "pc_reference_ranges", "rr_k1_v1"), rr25("labLead")));
+  await assertFails(mk("rr_k2_v1", { rangeKey: "k2", approvalStatus: "approved" }));
+  await assertFails(mk("rr_wrong", { rangeKey: "k3" }));
+  await assertFails(mk("rr_k4_v1", { rangeKey: "k4", subjectType: "bogus" }));
+  await assertFails(mk("rr_k5_v1", { rangeKey: "k5", unit: "" }));
+  await assertFails(mk("rr_k6_v1", { rangeKey: "k6", source: "ab" }));
+  await assertFails(mk("rr_k7_v1", { rangeKey: "k7", sex: "other" }));
+  await assertFails(mk("rr_k8_v1", { rangeKey: "k8", pregnancy: "maybe" }));
+  await assertFails(mk("rr_k9_v1", { rangeKey: "k9", refMin: null, refMax: null }));
+  await assertSucceeds(mk("rr_k10_v1", { rangeKey: "k10", refMin: null, refMax: null, refText: "TEST text" }));
+  await assertFails(mk("rr_k11_v1", { rangeKey: "k11", refMin: 5, refMax: 2 }));
+  await assertFails(mk("rr_k12_v1", { rangeKey: "k12", minAgeMonths: 12, maxAgeMonths: 12 }));
+  await assertFails(mk("rr_k13_v1", { rangeKey: "k13", minAgeMonths: -1 }));
+  await assertFails(mk("rr_k14_v1", { rangeKey: "k14", facilityId: S }));
+});
+test("v25 ranges: a draft can be edited by ranges.manage but identity fields and approved ranges cannot be changed", async () => {
+  await seedRR("rr_k1_v1"); await seedRR("rr_k2_v1", { rangeKey: "k2", approvalStatus: "approved", approvedBy: "labLead", selfApproved: false });
+  const f = db("labMgr");
+  await assertSucceeds(updateDoc(doc(f, "pc_reference_ranges", "rr_k1_v1"), Object.assign({ refMax: 3 }, rrU("labMgr"))));
+  await assertFails(updateDoc(doc(f, "pc_reference_ranges", "rr_k1_v1"), Object.assign({ subjectId: "other" }, rrU("labMgr"))));
+  await assertFails(updateDoc(doc(f, "pc_reference_ranges", "rr_k1_v1"), Object.assign({ rangeKey: "zz" }, rrU("labMgr"))));
+  await assertFails(updateDoc(doc(f, "pc_reference_ranges", "rr_k1_v1"), Object.assign({ unit: "" }, rrU("labMgr"))));
+  await assertFails(updateDoc(doc(f, "pc_reference_ranges", "rr_k2_v1"), Object.assign({ refMax: 9 }, rrU("labMgr"))));
+  await assertFails(updateDoc(doc(db("labLead"), "pc_reference_ranges", "rr_k1_v1"), Object.assign({ refMax: 3 }, rrU("labLead"))));            // approve is not manage
+});
+test("v25 ranges: approval needs ranges.approve, the caller as approvedBy, a correct selfApproved, only approval keys, an effective date and a sane review date", async () => {
+  await seedRR("rr_k1_v1"); await seedRR("rr_k2_v1", { rangeKey: "k2", effectiveDate: "" }); await seedRR("rr_k3_v1", { rangeKey: "k3", reviewDate: "2098-01-01" });
+  const ap = (uid, id, extra) => updateDoc(doc(db(uid), "pc_reference_ranges", id), Object.assign({ approvalStatus: "approved", approvedBy: uid, approvedByName: uid, approvedAt: serverTimestamp(), selfApproved: false }, rrU(uid), extra || {}));
+  await assertFails(ap("labMgr", "rr_k1_v1"));                                                   // no ranges.approve
+  await assertFails(ap("labLead", "rr_k1_v1", { approvedBy: "labMgr" }));
+  await assertFails(ap("labLead", "rr_k1_v1", { selfApproved: true }));                           // wrong selfApproved
+  await assertFails(ap("labLead", "rr_k1_v1", { refMax: 99 }));                                   // other key changed
+  await assertFails(ap("labLead", "rr_k2_v1"));                                                   // no effective date
+  await assertFails(ap("labLead", "rr_k3_v1"));                                                   // review date before effective date
+  await assertSucceeds(ap("labLead", "rr_k1_v1"));
+  await seedRR("rr_k4_v1", { rangeKey: "k4", createdBy: "labBoth" });
+  await assertSucceeds(ap("labBoth", "rr_k4_v1", { selfApproved: true }));                        // self-approval is recorded, not blocked
+});
+test("v25 ranges: a newer version replaces the old one in the same commit only; other key, lower version or no newer approved version are refused", async () => {
+  await seedRR("rr_k1_v1", { approvalStatus: "approved", approvedBy: "labLead", selfApproved: false });
+  await seedRR("rr_k1_v2", { version: 2 }); await seedRR("rr_k9_v3", { rangeKey: "k9", version: 3 });
+  const f = db("labLead"), b = writeBatch(f);
+  b.update(doc(f, "pc_reference_ranges", "rr_k1_v2"), Object.assign({ approvalStatus: "approved", approvedBy: "labLead", approvedByName: "L", approvedAt: serverTimestamp(), selfApproved: false }, rrU("labLead")));
+  b.update(doc(f, "pc_reference_ranges", "rr_k1_v1"), Object.assign({ approvalStatus: "superseded", supersededBy: "rr_k1_v2" }, rrU("labLead")));
+  await assertSucceeds(b.commit());
+});
+test("v25 ranges: supersede alone, with another range key or with a lower version is refused", async () => {
+  await seedRR("rr_k1_v2", { version: 2, approvalStatus: "approved", approvedBy: "labLead", selfApproved: false });
+  await seedRR("rr_k1_v1", { version: 1, approvalStatus: "approved", approvedBy: "labLead", selfApproved: false });
+  await seedRR("rr_k5_v3", { rangeKey: "k5", version: 3, approvalStatus: "approved", approvedBy: "labLead", selfApproved: false });
+  const f = db("labLead"), sup = (id, by) => updateDoc(doc(f, "pc_reference_ranges", id), Object.assign({ approvalStatus: "superseded", supersededBy: by }, rrU("labLead")));
+  await assertFails(sup("rr_k1_v2", "rr_k1_v1"));                // replaced by a LOWER version
+  await assertFails(sup("rr_k1_v1", "rr_k5_v3"));                // different range key
+  await assertSucceeds(sup("rr_k1_v1", "rr_k1_v2"));             // the newer version is already approved
+  await assertFails(updateDoc(doc(db("labMgr"), "pc_reference_ranges", "rr_k5_v3"), Object.assign({ approvalStatus: "superseded", supersededBy: "rr_k1_v2" }, rrU("labMgr"))));
+});
+test("v25 ranges: retire needs a reason and the caller; only ranges.approve may retire an approved range; ranges.manage may discard a draft; delete never", async () => {
+  await seedRR("rr_k1_v1", { approvalStatus: "approved", approvedBy: "labLead", selfApproved: false }); await seedRR("rr_k2_v1", { rangeKey: "k2" });
+  const rt = (uid, id, extra) => updateDoc(doc(db(uid), "pc_reference_ranges", id), Object.assign({ approvalStatus: "retired", retiredReason: "replaced by the new kit", retiredBy: uid, retiredByName: uid, retiredAt: Date.now() }, rrU(uid), extra || {}));
+  await assertFails(rt("labMgr", "rr_k1_v1"));                                      // manage cannot retire an approved range
+  await assertFails(rt("labLead", "rr_k1_v1", { retiredReason: "x" }));
+  await assertFails(rt("labLead", "rr_k1_v1", { retiredBy: "labMgr" }));
+  await assertSucceeds(rt("labLead", "rr_k1_v1"));
+  await assertSucceeds(rt("labMgr", "rr_k2_v1"));                                   // discard a draft
+  await assertFails(deleteDoc(doc(db("labLead"), "pc_reference_ranges", "rr_k1_v1")));
+});
+test("v25 ranges: members with patient.view read; another facility and users without patient.view do not", async () => {
+  await seedRR("rr_k1_v1", { approvalStatus: "approved", approvedBy: "labLead", selfApproved: false });
+  await assertSucceeds(getDoc(doc(db("nurse"), "pc_reference_ranges", "rr_k1_v1")));
+  await assertFails(getDoc(doc(db("pharmB"), "pc_reference_ranges", "rr_k1_v1")));
+  await assertFails(getDoc(doc(db("dispOnly"), "pc_reference_ranges", "rr_k1_v1")));
 });
