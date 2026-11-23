@@ -1,6 +1,6 @@
 /* MediStock Cloud — keeps the app's pages and the Firebase code on the phone so it opens with no internet.
    Pages refresh themselves in the background whenever the phone is online. */
-var VERSION = "mc-v29";
+var VERSION = "mc-v30";
 var PAGES = ["app.html", "mc-core.js", "mc-notify.js", "mc-share.js", "desktop.css", "index.html", "dashboard.html", "charts.html", "reports.html", "history.html", "sales.html", "inventory.html", "purchases.html", "batches.html",
   "expiring.html", "stocktake.html", "whattobuy.html", "expenses.html", "credit.html", "cash-position.html", "suppliers.html", "users.html", "patients.html", "patient.html", "pc-fields.js", "pc-lab.js", "directory.html", "audit.html", "encounters.html", "encounter.html", "laboratory.html", "investigations.html", "lab-reports.html", "treatment.html", "dosing-rules.html", "pc-sched.js", "pharmacy.html", "pc-dispense.js", "pc-dispense-ext.js", "guidelines.html", "pc-guidelines.js", "pc-abbrev.js", "pc-guidance-ui.js", "pc-ux.js", "pc-import.js", "pc-import-ui.js", "pc-import-worker.js",
   "shops.html", "settings.html", "backup.html", "guide.html", "about.html", "migrate.html", "login.html", "login.css", "login.js", "nav.js", "manifest.json",
@@ -18,7 +18,7 @@ self.addEventListener("install", function (e) {
 
 self.addEventListener("activate", function (e) {
   e.waitUntil(caches.keys().then(function (keys) {
-    return Promise.all(keys.filter(function (k) { return k !== VERSION; }).map(function (k) { return caches.delete(k); }));
+    return Promise.all(keys.filter(function (k) { return k !== VERSION && k.indexOf("mc-vendor") !== 0; }).map(function (k) { return caches.delete(k); }));
   }).then(function () { return self.clients.claim(); }));
 });
 
@@ -32,6 +32,18 @@ self.addEventListener("fetch", function (e) {
     e.respondWith(caches.open(VERSION).then(function (c) {
       return c.match(req.url).then(function (hit) {
         return hit || fetch(req).then(function (r) { if (r && r.ok) c.put(req.url, r.clone()); return r; });
+      });
+    }));
+    return;
+  }
+
+  // v26 (Lead): big import libraries (vendor/: pdf.js, mammoth, SheetJS, OCR) are NOT in the install list. They are kept in their own cache, which a new app version does NOT
+  // delete. A page may save them on purpose ("download for offline use": caches.open("mc-vendor-v1").then(c => c.add(url))); once saved they are served from there, offline or not.
+  if (url.origin === self.location.origin && /\/vendor\//.test(url.pathname)) {
+    var vkey = url.origin + url.pathname;
+    e.respondWith(caches.open("mc-vendor-v1").then(function (c) {
+      return c.match(vkey).then(function (hit) {
+        return hit || fetch(req).catch(function () { return new Response("This import tool is not saved on this phone yet. Connect to the internet and use the download-for-offline button.", { status: 503 }); });
       });
     }));
     return;
