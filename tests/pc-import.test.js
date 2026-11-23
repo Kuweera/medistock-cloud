@@ -6,9 +6,9 @@ const PCI = require("../pc-import.js");
 
 const bytes = (s) => new TextEncoder().encode(s);
 
-test("detect: supported, pending (needs library), .doc, json and unknown types", () => {
-  ["a.txt", "A.CSV", "x.html", "x.htm", "x.rtf"].forEach((n) => assert.equal(PCI.detect(n).ok, true, n));
-  ["a.pdf", "a.docx", "a.xlsx", "a.xls"].forEach((n) => { const d = PCI.detect(n); assert.equal(d.ok, false); assert.equal(d.stage, "pending"); });
+test("detect: built-in readers, vendored-tool readers, .doc, json and unknown types", () => {
+  ["a.txt", "A.CSV", "x.html", "x.htm", "x.rtf"].forEach((n) => { const d = PCI.detect(n); assert.equal(d.ok, true, n); assert.equal(d.tool, "", n); });
+  [["a.pdf", "pdf"], ["a.docx", "docx"], ["a.xlsx", "xlsx"], ["A.XLS", "xlsx"]].forEach(([n, t]) => { const d = PCI.detect(n); assert.equal(d.ok, true, n); assert.equal(d.tool, t, n); });
   const doc = PCI.detect("old.doc"); assert.equal(doc.ok, false); assert.match(doc.message, /save it as \.docx or PDF/);
   assert.equal(PCI.detect("a.json").stage, "json");
   assert.match(PCI.detect("a.exe").message, /not supported/);
@@ -82,9 +82,10 @@ test("rtf: text, paragraphs, \\'hh, \\u with skip, escapes, skipped destinations
   assert.match(PCI.parseRtf("{\\rtf1 {\\pict\\wmetafile8 abcdef}}").warnings.join(" "), /Pictures/);
 });
 
-test("extract: routes by extension, refuses pending types, reports empty files", () => {
+test("extract: routes by extension, leaves tool types to the worker, reports empty files", () => {
   assert.equal(PCI.extract("a.pdf", bytes("%PDF")).ok, false);
-  assert.match(PCI.extract("a.pdf", bytes("%PDF")).error, /import tools/);
+  assert.match(PCI.extract("a.pdf", bytes("%PDF")).error, /import worker/);
+  assert.match(PCI.extract("old.doc", bytes("x")).error, /save it as \.docx or PDF/);
   assert.equal(PCI.extract("a.txt", bytes("# H\n\nbody")).ok, true);
   const e = PCI.extract("a.txt", bytes("   \n\n  ")); assert.equal(e.ok, false);
   const c = PCI.extract("a.csv", bytes("a,b\n1,2")); assert.equal(c.method, "table_sheet"); assert.equal(c.stats.tableRows, 2);
@@ -126,4 +127,13 @@ test("toSections: a heading repeated on every page (running header) does not spl
   const s = PCI.toSections(b); assert.equal(s.length, 1); assert.equal(s[0].text, "page 0\n\npage 1\n\npage 2\n\npage 3\n\npage 4");
   const s2 = PCI.toSections([{ kind: "heading", level: 1, text: "A" }, { kind: "paragraph", text: "x" }, { kind: "heading", level: 1, text: "B" }, { kind: "paragraph", text: "y" }, { kind: "heading", level: 1, text: "A" }, { kind: "paragraph", text: "z" }]);
   assert.equal(s2.length, 3, "a different heading in between still starts a new section");
+});
+
+test("toSections: page ranges and OCR flags are carried into the sections", () => {
+  const b = [{ kind: "heading", level: 1, text: "A", page: 1 }, { kind: "paragraph", text: "p1", page: 1 }, { kind: "paragraph", text: "p2", page: 2, pageTo: 3 }, { kind: "paragraph", text: "p3", page: 4, ocr: true, conf: 90 }, { kind: "paragraph", text: "p4", page: 5, ocr: true, conf: 80 },
+    { kind: "table", rows: [["h", "k"], ["1", "2"]], header: true, page: 6 }];
+  const s = PCI.toSections(b);
+  assert.equal(s.length, 2); assert.deepEqual([s[0].pageFrom, s[0].pageTo, s[0].ocr, s[0].ocrConfidence], [1, 5, true, 85]);
+  assert.deepEqual([s[1].kind, s[1].pageFrom, s[1].pageTo, s[1].ocr], ["table", 6, 6, false]);
+  const noPages = PCI.toSections([{ kind: "paragraph", text: "x" }]); assert.deepEqual([noPages[0].pageFrom, noPages[0].pageTo, noPages[0].ocr], [null, null, false]);
 });

@@ -1,6 +1,6 @@
 /* Drives the "Import a document" card in guidelines.html in headless Chromium against the IN-MEMORY stand-in harness (not Firebase).
-   Run:  python3 -m http.server 8765  (from the repo root), then  node tests/pc-import-browser-check.js [screenshot-folder] [path-to-ucg-pdf] [path-to-ucg-txt]
-   The PDF and TXT arguments are optional extra checks with a real document. TEST CONTENT ONLY otherwise. */
+   Run:  python3 -m http.server 8765  (from the repo root), then  node tests/pc-import-browser-check.js [screenshot-folder] [ignored] [path-to-ucg-txt]
+   (PDF, DOCX, XLSX and OCR are in tests/pc-import-stage2-browser-check.js.) The TXT argument is an optional extra check with a real document. TEST CONTENT ONLY otherwise. */
 const { chromium } = require("playwright");
 const assert = require("node:assert/strict");
 const fs = require("fs");
@@ -26,14 +26,9 @@ const URL = "http://localhost:8765/tests/guidelines-harness.html";
   // ---------- owner at phone width
   const { page, f, ctx, dialogs } = await open("owner", 390, 844);
   await f.locator("#tabImport").click(); await f.locator("#docFile").waitFor();
-  assert.match(await f.locator("#docImport").innerText(), /Works without internet:[\s\S]*TXT, CSV, HTML, HTM, RTF/); ok("import card shows what works offline");
+  assert.match(await f.locator("#docImport").innerText(), /Always works without internet:[\s\S]*TXT, CSV, HTML, HTM, RTF/); ok("import card shows what always works offline");
   assert.equal(await f.locator("#docFile").getAttribute("accept"), ".pdf,.docx,.doc,.xlsx,.xls,.txt,.csv,.html,.htm,.rtf"); ok("file picker offers PDF, Word, Excel, TXT, CSV, HTML, RTF (the old picker offered only .json)");
 
-  if (PDF && fs.existsSync(PDF)) {
-    const t0 = Date.now(); await upload(f, "Uganda_Clinical_Guidelines_2023.pdf", fs.readFileSync(PDF)); await f.locator("#docMsg.err").waitFor();
-    assert.match(await msgOf(f), /PDF files need the import tools/); assert.doesNotMatch(await msgOf(f), /JSON/); assert.equal(await f.locator("#docOut").innerHTML(), "");
-    console.log("   (real UCG PDF, " + (fs.statSync(PDF).size / 1048576).toFixed(1) + " MB, answered in " + (Date.now() - t0) + " ms)"); ok("the real UCG PDF is refused with a clear message, not 'not valid JSON'");
-  }
   await upload(f, "old.doc", "x"); await f.locator("#docMsg.err").waitFor(); assert.match(await msgOf(f), /save it as \.docx or PDF/); ok(".doc gets the 'save as .docx or PDF' message");
   await upload(f, "x.exe", "x"); assert.match(await msgOf(f), /not supported/); ok("unknown type refused");
   await upload(f, "big.txt", Buffer.alloc(31 * 1024 * 1024, 97)); assert.match(await msgOf(f), /limit is 30 MB/); ok("a file over 30 MB is refused");
@@ -63,9 +58,15 @@ const URL = "http://localhost:8765/tests/guidelines-harness.html";
   await f.locator("#docList .card").first().waitFor(); assert.match(await f.locator("#docList").innerText(), /Test Guideline Document[\s\S]*Raw text, not reviewed[\s\S]*2 sections/);
   await f.locator('#docList [data-a="view"]').click(); await f.locator('#docList [data-a="copy"]').first().waitFor(); const vt = await f.locator("#docList").innerText(); assert.match(vt, /CHAPTER 1: Test chapter 1/); assert.match(vt, /CHAPTER 3: Test chapter 3/); assert.doesNotMatch(vt, /CHAPTER 2: Test chapter 2 ›/);
   await f.locator('#docList [data-a="copy"]').first().click(); await page.waitForTimeout(100); assert.match(await page.evaluate(() => window.__shared), /Test paragraph one of chapter 1/); ok("imported document is listed, its sections can be viewed and copied");
-  await upload(f, "same-again.txt", txt); await f.locator("#docTitle").waitFor(); await fillSource(f); await f.locator("#docSave").click(); await f.locator("#docMsg.err", { hasText: /already imported/ }).waitFor(); assert.equal((await dbAll(page, "guideline_sources")).length, 1); ok("importing the same file twice is blocked (same SHA-256), nothing duplicated");
+  // the same file again: v24c rules allow adding sections to an existing import, so this is no longer blocked. Sections already saved are never written twice.
+  await upload(f, "same-again.txt", txt); await f.locator("#docTitle").waitFor(); await fillSource(f); await f.locator("#docNone").click(); await f.locator('.docG[data-i="0"]').check(); await f.locator("#docSave").click(); await f.locator("#docMsg.err", { hasText: /already saved/ }).waitFor(); assert.equal((await dbAll(page, "guideline_sections")).length, 2); assert.equal((await dbAll(page, "guideline_sources"))[0].sectionCount, 2); ok("selecting only sections that are already saved adds nothing (no duplicate writes)");
+  await f.locator("#docAll").click(); await f.locator("#docSave").click(); await f.locator("#docMsg.ok", { hasText: /Added 1 section/ }).waitFor();
+  const srcAfter = (await dbAll(page, "guideline_sources"))[0], secsAfter = await dbAll(page, "guideline_sections"); assert.equal(srcAfter.sectionCount, 3); assert.equal(secsAfter.length, 3); assert.deepEqual(secsAfter.map(x => x.seq).sort(), [1, 2, 3]); assert.ok(srcAfter.updatedBy);
+  assert.equal((await dbAll(page, "pc_audit_logs")).filter(a => a.action === "guideline.source_add_sections").length, 1); ok("the missing chapter of the same file was added to the existing import (count 2 -> 3, audit entry written)");
+  await upload(f, "changed.txt", txt.replace("Test paragraph one of chapter 1.", "A different sentence in chapter 1.")); await f.locator("#docTitle").waitFor(); await fillSource(f);
+  assert.notEqual(await f.locator("#docOut").innerText(), ""); ok("a changed file has a different hash and is a separate import");
   await f.locator('#docList [data-a="reject"]').click(); await f.locator("#docList .chip.bad", { hasText: "Rejected" }).waitFor(); const rej = (await dbAll(page, "guideline_sources"))[0]; assert.equal(rej.status, "rejected"); assert.equal(rej.rejectedReason, "Test reason"); assert.ok(rej.rejectedBy);
-  assert.equal((await dbAll(page, "pc_audit_logs")).filter(a => a.action === "guideline.source_reject").length, 1); ok("an approver can reject an extraction with a reason; audit entry written");
+  assert.equal((await dbAll(page, "pc_audit_logs")).filter(a => a.action === "guideline.source_reject").length, 1); assert.equal(await f.locator('#docList [data-a="retire"]').count(), 0); assert.equal(await f.locator('#docList [data-a="reject"]').count(), 0); ok("an approver can reject an extraction with a reason; audit entry written; a rejected import cannot be rejected or retired again");
   assert.equal(errors.length, 0, errors.join("\n")); await page.screenshot({ path: OUT + "/imp2-mobile-list.png", fullPage: true });
 
   // ---------- other formats
