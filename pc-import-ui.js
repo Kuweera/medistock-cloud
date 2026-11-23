@@ -1,12 +1,12 @@
 /* MediStock Cloud — "Import a document" card for guidelines.html (Developer 4, Stage 1).
    The page gives this file what it needs (database functions, the stamp, permission checks) through PCIUI.init(); this file never imports Firebase itself.
 
-   What it does: choose a file -> check type and size -> read it in a Web Worker -> preview -> user states the source -> choose chapters -> save.
+   What it does: choose a file -> check type and size -> read it (Web Worker; PDF text through pdf.js) -> preview -> OCR for scanned pages if wanted -> user states the source -> choose chapters -> save.
    The original file stays on THIS device (IndexedDB). Firestore gets the extracted text in sections plus the file name, type, size and SHA-256.
    Nothing saved here is a guideline. It is raw material for a reviewer and is not shown in clinical workflows. */
 (function (root) {
   "use strict";
-  var PCI = root.PCI, S = null, st = { file: null, res: null, hash: "", busy: false, reading: false }, worker = null, reqId = 0, sources = [], unsubSrc = null, viewId = null, viewUnsub = null;
+  var PCI = root.PCI, PT = root.PCITools, S = null, st = { file: null, res: null, hash: "", busy: false, reading: false, ocrPages: [], ocrBlocks: [], ocrNote: [] }, worker = null, reqId = 0, sources = [], unsubSrc = null, viewId = null, viewUnsub = null;
 
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
@@ -26,22 +26,49 @@
     });
   }
 
-  // ---------------------------------------------------------------- reading (Web Worker, with a plain fallback)
-  function readInWorker(file) {
+  // ---------------------------------------------------------------- reading (Web Worker; PDF text is read by pdf.js on the page, laid out in the worker)
+  function getWorker() { if (!worker) { worker = new Worker("pc-import-worker.js"); } return worker; }
+  function askWorker(msg, transfer, onProgress) {
+    var id = ++reqId; msg.id = id;
+    return new Promise(function (resolve, reject) {
+      var w;
+      try { w = getWorker(); } catch (e) { return reject(new Error("This browser cannot run the import worker, so this file cannot be read here.")); }
+      w.onmessage = function (e) { var d = e.data || {}; if (d.id !== id) return; if (d.progress) { if (onProgress) onProgress(d.progress); return; } if (d.error && !d.hash) { var er = new Error(d.error); er.toolMissing = d.toolMissing || ""; reject(er); } else resolve(d); };
+      w.onerror = function () { worker = null; reject(new Error("The import worker stopped unexpectedly. Try the file again.")); };
+      w.postMessage(msg, transfer || []);
+    });
+  }
+  function readFile(file, onProgress) {
+    var d = PCI.detect(file.name);
     return file.arrayBuffer().then(function (buffer) {
-      var id = ++reqId;
-      return new Promise(function (resolve, reject) {
-        var done = false;
-        function finish(m) { if (done) return; done = true; resolve(m); }
-        function runHere() { PCI.sha256Hex(new Uint8Array(buffer)).then(function (hash) { var u8 = new Uint8Array(buffer), r = PCI.extract(file.name, u8), secs = r.ok ? PCI.toSections(r.blocks) : []; finish({ id: id, hash: hash, ext: r.ext, ok: r.ok, error: r.error, encoding: r.encoding || "", method: r.method || "", warnings: r.warnings || [], stats: r.stats || null, sections: secs, preview: r.ok ? r.blocks.slice(0, 40).map(function (b) { return b.kind === "table" ? { kind: "table", rows: b.rows.slice(0, 6) } : { kind: b.kind, level: b.level || 0, text: b.text.slice(0, 600) }; }) : [] }); }, reject); }
-        if (typeof Worker === "undefined") return runHere();
-        try {
-          if (!worker) worker = new Worker("pc-import-worker.js");
-          var w = worker;
-          w.onmessage = function (e) { if (e.data && e.data.id === id) { if (e.data.error && !e.data.hash) reject(new Error(e.data.error)); else finish(e.data); } };
-          w.onerror = function () { worker = null; runHere(); };
-          w.postMessage({ id: id, name: file.name, buffer: buffer }, [buffer]);
-        } catch (e) { runHere(); }
+      if (d.tool === "pdf") {
+        return PCI.sha256Hex(new Uint8Array(buffer)).then(function (hash) {
+          return PT.readPdfPages(buffer.slice(0), function (p) { onProgress({ page: p.page, total: p.total }); }).then(function (pages) { return askWorker({ op: "pdf", name: file.name, hash: hash, pages: pages }, [], null); });
+        });
+      }
+      return askWorker({ name: file.name, buffer: buffer }, [buffer], null);
+    });
+  }
+
+  // ---------------------------------------------------------------- import tools box (what works offline)
+  function fmtMB(n) { return (n / 1048576).toFixed(1) + " MB"; }
+  function renderTools() {
+    var host = $("docTools"); if (!host || !PT) return;
+    Promise.all(PT.TOOLS.map(function (t) { return PT.status(t); })).then(function (list) {
+      host.innerHTML = '<div class="hint2" style="margin-top:0"><b>Import tools on this device</b></div>' + list.map(function (x) {
+        var state = x.stored === true ? '<span class="chip">Ready for offline use</span>' : x.stored === false ? '<span class="chip warn">Not downloaded: needs internet the first time</span>' : '<span class="chip">Cannot check on this browser</span>';
+        return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0"><span style="min-width:150px">' + esc(x.label) + "</span>" + state + (x.stored === true ? "" : ' <button type="button" class="btn-small btn-secondary" data-tool="' + esc(x.tool) + '">Download for offline use</button>') + "</div>";
+      }).join("") + '<div id="docToolMsg" class="hint2"></div>';
+      host.onclick = function (e) { var b = e.target.closest("[data-tool]"); if (!b) return; downloadTool(b.dataset.tool, b); };
+    });
+  }
+  function downloadTool(tool, btn) {
+    var m = $("docToolMsg"); btn.disabled = true; if (m) m.textContent = "Downloading …";
+    PT.download(tool, function (p) { if (m) m.textContent = "Downloading " + p.done + " of " + p.total + " files (" + fmtMB(p.bytes) + ") …"; }).then(function (r) {
+      return PT.status(tool).then(function (x) {
+        if (!r.ok) { if (m) m.textContent = "Some files could not be downloaded (" + r.failed.length + "). Check your connection and try again."; btn.disabled = false; return; }
+        renderTools();
+        setTimeout(function () { var mm = $("docToolMsg"); if (mm) mm.textContent = x.stored ? "Saved for offline use (" + fmtMB(r.bytes) + ")." : "Downloaded (" + fmtMB(r.bytes) + "), but this browser did not confirm that the app keeps them for offline use. Do not rely on them offline yet."; }, 150);
       });
     });
   }
@@ -50,7 +77,8 @@
   function cardHtml() {
     return '<h2>Import a document</h2>' +
       '<div class="hint2" style="margin-top:0">Read a guideline document into the app so a reviewer can check it. <b>Nothing here becomes a guideline by itself.</b> The text is saved as raw material for review and is not shown to clinicians until it has been organised into a draft entry and approved.</div>' +
-      '<div class="hint2"><b>Works without internet:</b> TXT, CSV, HTML, HTM, RTF. <b>PDF, Word and Excel files</b> need import tools that are not installed in this version yet. Old <b>.doc</b> files are not supported: save them as .docx or PDF. Maximum file size ' + (PCI.MAX_FILE_BYTES / 1048576) + ' MB.</div>' +
+      '<div class="hint2"><b>Always works without internet:</b> TXT, CSV, HTML, HTM, RTF. <b>PDF, Word, Excel and OCR</b> work offline only after their import tools have been downloaded once on this device (below). Old <b>.doc</b> files are not supported: save them as .docx or PDF. Maximum file size ' + (PCI.MAX_FILE_BYTES / 1048576) + ' MB.</div>' +
+      '<div id="docTools"></div>' +
       '<label for="docFile">Choose the file</label><input type="file" id="docFile" accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.csv,.html,.htm,.rtf">' +
       '<div id="docMsg" class="msg" role="status"></div><div id="docOut"></div>';
   }
@@ -58,19 +86,25 @@
 
   function groupsOf(secs) {
     var g = [], idx = {};
-    secs.forEach(function (s) { var k = s.headingPath[0] || "(no heading)"; if (idx[k] === undefined) { idx[k] = g.length; g.push({ name: k, secs: [], chars: 0 }); } var o = g[idx[k]]; o.secs.push(s); o.chars += s.text.length; });
+    secs.forEach(function (s) { var k = s.headingPath[0] || "(no heading)"; if (idx[k] === undefined) { idx[k] = g.length; g.push({ name: k, secs: [], chars: 0, pf: null, pt: null, ocr: false }); } var o = g[idx[k]]; o.secs.push(s); o.chars += s.text.length; if (s.ocr) o.ocr = true; if (typeof s.pageFrom === "number") { o.pf = o.pf === null ? s.pageFrom : Math.min(o.pf, s.pageFrom); o.pt = o.pt === null ? s.pageTo : Math.max(o.pt, s.pageTo); } });
     return g;
   }
+  function pageLabel(pf, pt) { return pf === null || pf === undefined ? "" : (pt && pt !== pf ? "pages " + pf + "–" + pt : "page " + pf); }
   function renderResult() {
     var r = st.res, out = $("docOut"); if (!out) return;
-    if (!r || !r.ok) { out.innerHTML = ""; return; }
-    var t = r.stats || {}, groups = groupsOf(r.sections), h = "";
-    h += '<div class="info-box"><b>' + esc(st.file.name) + "</b> (" + esc(mb(st.file.size)) + ", " + esc(r.ext.toUpperCase()) + (r.encoding ? ", " + esc(r.encoding) : "") + ")<br>Found " + (t.headings || 0) + " heading" + (t.headings === 1 ? "" : "s") + ", " + (t.paragraphs || 0) + " paragraph" + (t.paragraphs === 1 ? "" : "s") + ", " + (t.tables || 0) + " table" + (t.tables === 1 ? "" : "s") + " (" + (t.tableRows || 0) + " rows). Page numbers are not available for this file type.<br>SHA-256: <span style=\"word-break:break-all\">" + esc(st.hash) + "</span></div>";
-    (r.warnings || []).forEach(function (w) { h += '<div class="warn-box">' + esc(w) + "</div>"; });
+    if (!r) { out.innerHTML = ""; return; }
+    var t = r.stats || {}, groups = groupsOf(r.sections || []), h = "", pdf = r.pdf;
+    if (r.ok) {
+      h += '<div class="info-box"><b>' + esc(st.file.name) + "</b> (" + esc(mb(st.file.size)) + ", " + esc(r.ext.toUpperCase()) + (r.encoding ? ", " + esc(r.encoding) : "") + (pdf ? ", " + pdf.pages + " pages" : "") + ")<br>Found " + (t.headings || 0) + " heading" + (t.headings === 1 ? "" : "s") + ", " + (t.paragraphs || 0) + " paragraph" + (t.paragraphs === 1 ? "" : "s") + ", " + (t.tables || 0) + " table" + (t.tables === 1 ? "" : "s") + " (" + (t.tableRows || 0) + " rows)." + (pdf ? " Page numbers are kept with each section." : " Page numbers are not available for this file type.") + "<br>SHA-256: <span style=\"word-break:break-all\">" + esc(st.hash) + "</span></div>";
+      (r.warnings || []).concat(st.ocrNote).forEach(function (w) { h += '<div class="warn-box">' + esc(w) + "</div>"; });
+    }
+    if (pdf && pdf.emptyPages && pdf.emptyPages.length) h += ocrPanel(pdf);
+    if (!r.ok) { out.innerHTML = h; bindOcr(); return; }
     h += '<h3 style="margin:12px 0 4px">Preview (first part of the file)</h3><div class="tablewrap" style="max-height:220px;overflow:auto">' + r.preview.map(function (b) {
-      if (b.kind === "table") return '<table style="margin:4px 0">' + b.rows.map(function (row) { return "<tr>" + row.map(function (c) { return "<td>" + esc(c) + "</td>"; }).join("") + "</tr>"; }).join("") + "</table>";
-      if (b.kind === "heading") return '<div style="font-weight:700;margin-top:6px">' + esc(b.text) + "</div>";
-      return '<div style="margin:2px 0">' + esc(b.text) + "</div>";
+      var pg = typeof b.page === "number" ? '<span style="color:#666;font-size:12px"> p.' + b.page + "</span>" : "";
+      if (b.kind === "table") return '<div style="margin-top:4px">' + pg + '</div><table style="margin:0 0 4px">' + b.rows.map(function (row) { return "<tr>" + row.map(function (c) { return "<td>" + esc(c) + "</td>"; }).join("") + "</tr>"; }).join("") + "</table>";
+      if (b.kind === "heading") return '<div style="font-weight:700;margin-top:6px">' + esc(b.text) + pg + "</div>";
+      return '<div style="margin:2px 0">' + esc(b.text) + pg + "</div>";
     }).join("") + "</div>";
     h += '<h3 style="margin:12px 0 4px">Source details (type them as printed in the document)</h3>' +
       '<label for="docTitle">Guideline title</label><input id="docTitle" maxlength="200" autocomplete="off">' +
@@ -80,30 +114,69 @@
       '<label for="docPub">Publication date (optional)</label><input id="docPub" type="date">';
     h += '<h3 style="margin:12px 0 4px">Choose what to save (' + r.sections.length + " section" + (r.sections.length === 1 ? "" : "s") + ")</h3><div class=\"hint2\" style=\"margin-top:0\">Saving fewer sections uses less of the daily write limit. Everything stays readable here until you leave this screen.</div>" +
       '<div class="row" style="margin:6px 0"><button type="button" class="btn-small btn-secondary" id="docAll">Select all</button><button type="button" class="btn-small btn-secondary" id="docNone">Select none</button></div><div id="docGroups">' +
-      groups.map(function (g, i) { return '<label style="display:flex;gap:8px;align-items:flex-start;margin:4px 0;font-weight:400"><input type="checkbox" class="docG" data-i="' + i + '" checked style="width:auto;margin-top:3px"><span>' + esc(g.name) + " <span style=\"color:#666\">(" + g.secs.length + " section" + (g.secs.length === 1 ? "" : "s") + ", " + Math.round(g.chars / 1000) + "k characters)</span></span></label>"; }).join("") + "</div>" +
+      groups.map(function (g, i) { return '<label style="display:flex;gap:8px;align-items:flex-start;margin:4px 0;font-weight:400"><input type="checkbox" class="docG" data-i="' + i + '" checked style="width:auto;margin-top:3px"><span>' + esc(g.name) + " <span style=\"color:#666\">(" + g.secs.length + " section" + (g.secs.length === 1 ? "" : "s") + ", " + Math.round(g.chars / 1000) + "k characters" + (pageLabel(g.pf, g.pt) ? ", " + pageLabel(g.pf, g.pt) : "") + ")</span>" + (g.ocr ? ' <span class="chip warn">includes OCR text</span>' : "") + "</span></label>"; }).join("") + "</div>" +
       '<div id="docSel" class="hint2"></div><button type="button" class="btn-primary" id="docSave">Save extracted text for review</button>';
     out.innerHTML = h; out.__groups = groups;
     $("docAll").onclick = function () { setAll(true); }; $("docNone").onclick = function () { setAll(false); };
-    $("docGroups").addEventListener("change", updSel); $("docSave").onclick = save; updSel();
+    $("docGroups").addEventListener("change", updSel); $("docSave").onclick = save; updSel(); bindOcr();
   }
+
+  // ---------------------------------------------------------------- OCR for pages with no readable text (PDF only)
+  function remainingScans() { var done = {}; st.ocrPages.forEach(function (p) { done[p] = 1; }); return ((st.res && st.res.pdf && st.res.pdf.emptyPages) || []).filter(function (p) { return !done[p]; }); }
+  function ocrPanel(pdf) {
+    var rem = remainingScans(), per = PT ? PT.OCR_PAGES_PER_RUN : 25;
+    if (!rem.length) return '<div class="info-box">OCR has been run on all ' + st.ocrPages.length + " page" + (st.ocrPages.length === 1 ? "" : "s") + " that had no readable text.</div>";
+    var run = rem.slice(0, per);
+    return '<div class="warn-box"><b>' + rem.length + " page" + (rem.length === 1 ? "" : "s") + " with no readable text</b> (" + esc(root.PCIPDF.listPages(rem)) + "). They may be blank, or scanned images. OCR reads text from the page image. <b>OCR can make mistakes, especially with drug names, doses and numbers.</b> Every OCR section is marked and must be checked against the page image. OCR works " + per + ' pages at a time and needs its tool downloaded for offline use.<br><button type="button" class="btn-small btn-secondary" id="docOcr" style="margin-top:6px">Read ' + (run.length === 1 ? "page " + run[0] : run.length + " page" + (run.length === 1 ? "" : "s") + " (" + esc(root.PCIPDF.listPages(run)) + ")") + ' with OCR</button> <span id="docOcrMsg" class="hint2"></span></div>';
+  }
+  function bindOcr() { var b = $("docOcr"); if (b) b.onclick = runOcr; }
+  function runOcr() {
+    var rem = remainingScans(), run = rem.slice(0, PT.OCR_PAGES_PER_RUN), msgEl = $("docOcrMsg"), btn = $("docOcr"); if (!run.length || st.busy || st.reading) return;
+    st.busy = true; btn.disabled = true; if (msgEl) msgEl.textContent = "Starting OCR …";
+    st.file.arrayBuffer().then(function (buf) { return PT.ocrPages(buf, run, function (p) { if (msgEl) msgEl.textContent = "OCR: page " + p.page + " (" + p.done + " of " + p.total + ") …"; }); }).then(function (r) {
+      st.busy = false; st.ocrPages = st.ocrPages.concat(run); st.ocrBlocks = st.ocrBlocks.concat(r.blocks);
+      var blocks = st.res.blocks.map(function (b, i) { return { b: b, i: i }; }).concat(st.ocrBlocks.map(function (b, i) { return { b: b, i: 1e9 + i }; })).sort(function (x, y) { return (x.b.page || 0) - (y.b.page || 0) || x.i - y.i; }).map(function (x) { return x.b; });
+      st.res.blocks = blocks; st.res.sections = PCI.toSections(blocks); st.res.stats = PCI.stats(blocks);
+      st.res.ok = true; st.res.error = ""; st.res.method = st.res.pdf.textPages ? "mixed" : "ocr";
+      st.res.preview = blocks.slice(0, 40).map(function (b) { return b.kind === "table" ? { kind: "table", rows: b.rows.slice(0, 6), page: b.page } : { kind: b.kind, level: b.level || 0, text: b.text.slice(0, 600), page: b.page }; });
+      var avg = r.pages.length ? Math.round(r.pages.reduce(function (m, p) { return m + p.confidence; }, 0) / r.pages.length) : 0;
+      st.ocrNote = ["OCR text was added for " + st.ocrPages.length + " page" + (st.ocrPages.length === 1 ? "" : "s") + " (average confidence " + avg + "%)." + (r.lowConfidence.length ? " Low confidence on pages " + root.PCIPDF.listPages(r.lowConfidence) + ": read these against the original." : "") + " OCR text is marked in the list below and in each saved section."];
+      var wasOk = !!$("docTitle"), keep = wasOk ? { t: $("docTitle").value, o: $("docOrg").value, j: $("docJur").value, e: $("docEd").value, p: $("docPub").value } : null;
+      msg("OCR finished for " + run.length + " page" + (run.length === 1 ? "" : "s") + ".", "ok"); renderResult();
+      if (keep && $("docTitle")) { $("docTitle").value = keep.t; $("docOrg").value = keep.o; $("docJur").value = keep.j; $("docEd").value = keep.e; $("docPub").value = keep.p; }
+    }, function (e) { st.busy = false; if (btn) btn.disabled = false; if (msgEl) msgEl.textContent = ""; msg(e && e.message || "OCR failed.", "err"); if (e && e.toolMissing) renderTools(); });
+  }
+
   function setAll(v) { document.querySelectorAll("#docGroups .docG").forEach(function (c) { c.checked = v; }); updSel(); }
   function selected() { var out = $("docOut"), g = out.__groups || [], list = []; document.querySelectorAll("#docGroups .docG").forEach(function (c) { if (c.checked) list = list.concat(g[Number(c.dataset.i)].secs); }); return list; }
   function updSel() { var s = selected(), sm = PCI.summary(s), el = $("docSel"); if (el) el.innerHTML = s.length + " section" + (s.length === 1 ? "" : "s") + " selected (" + Math.round(sm.chars / 1000) + "k characters)." + (sm.overWarn ? ' <b style="color:#b45309">' + esc(sm.message) + "</b>" : ""); var b = $("docSave"); if (b) b.disabled = !s.length; }
 
+  function freshState(file) { return { file: file, res: null, hash: "", busy: false, reading: true, ocrPages: [], ocrBlocks: [], ocrNote: [] }; }
   function chooseFile(file) {
-    st = { file: file, res: null, hash: "", busy: false, reading: true }; $("docOut").innerHTML = "";
+    st = freshState(file); $("docOut").innerHTML = "";
     var v = PCI.validate(file);
     if (!v.ok) { msg(v.message, "err"); st.reading = false; return; }
     msg("Reading " + file.name + " …", "");
-    readInWorker(file).then(function (m) {
+    readFile(file, function (p) { msg("Reading " + file.name + ": page " + p.page + " of " + p.total + " …", ""); }).then(function (m) {
       st.reading = false; st.res = m; st.hash = m.hash || "";
-      if (!m.ok) { msg(m.error || "The file could not be read.", "err"); return; }
+      if (!m.ok) { msg(m.error || "The file could not be read.", "err"); if (m.pdf && m.pdf.emptyPages && m.pdf.emptyPages.length) renderResult(); return; }
       msg("Read " + (m.sections.length) + " section" + (m.sections.length === 1 ? "" : "s") + ". Check the preview, state the source, then save.", "ok"); renderResult();
-    }, function (e) { st.reading = false; msg("The file could not be read: " + (e && e.message || e), "err"); });
+    }, function (e) { st.reading = false; msg(e && e.message || "The file could not be read.", "err"); if (e && e.toolMissing) renderTools(); });
   }
 
   // ---------------------------------------------------------------- saving
   function chunk(a, n) { var o = []; for (var i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o; }
+  function sectionsOnce(sid, saved) {
+    // the sections already saved for this import (read once); refuse a partial offline copy so nothing is compared against incomplete data
+    return new Promise(function (resolve, reject) {
+      var c = S.ctx(), un = null, got = false;
+      un = S.onSnapshot(S.query(S.collection(S.db, "guideline_sections"), S.where("businessId", "==", c.businessId), S.where("sourceId", "==", sid)), function (snap) {
+        if (got) return; var map = {}; snap.forEach(function (d) { var x = d.data(); map[x.seq] = x; });
+        if (snap.metadata && snap.metadata.fromCache && snap.size < (saved || 0)) { got = true; if (un) un(); reject(new Error("The saved sections have not all arrived on this device yet. Try again when you are online.")); return; }
+        got = true; if (un) un(); resolve(map);
+      }, function (e) { if (!got) { got = true; reject(e); } });
+    });
+  }
   function save() {
     if (st.busy || !st.res || !st.res.ok) return;
     var f = { title: $("docTitle").value.trim(), org: $("docOrg").value.trim(), jur: $("docJur").value.trim(), ed: $("docEd").value.trim(), pub: $("docPub").value.trim() }, miss = [];
@@ -114,26 +187,42 @@
     var sm = PCI.summary(secs); if (sm.overWarn && !window.confirm(sm.message + "\n\nSave all " + secs.length + " sections anyway?")) return;
     st.busy = true; $("docSave").disabled = true; msg("Checking whether this file was already imported …", "");
     var c = S.ctx(), sid = "gsrc_" + st.hash.slice(0, 16), srcRef = S.doc(S.db, "guideline_sources", sid);
-    S.getDoc(srcRef).then(function (snap) { return snap && snap.exists(); }, function () { return null; }).then(function (exists) {
-      if (exists) { st.busy = false; $("docSave").disabled = false; msg("This exact file was already imported. Open it in “Imported documents” below. To import more of it, ask the Lead Developer: adding sections to an existing import is not supported yet.", "err"); return; }
-      var note = exists === null ? " (could not check for an earlier import while offline)" : "";
-      var base = S.stamp(), srcDoc = Object.assign({}, base, { fileName: st.file.name, fileType: st.res.ext, fileSizeBytes: st.file.size, sha256: st.hash, pageCount: null, extractionMethod: st.res.method || "text", ocrUsed: false, ocrPages: [], extractionWarnings: st.res.warnings || [], sectionCount: secs.length, sourceTitle: f.title, sourceOrg: f.org, jurisdiction: f.jur, sourceEdition: f.ed, publicationDate: f.pub || "", importDate: new Date().toISOString().slice(0, 10), addedByName: c.myName, status: "imported" });
-      var b0 = S.writeBatch(S.db); b0.set(srcRef, srcDoc);
-      b0.set(S.doc(S.collection(S.db, "pc_audit_logs")), Object.assign(S.stamp(), { actorUid: c.me.id, actorName: c.myName, action: "guideline.source_import", recordPath: "guideline_sources/" + sid, patientId: null, count: secs.length, fileName: st.file.name, sha256: st.hash, at: S.serverTimestamp() }));
-      var parts = chunk(secs, 400), done = 0, status = "confirmed";
-      function step(first) {
-        var batch = first ? b0 : S.writeBatch(S.db), part = first ? [] : parts.shift();
-        if (first) { /* the source record goes alone, so a rules problem shows up before any section is written */ }
-        part.forEach(function (s) { var id = sid + "_s" + ("00000" + s.seq).slice(-5); batch.set(S.doc(S.db, "guideline_sections", id), Object.assign({}, S.stamp(), { sourceId: sid, seq: s.seq, kind: s.kind, headingPath: s.headingPath, pageFrom: s.pageFrom, pageTo: s.pageTo, text: s.text, tableRows: s.tableRows, ocr: s.ocr, ocrConfidence: s.ocrConfidence, reviewStatus: "unreviewed", usedInGuidelineId: null })); });
-        return S.commit(batch, first ? "Import record for " + st.file.name : "Sections " + (done + 1) + "–" + (done + part.length)).then(function (r) { if (r !== "confirmed") status = "waiting"; done += part.length; msg("Saved " + done + " of " + secs.length + " sections …", ""); return parts.length ? step(false) : null; });
-      }
-      return step(true).then(function () {
-        return keepOriginal(st.file, st.hash).then(function (kept) {
-          msg(status === "confirmed" ? "Saved " + secs.length + " section" + (secs.length === 1 ? "" : "s") + " for review." + (kept ? " The original file is kept on this device only." : " The original file could not be kept on this device.") + note : "Saved on this device. It has NOT reached the server yet and will send when you are online." + (kept ? " The original file is kept on this device only." : ""), status === "confirmed" ? "ok" : "err");
-          st = { file: null, res: null, hash: "", busy: false, reading: false }; $("docOut").innerHTML = ""; $("docFile").value = "";
+    function release(text, cls) { st.busy = false; var b = $("docSave"); if (b) b.disabled = false; msg(text, cls || "err"); }
+    S.getDoc(srcRef).then(function (snap) { return snap && snap.exists() ? { exists: true, data: snap.data() } : { exists: false }; }, function () { return { exists: null }; }).then(function (ex) {
+      var note = ex.exists === null ? " (could not check for an earlier import while offline)" : "", adding = ex.exists === true, toWrite = secs, pre;
+      if (adding) {
+        if (ex.data.status !== "imported") { release("This file was imported before and is now \"" + ex.data.status + "\". It cannot be changed."); return null; }
+        if (!window.confirm("This file was already imported (" + (ex.data.sectionCount || 0) + " sections saved).\n\nAdd the selected sections that are not saved yet?")) { release("Nothing was added.", ""); return null; }
+        msg("Comparing with the sections already saved …", "");
+        pre = sectionsOnce(sid, ex.data.sectionCount).then(function (saved) {
+          var bad = Object.keys(saved).filter(function (k) { var cur = st.res.sections.filter(function (s) { return s.seq === Number(k); })[0]; return !cur || cur.text !== saved[k].text; });
+          if (bad.length) throw new Error("This reading of the file differs from what was saved earlier (" + bad.length + " section" + (bad.length === 1 ? "" : "s") + " do not match, for example because OCR was added or the file was read by a different version of the app). To avoid mixing two different readings, nothing was added.");
+          toWrite = secs.filter(function (s) { return !saved[s.seq]; });
+          if (!toWrite.length) throw new Error("All the selected sections are already saved.");
         });
-      });
-    }).catch(function (e) { st.busy = false; var b = $("docSave"); if (b) b.disabled = false; msg("Not saved: " + S.friendlyError(e), "err"); });
+      } else pre = Promise.resolve();
+      return pre.then(function () {
+        var b0 = S.writeBatch(S.db), warn = (st.res.warnings || []).concat(st.ocrNote || []).slice(0, 20).map(function (t) { return String(t).slice(0, 500); });
+        if (adding) {
+          b0.update(srcRef, { sectionCount: (ex.data.sectionCount || 0) + toWrite.length, updatedBy: c.me.id, updatedAt: S.serverTimestamp() });
+        } else {
+          b0.set(srcRef, Object.assign({}, S.stamp(), { fileName: st.file.name, fileType: st.res.ext, fileSizeBytes: st.file.size, sha256: st.hash, pageCount: st.res.pdf ? st.res.pdf.pages : null, extractionMethod: st.res.method || "text", ocrUsed: st.ocrPages.length > 0, ocrPages: st.ocrPages.slice().sort(function (x, y) { return x - y; }), extractionWarnings: warn, sectionCount: toWrite.length, sourceTitle: f.title, sourceOrg: f.org, jurisdiction: f.jur, sourceEdition: f.ed, publicationDate: f.pub || "", importDate: new Date().toISOString().slice(0, 10), addedByName: c.myName, status: "imported" }));
+        }
+        b0.set(S.doc(S.collection(S.db, "pc_audit_logs")), Object.assign(S.stamp(), { actorUid: c.me.id, actorName: c.myName, action: adding ? "guideline.source_add_sections" : "guideline.source_import", recordPath: "guideline_sources/" + sid, patientId: null, count: toWrite.length, fileName: st.file.name, sha256: st.hash, at: S.serverTimestamp() }));
+        var parts = chunk(toWrite, 400), done = 0, status = "confirmed";
+        function step(first) {
+          var batch = first ? b0 : S.writeBatch(S.db), part = first ? [] : parts.shift();   // the source record goes alone, so a rules problem shows up before any section is written
+          part.forEach(function (s) { var id = sid + "_s" + ("00000" + s.seq).slice(-5); batch.set(S.doc(S.db, "guideline_sections", id), Object.assign({}, S.stamp(), { sourceId: sid, seq: s.seq, kind: s.kind, headingPath: s.headingPath, pageFrom: s.pageFrom, pageTo: s.pageTo, text: s.text, tableRows: s.tableRows, ocr: s.ocr, ocrConfidence: s.ocrConfidence, reviewStatus: "unreviewed", usedInGuidelineId: null })); });
+          return S.commit(batch, first ? (adding ? "Update import record for " : "Import record for ") + st.file.name : "Sections " + (done + 1) + "–" + (done + part.length)).then(function (r) { if (r !== "confirmed") status = "waiting"; done += part.length; msg("Saved " + done + " of " + toWrite.length + " sections …", ""); return parts.length ? step(false) : null; });
+        }
+        return step(true).then(function () {
+          return keepOriginal(st.file, st.hash).then(function (kept) {
+            msg(status === "confirmed" ? (adding ? "Added " : "Saved ") + toWrite.length + " section" + (toWrite.length === 1 ? "" : "s") + " for review." + (kept ? " The original file is kept on this device only." : " The original file could not be kept on this device.") + note : "Saved on this device. It has NOT reached the server yet and will send when you are online." + (kept ? " The original file is kept on this device only." : ""), status === "confirmed" ? "ok" : "err");
+            st = freshState(null); st.reading = false; $("docOut").innerHTML = ""; $("docFile").value = "";
+          });
+        });
+      }, function (e) { release(e && e.message || "Could not add the sections."); return null; });
+    }).catch(function (e) { release("Not saved: " + S.friendlyError(e)); });
   }
 
   // ---------------------------------------------------------------- imported documents list (reviewers)
@@ -142,8 +231,7 @@
     return sources.map(function (s) {
       var chip = s.status === "rejected" ? '<span class="chip bad">Rejected</span>' : s.status === "retired" ? '<span class="chip">Retired</span>' : '<span class="chip warn">Raw text, not reviewed</span>';
       var acts = '<button type="button" class="btn-small btn-secondary" data-a="view" data-id="' + esc(s.id) + '">' + (viewId === s.id ? "Hide text" : "View text") + "</button>";
-      if (S.canApprove() && s.status === "imported") acts += ' <button type="button" class="btn-small btn-secondary" data-a="reject" data-id="' + esc(s.id) + '">Reject</button>';
-      if (S.canApprove() && s.status !== "retired") acts += ' <button type="button" class="btn-small btn-secondary" data-a="retire" data-id="' + esc(s.id) + '">Retire</button>';
+      if (S.canApprove() && s.status === "imported") acts += ' <button type="button" class="btn-small btn-secondary" data-a="reject" data-id="' + esc(s.id) + '">Reject</button> <button type="button" class="btn-small btn-secondary" data-a="retire" data-id="' + esc(s.id) + '">Retire</button>';
       return '<div class="card" style="margin:8px 0"><b>' + esc(s.sourceTitle) + "</b> " + chip + "<br>" + esc(s.sourceOrg) + " · " + esc(s.jurisdiction) + " · " + esc(s.sourceEdition) + "<br><span style=\"color:#666\">" + esc(s.fileName) + " (" + esc(String(s.fileType || "").toUpperCase()) + ", " + esc(mb(s.fileSizeBytes || 0)) + "), " + (s.sectionCount || 0) + " sections, imported " + esc(s.importDate || when(s.createdAt)) + " by " + esc(s.addedByName || "") + "</span>" + (s.rejectedReason ? "<br>Reason: " + esc(s.rejectedReason) : "") + '<div class="row" style="margin-top:6px">' + acts + '</div><div id="docView_' + esc(s.id) + '"></div></div>';
     }).join("");
   }
@@ -179,7 +267,7 @@
     S = deps; var host = $("docImport"); if (!host) return;
     if (!S.canManage() && !S.canApprove()) { host.innerHTML = ""; return; }
     host.innerHTML = '<div class="card">' + (S.canManage() ? cardHtml() : "") + "</div>" + '<div class="card"><h2>Imported documents</h2><div id="docList"></div></div>';
-    if (S.canManage()) $("docFile").addEventListener("change", function (e) { var f = e.target.files[0]; if (f) chooseFile(f); });
+    if (S.canManage()) { $("docFile").addEventListener("change", function (e) { var f = e.target.files[0]; if (f) chooseFile(f); }); renderTools(); }
     $("docList").addEventListener("click", onListClick);
     if (unsubSrc) { try { unsubSrc(); } catch (e) { } }
     unsubSrc = S.onSnapshot(S.query(S.collection(S.db, "guideline_sources"), S.where("businessId", "==", S.ctx().businessId)), function (snap) {

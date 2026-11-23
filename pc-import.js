@@ -1,8 +1,8 @@
 /* MediStock Cloud — guideline file import (Developer 4, Stage 1).
    Pure functions only: no database access, no page access. Runs in a Web Worker, in guidelines.html and in the Node tests.
 
-   Stage 1 reads: TXT, CSV, HTML/HTM and RTF, with no outside library.
-   PDF, DOCX, XLSX and XLS need the vendored libraries (Stage 2) and are refused here with a clear message.
+   Stage 1 reads: TXT, CSV, HTML/HTM and RTF, with no outside library (this file).
+   Stage 2 reads PDF, DOCX, XLSX and XLS with the vendored libraries in vendor/ (pc-import-worker.js loads them; pc-import-pdf.js holds the PDF layout logic).
    Legacy .doc is not supported: nothing here guesses at a conversion.
 
    Nothing in this file creates clinical content. It only copies text out of a file the user chose. The extracted text is raw
@@ -17,21 +17,20 @@
 
   var TYPES = {
     txt: { label: "Text", now: true }, csv: { label: "CSV", now: true }, html: { label: "HTML", now: true }, htm: { label: "HTML", now: true }, rtf: { label: "RTF", now: true },
-    pdf: { label: "PDF", now: false }, docx: { label: "Word (.docx)", now: false }, xlsx: { label: "Excel (.xlsx)", now: false }, xls: { label: "Excel (.xls)", now: false }
+    pdf: { label: "PDF", now: true, tool: "pdf" }, docx: { label: "Word (.docx)", now: true, tool: "docx" }, xlsx: { label: "Excel (.xlsx)", now: true, tool: "xlsx" }, xls: { label: "Excel (.xls)", now: true, tool: "xlsx" }
   };
 
   // ---------------------------------------------------------------- file checks
   function extOf(name) { var m = /\.([A-Za-z0-9]+)$/.exec(String(name || "")); return m ? m[1].toLowerCase() : ""; }
 
-  /* detect(name) -> { ext, ok, stage, message }   ok = can be read in this build */
+  /* detect(name) -> { ext, ok, stage, tool, message }   ok = a reader exists for this type. tool = the vendored library the reader needs ("pdf", "docx", "xlsx") or "" for the built-in readers. */
   function detect(name) {
     var ext = extOf(name);
-    if (ext === "doc") return { ext: ext, ok: false, stage: "unsupported", message: "Old Word files (.doc) cannot be read reliably. Open the file in Word and save it as .docx or PDF, then try again." };
-    if (ext === "json") return { ext: ext, ok: false, stage: "json", message: "JSON files use the \"Entries (JSON)\" import, not this one." };
+    if (ext === "doc") return { ext: ext, ok: false, stage: "unsupported", tool: "", message: "Old Word files (.doc) cannot be read reliably. Open the file in Word and save it as .docx or PDF, then try again." };
+    if (ext === "json") return { ext: ext, ok: false, stage: "json", tool: "", message: "JSON files use the \"Entries (JSON)\" import, not this one." };
     var t = TYPES[ext];
-    if (!t) return { ext: ext, ok: false, stage: "unsupported", message: "This file type" + (ext ? " (." + ext + ")" : "") + " is not supported. Supported: PDF, DOCX, XLSX, XLS, TXT, CSV, HTML, HTM, RTF." };
-    if (!t.now) return { ext: ext, ok: false, stage: "pending", message: t.label + " files need the import tools, which are not installed in this version of the app yet. TXT, CSV, HTML and RTF files can be imported now." };
-    return { ext: ext, ok: true, stage: "ready", message: "" };
+    if (!t) return { ext: ext, ok: false, stage: "unsupported", tool: "", message: "This file type" + (ext ? " (." + ext + ")" : "") + " is not supported. Supported: PDF, DOCX, XLSX, XLS, TXT, CSV, HTML, HTM, RTF." };
+    return { ext: ext, ok: true, stage: "ready", tool: t.tool || "", message: "" };
   }
 
   /* validate({name,size}) -> { ok, message } */
@@ -250,6 +249,7 @@
   /* extract(name, Uint8Array) -> { ok, error, ext, encoding, blocks, warnings, stats } */
   function extract(name, u8) {
     var d = detect(name); if (!d.ok) return { ok: false, error: d.message, ext: d.ext, blocks: [], warnings: [] };
+    if (d.tool) return { ok: false, error: "This type is read by the import worker with the import tools (pc-import-worker.js), not by extract().", ext: d.ext, blocks: [], warnings: [] };
     var res, dec;
     if (d.ext === "rtf") { dec = decodeText(u8); res = parseRtf(dec.text); }
     else { dec = decodeText(u8); if (d.ext === "txt") res = parseTxt(dec.text); else if (d.ext === "csv") res = parseCsv(dec.text); else res = parseHtml(dec.text); }
@@ -272,22 +272,25 @@
   }
   function tableText(rows) { return rows.map(function (r) { return r.join("\t"); }).join("\n"); }
   /* toSections(blocks, opts) -> [{ seq, kind, headingPath, pageFrom, pageTo, text, tableRows, ocr, ocrConfidence, reviewStatus }]
-     seq starts at 1. A new section starts at each heading. A run of paragraphs under one heading path is joined into sections of at most MAX_SECTION_CHARS.
-     A table is its own section(s) of at most MAX_TABLE_ROWS_PER_SECTION rows; the header row is repeated in each part. */
+     seq starts at 1. A new section starts at each heading (a heading repeated back to back does not start a new one). A run of paragraphs under one
+     heading path is joined into sections of at most MAX_SECTION_CHARS. A table is its own section(s) of at most MAX_TABLE_ROWS_PER_SECTION rows; the header row
+     is repeated in each part. Blocks may carry page (and pageTo) and ocr / conf; the section keeps the page range and says if any text in it came from OCR. */
   function toSections(blocks, opts) {
     opts = opts || {}; var max = opts.maxChars || MAX_SECTION_CHARS, secs = [], path = [], run = [], seq = 0;
-    function mk(kind, text, rows) { seq++; var o = { seq: seq, kind: kind, headingPath: path.slice(), pageFrom: null, pageTo: null, text: text, tableRows: rows || [], ocr: false, ocrConfidence: null, reviewStatus: "unreviewed" }; secs.push(o); return o; }
-    function flushRun() { if (!run.length) return; var joined = run.join("\n\n"); run = []; splitLong(joined, max).forEach(function (t) { mk("paragraph", t); }); }
+    function pages(list) { var lo = null, hi = null; list.forEach(function (b) { var a = typeof b.page === "number" ? b.page : null, z = typeof b.pageTo === "number" ? b.pageTo : a; if (a !== null) { lo = lo === null ? a : Math.min(lo, a); hi = hi === null ? z : Math.max(hi, z); } }); return [lo, hi]; }
+    function ocrOf(list) { var o = list.filter(function (b) { return b.ocr; }); if (!o.length) return { ocr: false, conf: null }; var cs = o.map(function (b) { return typeof b.conf === "number" ? b.conf : null; }).filter(function (c) { return c !== null; }); return { ocr: true, conf: cs.length ? Math.round(cs.reduce(function (m, c) { return m + c; }, 0) / cs.length * 10) / 10 : null }; }
+    function mk(kind, text, rows, list) { seq++; var pg = pages(list), oc = ocrOf(list), o = { seq: seq, kind: kind, headingPath: path.slice(), pageFrom: pg[0], pageTo: pg[1], text: text, tableRows: rows || [], ocr: oc.ocr, ocrConfidence: oc.conf, reviewStatus: "unreviewed" }; secs.push(o); return o; }
+    function flushRun() { if (!run.length) return; var list = run; run = []; var joined = list.map(function (b) { return b.text; }).join("\n\n"); splitLong(joined, max).forEach(function (t) { mk("paragraph", t, null, list); }); }
     var levels = [];
     blocks.forEach(function (b) {
       if (b.kind === "heading") { var lv = b.level || 1; if (levels.length && levels[levels.length - 1] === lv && path[path.length - 1] === b.text) return; /* the same heading repeated (a running page header) does not start a new section */ flushRun(); while (levels.length && levels[levels.length - 1] >= lv) { levels.pop(); path.pop(); } levels.push(lv); path.push(b.text); return; }
-      if (b.kind === "paragraph") { run.push(b.text); return; }
+      if (b.kind === "paragraph") { run.push(b); return; }
       flushRun();
       var rows = b.rows, header = b.header && rows.length > 1 ? rows[0] : null, body = header ? rows.slice(1) : rows, step = MAX_TABLE_ROWS_PER_SECTION - (header ? 1 : 0), p;
       for (p = 0; p < body.length || (p === 0 && !body.length); p += step) {
         var chunk = body.slice(p, p + step), part = header ? [header].concat(chunk) : chunk, txt = tableText(part);
-        if (txt.length > max) { splitLong(txt, max).forEach(function (t2) { mk("table", t2, []); }); }
-        else mk("table", txt, part.map(function (r) { return { cells: r }; }));
+        if (txt.length > max) { splitLong(txt, max).forEach(function (t2) { mk("table", t2, [], [b]); }); }
+        else mk("table", txt, part.map(function (r) { return { cells: r }; }), [b]);
         if (!body.length) break;
       }
     });
@@ -304,7 +307,7 @@
   var api = {
     MAX_FILE_BYTES: MAX_FILE_BYTES, MAX_SECTION_CHARS: MAX_SECTION_CHARS, WARN_SECTIONS: WARN_SECTIONS, MAX_TABLE_ROWS_PER_SECTION: MAX_TABLE_ROWS_PER_SECTION,
     extOf: extOf, detect: detect, validate: validate, sha256Hex: sha256Hex, sha256Plain: sha256Plain, decodeText: decodeText,
-    parseTxt: parseTxt, parseCsv: parseCsv, parseHtml: parseHtml, parseRtf: parseRtf, extract: extract, toSections: toSections, summary: summary, decodeEntities: decodeEntities
+    parseTxt: parseTxt, parseCsv: parseCsv, parseHtml: parseHtml, parseRtf: parseRtf, extract: extract, toSections: toSections, summary: summary, stats: stats, decodeEntities: decodeEntities
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.PCI = api;
 })(typeof self !== "undefined" ? self : (typeof window !== "undefined" ? window : this));
