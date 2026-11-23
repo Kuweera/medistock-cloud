@@ -137,3 +137,29 @@ test("toSections: page ranges and OCR flags are carried into the sections", () =
   assert.deepEqual([s[1].kind, s[1].pageFrom, s[1].pageTo, s[1].ocr], ["table", 6, 6, false]);
   const noPages = PCI.toSections([{ kind: "paragraph", text: "x" }]); assert.deepEqual([noPages[0].pageFrom, noPages[0].pageTo, noPages[0].ocr], [null, null, false]);
 });
+
+test("no section ever holds more than 500 table rows (the Firestore rule limit), however large the table", () => {
+  const big = (n, header) => { const rows = []; for (let i = 0; i < n; i++) rows.push(["r" + i, "v" + i]); return { kind: "table", header, rows: header ? [["H1", "H2"]].concat(rows) : rows, page: 1 }; };
+  [[5000, true], [5000, false], [499, true], [500, false], [501, true], [1, false]].forEach(([n, h]) => {
+    const secs = PCI.toSections([big(n, h)]);
+    assert.ok(secs.every((s) => s.tableRows.length <= 500 && s.tableRows.length <= PCI.MAX_TABLE_ROWS_PER_SECTION), n + " rows");
+    assert.equal(secs.reduce((m, s) => m + s.tableRows.length - (h ? 1 : 0), 0), n, "no row is lost: " + n);
+  });
+  assert.ok(PCI.MAX_TABLE_ROWS_PER_SECTION <= 500);
+  const wide = PCI.toSections([{ kind: "table", header: false, rows: [["x".repeat(60000), "y".repeat(60000)]] }]); assert.ok(wide.every((s) => s.text.length <= 100000 && s.tableRows.length <= 500));
+});
+
+test("pdf.js is never opened with font evaluation enabled: every getDocument call sets isEvalSupported: false", () => {
+  const fs = require("node:fs"), path = require("node:path"), dir = path.join(__dirname, "..");
+  let calls = 0;
+  fs.readdirSync(dir).filter((f) => /^pc-import.*\.js$/.test(f)).forEach((f) => {
+    const src = fs.readFileSync(path.join(dir, f), "utf8"); let at = -1;
+    while ((at = src.indexOf("getDocument(", at + 1)) >= 0) {
+      let depth = 0, i = at + "getDocument".length; for (; i < src.length; i++) { if (src[i] === "(") depth++; else if (src[i] === ")" && --depth === 0) break; }
+      const args = src.slice(at, i + 1); calls++;
+      assert.match(args, /isEvalSupported\s*:\s*false/, f + ": getDocument without isEvalSupported:false"); assert.doesNotMatch(args, /isEvalSupported\s*:\s*true/, f);
+    }
+    assert.doesNotMatch(src, /isEvalSupported\s*:\s*true/, f + " must never enable it");
+  });
+  assert.ok(calls >= 2, "expected the two getDocument calls in pc-import-tools.js, found " + calls);
+});
