@@ -1,0 +1,72 @@
+name: Fetch vendor libraries (manual)
+# Downloads the approved libraries from their official registries, copies only the files the app needs into vendor/, writes vendor/VENDOR_MANIFEST.md
+# (version, licence, SHA-256 of every file) and commits the result. Run from the GitHub app: Actions > "Fetch vendor libraries (manual)" > Run workflow.
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Download packages
+        run: |
+          set -e
+          mkdir -p /tmp/pk && cd /tmp/pk
+          npm pack pdfjs-dist@3.11.174
+          npm pack mammoth@1.8.0
+          npm pack tesseract.js@5.1.1
+          npm pack tesseract.js-core@5.1.1
+          curl -fsSL -o xlsx.tgz https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
+          curl -fsSL -o eng.traineddata https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata
+          for f in pdfjs-dist-*.tgz mammoth-*.tgz tesseract.js-5*.tgz tesseract.js-core-*.tgz xlsx.tgz; do d="x_${f%.tgz}"; mkdir "$d"; tar -xzf "$f" -C "$d"; done
+          ls
+      - name: Copy the needed files
+        run: |
+          set -e
+          P=/tmp/pk; V=vendor
+          rm -rf $V; mkdir -p $V/pdfjs-3.11.174 $V/mammoth-1.8.0 $V/sheetjs-0.20.3 $V/tesseract-5.1.1/core $V/tesseract-5.1.1/lang
+          need() { [ -f "$1" ] || { echo "MISSING in package: $1"; exit 1; }; cp "$1" "$2"; }
+          # pdf.js: classic script (non-module) build
+          need $P/x_pdfjs-dist-3.11.174/package/build/pdf.min.js $V/pdfjs-3.11.174/
+          need $P/x_pdfjs-dist-3.11.174/package/build/pdf.worker.min.js $V/pdfjs-3.11.174/
+          need $P/x_pdfjs-dist-3.11.174/package/LICENSE $V/pdfjs-3.11.174/
+          need $P/x_mammoth-1.8.0/package/mammoth.browser.min.js $V/mammoth-1.8.0/
+          need $P/x_mammoth-1.8.0/package/LICENSE $V/mammoth-1.8.0/
+          need $P/x_xlsx-0.20.3/package/dist/xlsx.full.min.js $V/sheetjs-0.20.3/
+          need $P/x_xlsx-0.20.3/package/LICENSE $V/sheetjs-0.20.3/
+          need $P/x_tesseract.js-5.1.1/package/dist/worker.min.js $V/tesseract-5.1.1/
+          need $P/x_tesseract.js-5.1.1/package/dist/tesseract.min.js $V/tesseract-5.1.1/
+          need $P/x_tesseract.js-5.1.1/package/LICENSE.md $V/tesseract-5.1.1/
+          cp $P/x_tesseract.js-core-5.1.1/package/tesseract-core*.js $V/tesseract-5.1.1/core/
+          cp $P/x_tesseract.js-core-5.1.1/package/tesseract-core*.wasm $V/tesseract-5.1.1/core/ 2>/dev/null || true
+          need $P/x_tesseract.js-core-5.1.1/package/LICENSE $V/tesseract-5.1.1/core/
+          need $P/eng.traineddata $V/tesseract-5.1.1/lang/
+          gzip -k -9 $V/tesseract-5.1.1/lang/eng.traineddata
+          find $V -type f | sort
+      - name: Write the manifest
+        run: |
+          set -e
+          M=vendor/VENDOR_MANIFEST.md
+          echo "# VENDOR_MANIFEST.md" > $M
+          echo "Fetched by the 'Fetch vendor libraries' workflow on $(date -u +%Y-%m-%d) from the official npm registry (pdfjs-dist, mammoth, tesseract.js, tesseract.js-core), cdn.sheetjs.com (SheetJS 0.20.3) and github.com/tesseract-ocr/tessdata_fast. Versions are the ones requested: pdf.js 3.11.174, mammoth 1.8.0, SheetJS 0.20.3, tesseract.js 5.1.1 (+ tesseract.js-core 5.1.1)." >> $M
+          echo "" >> $M
+          echo "| File | Bytes | SHA-256 |" >> $M
+          echo "|---|---|---|" >> $M
+          find vendor -type f ! -name VENDOR_MANIFEST.md | sort | while read f; do echo "| $f | $(stat -c %s "$f") | $(sha256sum "$f" | cut -d' ' -f1) |" >> $M; done
+          cat $M
+      - name: Keep a downloadable copy
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendor
+          path: vendor
+      - name: Commit vendor/ to the repository
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add vendor
+          git commit -m "Add vendored libraries (pdf.js, mammoth, SheetJS, tesseract.js) with manifest" || echo "nothing to commit"
+          git push
+          
