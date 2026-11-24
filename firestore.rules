@@ -1,6 +1,7 @@
 rules_version = '2';
 
 // MediStock Cloud — multi-shop roles & security (v19 verified in CI run #68; v20 journey field proposed)
+// v26 (Lead, PROPOSED): pc_alert_rules, pc_obs_acks; reference ranges accept 'reproductive' (lactation) and require 'allAges' for vitals without age limits; triage accepts interp, ctx, repeatOf.
 // v25 (Lead, PROPOSED): pc_reference_ranges (facility-scoped reference intervals; keys ranges.manage / ranges.approve). No values shipped.
 // v24 (Lead, PROPOSED): guideline_sources and guideline_sections (import of guideline files; reviewer-only raw extracts).
 // v23 (Lead, PROPOSED): attendance for facility-administered doses (arrival, did-not-attend, undo, correction) and consumables as kind 'consumable' orders supplied through the pending prescription / pharmacy engine (Option B).
@@ -627,7 +628,11 @@ service cloud.firestore {
         && numOk(d, 'muacCm', 3, 60) && numOk(d, 'glucose', 0, 1000)
         && (!('consciousness' in d) || d.consciousness == null || d.consciousness in ['alert', 'voice', 'pain', 'unresponsive'])
         && (!('category' in d) || d.category == null || d.category in ['emergency', 'urgent', 'standard', 'low'])
-        && (!('glucoseUnit' in d) || d.glucoseUnit == null || d.glucoseUnit in ['mmol/L', 'mg/dL']);
+        && (!('glucoseUnit' in d) || d.glucoseUnit == null || d.glucoseUnit in ['mmol/L', 'mg/dL'])
+        // v26: additive observation record (Developer 4): interpretation as it was at entry, context, and the first reading this one repeats
+        && (!('interp' in d) || d.interp == null || (d.interp is map && d.interp.size() <= 20))
+        && (!('ctx' in d) || d.ctx == null || (d.ctx is map && d.ctx.size() <= 30))
+        && (!('repeatOf' in d) || d.repeatOf == null || (d.repeatOf is string && d.repeatOf.size() > 0 && d.repeatOf.size() <= 100));
     }
 
     // v20 (Lead): optional, additive visit "journey" hint written by the staff who finish a step. It is a CACHE of where the patient goes next, never the source of truth
@@ -1823,7 +1828,9 @@ service cloud.firestore {
         && rrNumOrNull(d.get('minAgeMonths', null)) && rrNumOrNull(d.get('maxAgeMonths', null))
         && (d.get('minAgeMonths', null) == null || d.minAgeMonths >= 0)
         && (d.get('minAgeMonths', null) == null || d.get('maxAgeMonths', null) == null || d.minAgeMonths < d.maxAgeMonths)
-        && d.sex in ['any', 'male', 'female'] && d.pregnancy in ['any', 'pregnant', 'not_pregnant']
+        && d.sex in ['any', 'male', 'female'] && d.get('pregnancy', 'any') in ['any', 'pregnant', 'not_pregnant']
+        && d.get('reproductive', 'any') in ['any', 'pregnant', 'lactating', 'pregnant_or_lactating', 'neither']   // v26: lactation; the old 'pregnancy' field stays accepted
+        && (d.subjectType != 'vital' || d.get('minAgeMonths', null) != null || d.get('maxAgeMonths', null) != null || d.get('allAges', false) == true)   // a vital range without age limits must say it applies to all ages
         && d.unit is string && d.unit.size() > 0 && d.unit.size() <= 30
         && d.source is string && d.source.size() >= 3
         && d.get('paramKey', '') is string;
@@ -1869,6 +1876,82 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'retiredReason', 'retiredBy', 'retiredByName', 'retiredAt', 'updatedAt', 'updatedBy']))
       );
       allow delete: if false;
+    }
+
+    // =====================================================================================
+    // v26 (Lead, PROPOSED): alert rules (action thresholds) and acknowledgements of critical alerts (Developer 4, Stage 3 brief).
+    // A reference interval (pc_reference_ranges) is NOT an alert threshold: they are separate, with the same lifecycle. The app ships NO values.
+    // =====================================================================================
+    function arPath(id) { return /databases/$(database)/documents/pc_alert_rules/$(id); }
+    function arOk(d) {
+      return d.subjectType in ['lab_test', 'lab_param', 'vital']
+        && d.subjectId is string && d.subjectId.size() > 0 && d.subjectId.size() <= 100
+        && d.level in ['moderate', 'critical']
+        && (d.level != 'critical' || d.get('requiresAck', false) == true)
+        && d.operator in ['lt', 'lte', 'gt', 'gte', 'range']
+        && (d.operator == 'range'
+            ? (d.get('min', null) is number && d.get('max', null) is number && d.min < d.max)
+            : d.get('value', null) is number)
+        && d.unit is string && d.unit.size() > 0 && d.unit.size() <= 30
+        && d.message is string && d.message.size() >= 3 && d.message.size() <= 300
+        && d.get('urgencyText', '') is string && d.get('urgencyText', '').size() <= 300
+        && rrNumOrNull(d.get('minAgeMonths', null)) && rrNumOrNull(d.get('maxAgeMonths', null))
+        && (d.get('minAgeMonths', null) == null || d.minAgeMonths >= 0)
+        && (d.get('minAgeMonths', null) == null || d.get('maxAgeMonths', null) == null || d.minAgeMonths < d.maxAgeMonths)
+        && (d.subjectType != 'vital' || d.get('minAgeMonths', null) != null || d.get('maxAgeMonths', null) != null || d.get('allAges', false) == true)
+        && d.get('reproductive', 'any') in ['any', 'pregnant', 'lactating', 'pregnant_or_lactating', 'neither']
+        && d.get('contextRequired', []) is list && d.get('contextRequired', []).size() <= 5
+        && d.source is string && d.source.size() >= 3;
+    }
+    match /pc_alert_rules/{arId} {
+      allow read: if canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'patient.view');
+      allow create: if request.resource.data.approvalStatus == 'draft'
+        && pcCreateOk(request.resource.data) && hasPerm(request.resource.data.businessId, 'ranges.manage')
+        && request.resource.data.ruleKey is string && request.resource.data.ruleKey.size() > 0
+        && request.resource.data.version is int && request.resource.data.version >= 1
+        && arId == 'ar_' + request.resource.data.ruleKey + '_v' + string(request.resource.data.version)
+        && arOk(request.resource.data);
+      allow update: if pcUpdateStamped() && canAccessShop(resource.data.businessId, resource.data.facilityId) && (
+        (resource.data.approvalStatus == 'draft' && request.resource.data.approvalStatus == 'draft' && hasPerm(resource.data.businessId, 'ranges.manage')
+          && request.resource.data.diff(resource.data).unchangedKeys().hasAll(['businessId', 'facilityId', 'ruleKey', 'version', 'subjectType', 'subjectId', 'createdBy', 'createdAt'])
+          && arOk(request.resource.data))
+        ||
+        (resource.data.approvalStatus == 'draft' && request.resource.data.approvalStatus == 'approved' && hasPerm(resource.data.businessId, 'ranges.approve')
+          && request.resource.data.approvedBy == request.auth.uid && request.resource.data.approvedAt == request.time
+          && request.resource.data.selfApproved == (resource.data.createdBy == request.auth.uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedByName', 'approvedAt', 'selfApproved', 'updatedAt', 'updatedBy'])
+          && resource.data.get('effectiveDate', '') is string && resource.data.get('effectiveDate', '').size() == 10
+          && (resource.data.get('reviewDate', '') == '' || (resource.data.reviewDate.size() == 10 && resource.data.reviewDate >= resource.data.effectiveDate)))
+        ||
+        (resource.data.approvalStatus == 'approved' && request.resource.data.approvalStatus == 'superseded' && hasPerm(resource.data.businessId, 'ranges.approve')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'supersededBy', 'updatedAt', 'updatedBy'])
+          && request.resource.data.supersededBy is string
+          && getAfter(arPath(request.resource.data.supersededBy)).data.approvalStatus == 'approved'
+          && getAfter(arPath(request.resource.data.supersededBy)).data.ruleKey == resource.data.ruleKey
+          && getAfter(arPath(request.resource.data.supersededBy)).data.facilityId == resource.data.facilityId
+          && getAfter(arPath(request.resource.data.supersededBy)).data.version > resource.data.version)
+        ||
+        (resource.data.approvalStatus in ['draft', 'approved'] && request.resource.data.approvalStatus == 'retired'
+          && (hasPerm(resource.data.businessId, 'ranges.approve') || (resource.data.approvalStatus == 'draft' && hasPerm(resource.data.businessId, 'ranges.manage')))
+          && request.resource.data.get('retiredReason', null) is string && request.resource.data.retiredReason.size() >= 3
+          && request.resource.data.get('retiredBy', null) == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'retiredReason', 'retiredBy', 'retiredByName', 'retiredAt', 'updatedAt', 'updatedBy']))
+      );
+      allow delete: if false;
+    }
+    // a critical alert is acknowledged by the person who recorded the observation: append-only, id = ack_{triageId}_{measure}
+    match /pc_obs_acks/{ackId} {
+      allow read: if childReadOk(resource.data);
+      allow create: if childCreateOk(request.resource.data, 'triage.record')
+        && request.resource.data.triageId is string && request.resource.data.measure is string && request.resource.data.measure.size() > 0
+        && ackId == 'ack_' + request.resource.data.triageId + '_' + request.resource.data.measure
+        && exists(/databases/$(database)/documents/pc_triage/$(request.resource.data.triageId))
+        && get(/databases/$(database)/documents/pc_triage/$(request.resource.data.triageId)).data.patientId == request.resource.data.patientId
+        && request.resource.data.level in ['moderate', 'critical']
+        && request.resource.data.ruleId is string && request.resource.data.ruleVersion is int
+        && request.resource.data.ackBy == request.auth.uid
+        && request.resource.data.get('note', '') is string && request.resource.data.get('note', '').size() <= 300;
+      allow update, delete: if false;
     }
   }
 }
