@@ -6,7 +6,7 @@
 
    Rules, as agreed with the Lead:
    - A reference interval is separate from a critical limit or a warning threshold. Those are never read from here.
-   - If no range applies, the answer is "No reference range recorded" (or the reason). It is never normal and never abnormal.
+   - If no range applies, the answer is "Reference range not configured" (with the reason when there is one). It is never normal and never abnormal.
    - Context counts: sex, age, pregnancy status stated at result entry, unit, specimen, method, laboratory. A range that sets a context only applies when that context is known and matches.
    - The most specific range wins. Two equally specific ranges are a conflict: no range is chosen and no flag is produced.
    - A range past its review date is still used and is marked "review overdue".
@@ -63,7 +63,7 @@
   function specificity(r) { return (r.sex === "male" || r.sex === "female" ? 1 : 0) + (isNum(r.minAgeMonths) || isNum(r.maxAgeMonths) ? 1 : 0) + (r.pregnancy === "pregnant" || r.pregnancy === "not_pregnant" ? 1 : 0) + (str(r.specimen) ? 1 : 0) + (str(r.method) ? 1 : 0) + (str(r.labName) ? 1 : 0); }
 
   var WHY = {
-    no_range: "No reference range recorded.",
+    no_range: "Reference range not configured.",
     unit_differs: "A reference range exists, but in a different unit from this result. No conversion is attempted.",
     age_unknown: "Reference ranges for this test depend on age, and the patient's age is not recorded.",
     age_outside: "No reference range covers this patient's age.",
@@ -128,8 +128,8 @@
   }
   /* describe(resolved) -> the line shown beside a result or a vital: the range with unit and source, or why there is none */
   function describe(res) {
-    if (!res) return "No reference range recorded";
-    if (res.state === "unavailable") return res.reasonText && res.reason !== "no_range" ? "No reference range available. " + res.reasonText : "No reference range recorded";
+    if (!res) return "Reference range not configured";
+    if (res.state === "unavailable") return res.reasonText && res.reason !== "no_range" ? "Reference range not configured. " + res.reasonText : "Reference range not configured";
     if (res.state === "conflict") return res.reasonText;
     var v = res.min !== null && res.max !== null ? fmt(res.min) + " to " + fmt(res.max) : res.min !== null ? "at least " + fmt(res.min) : res.max !== null ? "up to " + fmt(res.max) : res.text;
     if ((res.min !== null || res.max !== null) && res.text) v += " (" + res.text + ")";
