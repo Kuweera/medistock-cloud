@@ -2,7 +2,7 @@
 Fetched by the 'Fetch vendor libraries' workflow on 2026-11-23 from the official npm registry (pdfjs-dist, mammoth, tesseract.js, tesseract.js-core), cdn.sheetjs.com (SheetJS 0.20.3) and github.com/tesseract-ocr/tessdata_fast. Versions are the ones requested: pdf.js 3.11.174, mammoth 1.8.0, SheetJS 0.20.3, tesseract.js 5.1.1 (+ tesseract.js-core 5.1.1).
 
 ## Verified by Developer 4 on 2026-11-23
-All 25 files listed below were re-hashed from the files delivered to me (SHA-256 and size): **25 of 25 match, 0 differ, 0 files on disk are unlisted.** The versions were read from the files themselves where they state them (pdf.js 3.11.174, SheetJS 0.20.3); mammoth 1.8.0 and tesseract.js 5.1.1 (+ core 5.1.1) are as named by the workflow and the folder names. I did not compare against the registries (no network here).
+The 25 files fetched by the workflow, listed below, were re-hashed from the files delivered to me (SHA-256 and size): **25 of 25 match, 0 differ.** The owner later added one more file, `LICENSE-eng.traineddata` (last row), which is not from the registry workflow. The versions were read from the files themselves where they state them (pdf.js 3.11.174, SheetJS 0.20.3); mammoth 1.8.0 and tesseract.js 5.1.1 (+ core 5.1.1) are as named by the workflow and the folder names. I did not compare against the registries (no network here).
 
 ## Licences
 | Library | Licence | Licence file |
@@ -12,7 +12,7 @@ All 25 files listed below were re-hashed from the files delivered to me (SHA-256
 | SheetJS Community 0.20.3 | Apache-2.0 | vendor/sheetjs-0.20.3/LICENSE |
 | tesseract.js 5.1.1 | Apache-2.0 | vendor/tesseract-5.1.1/LICENSE.md |
 | tesseract.js-core 5.1.1 | Apache-2.0 | vendor/tesseract-5.1.1/core/LICENSE |
-| eng.traineddata (tessdata_fast) | Apache-2.0 according to the upstream repository, **no licence file was delivered with the data** | none: the owner should add the upstream LICENSE to vendor/tesseract-5.1.1/lang/ |
+| eng.traineddata (tessdata_fast) | Apache-2.0 (the licence text the owner added is the standard Apache-2.0 text and names no copyright holder) | vendor/tesseract-5.1.1/lang/LICENSE-eng.traineddata |
 
 ## Notes
 - **pdf.js 3.11.174 and untrusted PDFs.** To my knowledge this release is affected by CVE-2024-4367 (code execution through a crafted PDF when font evaluation is enabled), fixed in pdf.js 4.2.67 and later. The app opens every PDF with `isEvalSupported: false`, the documented workaround (in `pc-import-tools.js`). pdf.js 4.x is ES-module only and the app has no build step, so I stayed on 3.11.174. I could not verify the CVE details offline; the owner should check them. Decision for the Lead if a newer pdf.js is wanted.
@@ -49,3 +49,4 @@ All 25 files listed below were re-hashed from the files delivered to me (SHA-256
 | vendor/tesseract-5.1.1/lang/eng.traineddata.gz | 1976309 | 2a692e1244b5873d821e07568c31fb572f4ef6071f03a0aa09bea146bf8f0551 | OCR English language data (the app uses the compressed file) |
 | vendor/tesseract-5.1.1/tesseract.min.js | 66695 | a8e29918d098b2b06e1012bdaeffb4aec0445c5d5654709023e0bd1f442a80e8 | OCR (page) |
 | vendor/tesseract-5.1.1/worker.min.js | 123724 | aca1229639fc9907d86f96e825955a2b7c5716d17f3bc3acd71f9c7ab66181fc | OCR worker |
+| vendor/tesseract-5.1.1/lang/LICENSE-eng.traineddata | 11357 | c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 | licence text for eng.traineddata, added by the owner on 2026-11-24 |
