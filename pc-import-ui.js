@@ -66,9 +66,9 @@
     var m = $("docToolMsg"); btn.disabled = true; if (m) m.textContent = "Downloading …";
     PT.download(tool, function (p) { if (m) m.textContent = "Downloading " + p.done + " of " + p.total + " files (" + fmtMB(p.bytes) + ") …"; }).then(function (r) {
       return PT.status(tool).then(function (x) {
-        if (!r.ok) { if (m) m.textContent = "Some files could not be downloaded (" + r.failed.length + "). Check your connection and try again."; btn.disabled = false; return; }
+        if (!r.ok) { if (m) m.textContent = "Some files could not be saved (" + r.failed.length + "). Check your connection and try again."; btn.disabled = false; return; }
         renderTools();
-        setTimeout(function () { var mm = $("docToolMsg"); if (mm) mm.textContent = x.stored ? "Saved for offline use (" + fmtMB(r.bytes) + ")." : "Downloaded (" + fmtMB(r.bytes) + "), but this browser did not confirm that the app keeps them for offline use. Do not rely on them offline yet."; }, 150);
+        setTimeout(function () { var mm = $("docToolMsg"); if (mm) mm.textContent = x.stored ? "Saved for offline use (" + fmtMB(r.bytes) + ")." : "Downloaded (" + fmtMB(r.bytes) + "), but this browser could not confirm they are kept for offline use. Do not rely on them offline yet."; }, 150);
       });
     });
   }

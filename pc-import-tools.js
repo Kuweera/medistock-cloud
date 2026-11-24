@@ -39,18 +39,27 @@
   }
 
   // ---------------------------------------------------------------- offline status and download
+  /* The app's service worker serves vendor/ files from the cache named below and never adds to it by itself: a page saves them on purpose (see download()). */
+  var VENDOR_CACHE = "mc-vendor-v1";
   /* status(tool) -> Promise<{ tool, label, files:[url], stored: true|false|null, missing:[url] }>  stored = every file is in an app cache (null when the browser has no Cache API) */
   function status(tool) {
     var files = filesOf(tool), res = { tool: tool, label: labelOf(tool), files: files, stored: null, missing: [] };
     if (typeof caches === "undefined" || !caches.match) return Promise.resolve(res);
     return Promise.all(files.map(function (f) { return caches.match(abs(f)).then(function (r) { return r ? null : f; }, function () { return f; }); })).then(function (m) { res.missing = m.filter(Boolean); res.stored = res.missing.length === 0; return res; });
   }
-  /* download(tool, onProgress) -> Promise<{ok, bytes, failed:[url]}>   fetches every file once so the app can keep it for offline use */
+  /* download(tool, onProgress) -> Promise<{ok, bytes, failed:[url], saved}>
+     Saves every file of the tool in the app's vendor cache so it works offline. Without the Cache API the files are only fetched (saved:false) and the screen says so.
+     cache.add() refuses an error response, so an offline "not saved" reply from the service worker is never stored as if it were the library. */
   function download(tool, onProgress) {
-    var files = filesOf(tool), done = 0, bytes = 0, failed = [];
-    return files.reduce(function (p, f) {
-      return p.then(function () { return fetch(abs(f), { cache: "reload" }).then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.blob(); }).then(function (b) { bytes += b.size; }, function () { failed.push(f); }).then(function () { done++; if (onProgress) onProgress({ done: done, total: files.length, bytes: bytes }); }); });
-    }, Promise.resolve()).then(function () { return { ok: failed.length === 0, bytes: bytes, failed: failed }; });
+    var files = filesOf(tool), done = 0, bytes = 0, failed = [], canCache = typeof caches !== "undefined" && caches.open;
+    function one(f, cache) {
+      var url = abs(f);
+      return (cache ? cache.add(url).then(function () { return cache.match(url); }).then(function (r) { return r ? r.clone().blob() : null; }) : fetch(url, { cache: "reload" }).then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.blob(); }))
+        .then(function (b) { if (b) bytes += b.size; }, function () { failed.push(f); }).then(function () { done++; if (onProgress) onProgress({ done: done, total: files.length, bytes: bytes }); });
+    }
+    return (canCache ? caches.open(VENDOR_CACHE) : Promise.resolve(null)).then(function (cache) {
+      return files.reduce(function (p, f) { return p.then(function () { return one(f, cache); }); }, Promise.resolve()).then(function () { return { ok: failed.length === 0, bytes: bytes, failed: failed, saved: !!cache }; });
+    });
   }
 
   // ---------------------------------------------------------------- PDF pages (pdf.js parses in its own worker)
@@ -124,5 +133,5 @@
     function cleanup() { return Promise.resolve(worker ? worker.terminate().catch(function () { }) : null).then(function () { return doc ? doc.destroy().catch(function () { }) : null; }); }
   }
 
-  root.PCITools = { TOOLS: ["pdf", "docx", "xlsx", "ocr"], OCR_PAGES_PER_RUN: 25, filesOf: filesOf, labelOf: labelOf, ensure: ensure, status: status, download: download, readPdfPages: readPdfPages, ocrPages: ocrPages, simd: simd };
+  root.PCITools = { TOOLS: ["pdf", "docx", "xlsx", "ocr"], OCR_PAGES_PER_RUN: 25, filesOf: filesOf, labelOf: labelOf, ensure: ensure, status: status, download: download, VENDOR_CACHE: VENDOR_CACHE, readPdfPages: readPdfPages, ocrPages: ocrPages, simd: simd };
 })(typeof window !== "undefined" ? window : this);
