@@ -29,11 +29,14 @@ const URL = "http://localhost:8765/tests/guidelines-harness.html";
     const t = await f.locator("#docTools").innerText(); ["PDF files", "Word files", "Excel files", "OCR for scanned pages"].forEach((n) => assert.match(t, new RegExp(n)));
     assert.equal((t.match(/Not downloaded/g) || []).length, 4); ok("the four import tools are listed and show 'Not downloaded' on a device that has not stored them");
     assert.match(await f.locator("#docImport").innerText(), /Always works without internet:[\s\S]*TXT, CSV, HTML, HTM, RTF[\s\S]*PDF, Word, Excel and OCR/); ok("the screen says which formats always work offline and which need the download");
-    await f.locator('[data-tool="xlsx"]').click(); await f.locator("#docToolMsg", { hasText: /Downloaded|Saved for offline/ }).waitFor({ timeout: 30000 });
-    assert.match(await f.locator("#docToolMsg").innerText(), /did not confirm that the app keeps them for offline use/); ok("downloading a tool is honest: without the app's offline cache it says it cannot confirm offline use");
-    const urls = await page.evaluate(() => ["/vendor/mammoth-1.8.0/mammoth.browser.min.js"].map(u => location.origin + u)); await page.evaluate(async (u) => { const c = await caches.open("test-vendor-cache"); await c.addAll(u); }, urls);
+    await f.locator('[data-tool="xlsx"]').click(); await f.locator("#docToolMsg", { hasText: /Saved for offline use/ }).waitFor({ timeout: 30000 });
+    assert.equal((await f.locator("#docTools").innerText()).match(/Ready for offline use/g).length, 1); assert.equal((await f.locator("#docTools").innerText()).match(/Not downloaded/g).length, 3);
+    const kept = await page.evaluate(async () => { const c = await caches.open("mc-vendor-v1"), r = await c.match(location.origin + "/vendor/sheetjs-0.20.3/xlsx.full.min.js"); return r ? { ok: r.ok, bytes: (await r.clone().blob()).size } : null; });
+    assert.ok(kept && kept.ok && kept.bytes > 100000); ok("the download button saves the tool in the app's vendor cache (mc-vendor-v1, the cache sw.js keeps across versions) and the tool then shows 'Ready for offline use'");
     await page.reload(); const f2 = page.frameLocator("#f"); await f2.locator("#mainArea:not(.hidden)").waitFor(); await f2.locator("#tabImport").click(); await f2.locator("#docTools").getByText("Ready for offline use").waitFor();
-    assert.equal((await f2.locator("#docTools").innerText()).match(/Ready for offline use/g).length, 1); ok("a tool whose files are in an app cache shows 'Ready for offline use' (cache simulated by the test)");
+    assert.equal((await f2.locator("#docTools").innerText()).match(/Ready for offline use/g).length, 1); ok("the saved state survives a page reload");
+    await page.route("**/vendor/mammoth-1.8.0/**", (r) => r.abort()); await f2.locator('[data-tool="docx"]').click(); await f2.locator("#docToolMsg", { hasText: /could not be saved/ }).waitFor({ timeout: 30000 });
+    assert.equal(await page.evaluate(async () => { const c = await caches.open("mc-vendor-v1"); return !!(await c.match(location.origin + "/vendor/mammoth-1.8.0/mammoth.browser.min.js")); }), false); ok("a download that fails (blocked here) says so and stores nothing; it is never shown as saved");
     await ctx.close(); }
 
   const { page, f, ctx, dialogs } = await open("owner", 390, 844);
