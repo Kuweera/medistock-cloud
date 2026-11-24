@@ -21,10 +21,10 @@ test("ageOf: exact and estimated dates of birth, whole months, birthdays, unknow
   assert.equal(PCR.ageOf(null, "2026-11-24").months, null);
 });
 
-test("nothing recorded: unavailable, 'No reference range recorded', no flag, never normal", () => {
-  const r = res([]); assert.equal(r.state, "unavailable"); assert.equal(r.basis, "unavailable"); assert.equal(r.reason, "no_range"); assert.equal(PCR.describe(r), "No reference range recorded");
+test("nothing configured: unavailable, 'Reference range not configured', no flag, never normal", () => {
+  const r = res([]); assert.equal(r.state, "unavailable"); assert.equal(r.basis, "unavailable"); assert.equal(r.reason, "no_range"); assert.equal(PCR.describe(r), "Reference range not configured");
   [5, 15, 25, "15", "positive", null].forEach((v) => assert.equal(PCR.flag(v, r), "none", String(v)));
-  assert.equal(PCR.describe(null), "No reference range recorded");
+  assert.equal(PCR.describe(null), "Reference range not configured");
 });
 
 test("one approved range for everyone: used, flags low/normal/high with inclusive limits, display shows unit, source and version", () => {
