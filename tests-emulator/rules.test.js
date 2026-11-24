@@ -37,6 +37,7 @@ const users = {
   dispReport: { role: "operator", businessId: B, shopId: A, active: true, perms: { "dispense.view": true, "dispense.report": true } },
   p21editor: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "patient.edit": true } },
   p21consent: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "patient.consent": true } },
+  triager: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "triage.record": true } },
   labMgr: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "ranges.manage": true } },
   labLead: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "ranges.approve": true } },
   labBoth: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "ranges.manage": true, "ranges.approve": true } },
@@ -843,4 +844,61 @@ test("v25 ranges: members with patient.view read; another facility and users wit
   await assertSucceeds(getDoc(doc(db("nurse"), "pc_reference_ranges", "rr_k1_v1")));
   await assertFails(getDoc(doc(db("pharmB"), "pc_reference_ranges", "rr_k1_v1")));
   await assertFails(getDoc(doc(db("dispOnly"), "pc_reference_ranges", "rr_k1_v1")));
+});
+
+// ======================= v26 (Lead): alert rules, acknowledgements, lactation, observation fields (all values are fake test values) =======================
+const ar26 = (uid, extra) => Object.assign(stamp(uid), { ruleKey: "a1", version: 1, approvalStatus: "draft", subjectType: "vital", subjectId: "spo2", unit: "%", level: "critical", operator: "lt", value: 1,
+  message: "TEST alert", urgencyText: "TEST", minAgeMonths: 0, maxAgeMonths: null, reproductive: "any", contextRequired: [], requiresAck: true, source: "TEST source", effectiveDate: "2099-01-01", reviewDate: "" }, extra || {});
+test("v26 alert rules: ranges.manage creates a draft; operator/value, range bounds, critical without acknowledgement, vital without age limits, bad level or text and a missing key are refused", async () => {
+  const f = db("labMgr"), mk = (key, extra) => setDoc(doc(f, "pc_alert_rules", "ar_" + key + "_v1"), ar26("labMgr", Object.assign({ ruleKey: key }, extra || {})));
+  await assertSucceeds(mk("a1"));
+  await assertSucceeds(mk("a2", { operator: "range", min: 1, max: 2, value: null }));
+  await assertSucceeds(mk("a3", { level: "moderate", requiresAck: false }));
+  await assertFails(mk("a4", { operator: "range", min: 3, max: 2 }));
+  await assertFails(mk("a5", { operator: "gt", value: null }));
+  await assertFails(mk("a6", { requiresAck: false }));                                 // critical needs acknowledgement
+  await assertFails(mk("a7", { minAgeMonths: null, maxAgeMonths: null }));            // a vital with no age limits must say allAges
+  await assertSucceeds(mk("a8", { minAgeMonths: null, maxAgeMonths: null, allAges: true }));
+  await assertFails(mk("a9", { level: "severe" }));
+  await assertFails(mk("a10", { message: "x" }));
+  await assertFails(mk("a11", { reproductive: "maybe" }));
+  await assertFails(setDoc(doc(db("labLead"), "pc_alert_rules", "ar_a12_v1"), ar26("labLead", { ruleKey: "a12" })));          // approve is not manage
+  await assertFails(mk("a13", { approvalStatus: "approved" }));
+});
+test("v26 alert rules: approve by a person with ranges.approve; replace by a newer version in the same commit; retire with a reason; delete never; read by facility members only", async () => {
+  await env.withSecurityRulesDisabled(async ctx => { const g = ctx.firestore(); const base = Object.assign(ar26("labMgr"), { createdAt: new Date() });
+    await setDoc(doc(g, "pc_alert_rules", "ar_a1_v1"), Object.assign({}, base, { approvalStatus: "approved", approvedBy: "labLead", selfApproved: false }));
+    await setDoc(doc(g, "pc_alert_rules", "ar_a1_v2"), Object.assign({}, base, { version: 2 })); });
+  const f = db("labLead"), b = writeBatch(f);
+  b.update(doc(f, "pc_alert_rules", "ar_a1_v2"), Object.assign({ approvalStatus: "approved", approvedBy: "labLead", approvedByName: "L", approvedAt: serverTimestamp(), selfApproved: false }, rrU("labLead")));
+  b.update(doc(f, "pc_alert_rules", "ar_a1_v1"), Object.assign({ approvalStatus: "superseded", supersededBy: "ar_a1_v2" }, rrU("labLead")));
+  await assertSucceeds(b.commit());
+  await assertFails(updateDoc(doc(db("labMgr"), "pc_alert_rules", "ar_a1_v2"), Object.assign({ approvalStatus: "retired", retiredReason: "no longer used", retiredBy: "labMgr" }, rrU("labMgr"))));
+  await assertSucceeds(updateDoc(doc(f, "pc_alert_rules", "ar_a1_v2"), Object.assign({ approvalStatus: "retired", retiredReason: "no longer used", retiredBy: "labLead" }, rrU("labLead"))));
+  await assertFails(deleteDoc(doc(f, "pc_alert_rules", "ar_a1_v2")));
+  await assertSucceeds(getDoc(doc(db("nurse"), "pc_alert_rules", "ar_a1_v2")));
+  await assertFails(getDoc(doc(db("pharmB"), "pc_alert_rules", "ar_a1_v2")));
+});
+test("v26 ranges: lactation values are accepted, a bad value is refused, and a vital range without age limits needs allAges", async () => {
+  const f = db("labMgr"), mk = (key, extra) => setDoc(doc(f, "pc_reference_ranges", "rr_" + key + "_v1"), rr25("labMgr", Object.assign({ rangeKey: key }, extra)));
+  for (const [i, v] of ["pregnant", "lactating", "pregnant_or_lactating", "neither", "any"].entries()) await assertSucceeds(mk("rp" + i, { reproductive: v }));
+  await assertFails(mk("rpx", { reproductive: "maybe" }));
+  await assertFails(mk("rv1", { subjectType: "vital", subjectId: "pulse" }));
+  await assertSucceeds(mk("rv2", { subjectType: "vital", subjectId: "pulse", allAges: true }));
+  await assertSucceeds(mk("rv3", { subjectType: "vital", subjectId: "pulse", minAgeMonths: 0, maxAgeMonths: 12 }));
+});
+test("v26 observations: a triage record may carry interp, ctx and repeatOf (bounded), and a critical alert is acknowledged by its recorder in an append-only record", async () => {
+  await seedV19();
+  const f = db("triager"), tri = (id, extra) => setDoc(doc(f, "pc_triage", id), Object.assign(stamp("triager"), { encounterId: "e1", patientId: "p1", recordedBy: "triager", status: "active", spo2: 90 }, extra || {}));
+  await assertSucceeds(tri("t1", { interp: { spo2: { level: "critical", unit: "%", ruleVersion: 1 } }, ctx: { calm: true } }));
+  await assertSucceeds(tri("t2", { repeatOf: "t1" }));
+  await assertFails(tri("t3", { interp: "text" }));
+  await assertFails(tri("t4", { repeatOf: 5 }));
+  const ack = (id, extra) => setDoc(doc(f, "pc_obs_acks", id), Object.assign(stamp("triager"), { encounterId: "e1", patientId: "p1", recordedBy: "triager", status: "active", triageId: "t1", measure: "spo2", level: "critical", ruleId: "ar_a1_v1", ruleVersion: 1, ackBy: "triager", note: "seen" }, extra || {}));
+  await assertSucceeds(ack("ack_t1_spo2"));
+  await assertFails(ack("ack_t1_pulse"));                                  // id does not match the measure
+  await assertFails(ack("ack_t1_spo2x", { measure: "spo2x", triageId: "nope" }));
+  await assertFails(ack("ack_t1_bp", { measure: "bp", ackBy: "labMgr" }));
+  await assertFails(updateDoc(doc(f, "pc_obs_acks", "ack_t1_spo2"), { note: "changed" }));
+  await assertFails(setDoc(doc(db("labMgr"), "pc_obs_acks", "ack_t2_spo2"), Object.assign(stamp("labMgr"), { encounterId: "e1", patientId: "p1", recordedBy: "labMgr", status: "active", triageId: "t2", measure: "spo2", level: "critical", ruleId: "r", ruleVersion: 1, ackBy: "labMgr" })));
 });
