@@ -16,14 +16,14 @@ const assert = require("node:assert/strict");
     assert.equal(john.length, 2, vp.width + ": John Doe has two prescriptions (two visits), not one per medicine");
     const v123 = john.find(h => /V-123/.test(h.meta)), v124 = john.find(h => /V-124/.test(h.meta));
     assert.ok(v123 && v124, "each visit has its own header");
-    assert.equal(v123.lines, 3, "three medicines under visit V-123"); assert.equal(v124.lines, 1, "later visit not merged");
-    ["GroupMed Amoxicillin", "GroupMed Paracetamol", "GroupMed Cetirizine"].forEach(m => assert.match(v123.text, new RegExp(m)));
+    assert.equal(v123.lines, 2, "the Waiting tab lists only the 2 waiting medicines of visit V-123 (the partly dispensed one is in its own tab)"); assert.equal(v124.lines, 1, "later visit not merged");
+    ["GroupMed Amoxicillin", "GroupMed Cetirizine"].forEach(m => assert.match(v123.text, new RegExp(m))); assert.doesNotMatch(v123.text.split("\n").filter(l => /Partly|Waiting|Stopped/.test(l)).join(" "), /GroupMed Paracetamol/, "a medicine of another status is not listed in Waiting");
     assert.doesNotMatch(v123.text, /GroupMed Later Visit/);
     assert.equal((v123.text.match(/John Doe/g) || []).length, 1, "patient named once per prescription");
-    assert.match(v123.meta, /3 medicines/); assert.match(v123.meta, /2 waiting/); assert.match(v123.meta, /1 partly dispensed/);
+    assert.match(v123.meta, /3 medicines in this visit/); assert.match(v123.meta, /2 waiting/); assert.match(v123.meta, /1 partly dispensed/); assert.match(v123.meta, /Listed here: 2/);
     // each line keeps its own status
     const line = id => f.locator('#list .pt[data-id="' + id + '"]');
-    assert.match(await line("g1").innerText(), /Waiting/); assert.match(await line("g2").innerText(), /Partly dispensed/); assert.match(await line("g2").innerText(), /outstanding/i);
+    assert.match(await line("g1").innerText(), /Waiting/); assert.equal(await line("g2").count(), 0, "partly dispensed line is not in the Waiting tab");
     // a line still opens the dispensing panel
     await line("g3").click(); await f.locator("#actCard .step").first().waitFor();
     assert.match(await f.locator("#actCard").innerText(), /GroupMed Cetirizine/);
@@ -31,7 +31,8 @@ const assert = require("node:assert/strict");
     const over = await f.locator("#list").evaluate(e => e.scrollWidth > e.clientWidth + 1); assert.equal(over, false, vp.width + ": no sideways scroll");
     // partial tab lists the whole prescription, with the partly dispensed line
     await f.locator('#filters [data-f="partial"]').click();
-    const t = await f.locator("#list").innerText(); assert.match(t, /John Doe/); assert.match(t, /GroupMed Paracetamol/);
+    const t = await f.locator("#list").innerText(); assert.match(t, /John Doe/); assert.match(t, /GroupMed Paracetamol/); assert.doesNotMatch(t, /GroupMed Amoxicillin/, "the partly dispensed tab lists only partly dispensed lines");
+    assert.match(await line("g2").innerText(), /Partly dispensed/); assert.match(await line("g2").innerText(), /outstanding/i);
     assert.deepEqual(errors, [], "no page errors");
     await page.screenshot({ path: "docs/screenshots-dev3/stage1-grouping-" + (vp.width < 600 ? "mobile" : "desktop") + ".png" });
     await ctx.close();
