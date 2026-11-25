@@ -714,7 +714,7 @@ test("v27-review: a consumable is really SUPPLIED through the pharmacy engine (p
   await seedV19();
   const consO = { kind: "consumable", medicineId: "d1", medicineName: "TEST gauze", quantityPrescribed: 3, scheduleType: "once" };
   const mk = id => { const f = db("prescriber"), b = writeBatch(f), o = orderDoc("prescriber", consO); delete o.doseValue;
-    b.set(doc(f, "pc_treatment_orders", id), o); b.set(doc(f, "prescriptions", id), rxPending("prescriber", id, { medicineName: "TEST gauze", qtyPrescribed: 3, qtyOutstanding: 3 })); return b.commit(); };
+    b.set(doc(f, "pc_treatment_orders", id), o); b.set(doc(f, "prescriptions", id), rxPending("prescriber", id, { medicineName: "TEST gauze", qtyPrescribed: 3, qtyOutstanding: 3, lastRequestId: null })); return b.commit(); };
   await assertSucceeds(mk("c20"));
   await assertFails(dispense(db("nurse"), "nurse", { order: "c20", req: "c2a", qty: 1, prescribed: 3, first: false }).commit());
   await assertSucceeds(dispense(db("pharm"), "pharm", { order: "c20", req: "c2b", qty: 1, prescribed: 3, first: false }).commit());
