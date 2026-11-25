@@ -800,7 +800,7 @@ test("v25 ranges: a draft can be edited by ranges.manage but identity fields and
 });
 test("v25 ranges: approval needs ranges.approve, the caller as approvedBy, a correct selfApproved, only approval keys, an effective date and a sane review date", async () => {
   await seedRR("rr_k1_v1"); await seedRR("rr_k2_v1", { rangeKey: "k2", effectiveDate: "" }); await seedRR("rr_k3_v1", { rangeKey: "k3", reviewDate: "2098-01-01" });
-  const ap = (uid, id, extra) => updateDoc(doc(db(uid), "pc_reference_ranges", id), Object.assign({ approvalStatus: "approved", approvedBy: uid, approvedByName: uid, approvedAt: serverTimestamp(), selfApproved: false }, rrU(uid), extra || {}));
+  const ap = (uid, id, extra) => updateDoc(doc(db(uid), "pc_reference_ranges", id), Object.assign({ approvalStatus: "approved", approvedBy: uid, approvedByName: uid, approvedAt: serverTimestamp(), selfApproved: false, reviewerCredential: "TEST reviewer" }, rrU(uid), extra || {}));
   await assertFails(ap("labMgr", "rr_k1_v1"));                                                   // no ranges.approve
   await assertFails(ap("labLead", "rr_k1_v1", { approvedBy: "labMgr" }));
   await assertFails(ap("labLead", "rr_k1_v1", { selfApproved: true }));                           // wrong selfApproved
@@ -815,7 +815,7 @@ test("v25 ranges: a newer version replaces the old one in the same commit only; 
   await seedRR("rr_k1_v1", { approvalStatus: "approved", approvedBy: "labLead", selfApproved: false });
   await seedRR("rr_k1_v2", { version: 2 }); await seedRR("rr_k9_v3", { rangeKey: "k9", version: 3 });
   const f = db("labLead"), b = writeBatch(f);
-  b.update(doc(f, "pc_reference_ranges", "rr_k1_v2"), Object.assign({ approvalStatus: "approved", approvedBy: "labLead", approvedByName: "L", approvedAt: serverTimestamp(), selfApproved: false }, rrU("labLead")));
+  b.update(doc(f, "pc_reference_ranges", "rr_k1_v2"), Object.assign({ approvalStatus: "approved", approvedBy: "labLead", approvedByName: "L", approvedAt: serverTimestamp(), selfApproved: false, reviewerCredential: "TEST reviewer" }, rrU("labLead")));
   b.update(doc(f, "pc_reference_ranges", "rr_k1_v1"), Object.assign({ approvalStatus: "superseded", supersededBy: "rr_k1_v2" }, rrU("labLead")));
   await assertSucceeds(b.commit());
 });
@@ -870,7 +870,7 @@ test("v26 alert rules: approve by a person with ranges.approve; replace by a new
     await setDoc(doc(g, "pc_alert_rules", "ar_a1_v1"), Object.assign({}, base, { approvalStatus: "approved", approvedBy: "labLead", selfApproved: false }));
     await setDoc(doc(g, "pc_alert_rules", "ar_a1_v2"), Object.assign({}, base, { version: 2 })); });
   const f = db("labLead"), b = writeBatch(f);
-  b.update(doc(f, "pc_alert_rules", "ar_a1_v2"), Object.assign({ approvalStatus: "approved", approvedBy: "labLead", approvedByName: "L", approvedAt: serverTimestamp(), selfApproved: false }, rrU("labLead")));
+  b.update(doc(f, "pc_alert_rules", "ar_a1_v2"), Object.assign({ approvalStatus: "approved", approvedBy: "labLead", approvedByName: "L", approvedAt: serverTimestamp(), selfApproved: false, reviewerCredential: "TEST reviewer" }, rrU("labLead")));
   b.update(doc(f, "pc_alert_rules", "ar_a1_v1"), Object.assign({ approvalStatus: "superseded", supersededBy: "ar_a1_v2" }, rrU("labLead")));
   await assertSucceeds(b.commit());
   await assertFails(updateDoc(doc(db("labMgr"), "pc_alert_rules", "ar_a1_v2"), Object.assign({ approvalStatus: "retired", retiredReason: "no longer used", retiredBy: "labMgr" }, rrU("labMgr"))));
@@ -901,4 +901,35 @@ test("v26 observations: a triage record may carry interp, ctx and repeatOf (boun
   await assertFails(ack("ack_t1_bp", { measure: "bp", ackBy: "labMgr" }));
   await assertFails(updateDoc(doc(f, "pc_obs_acks", "ack_t1_spo2"), { note: "changed" }));
   await assertFails(setDoc(doc(db("labMgr"), "pc_obs_acks", "ack_t2_spo2"), Object.assign(stamp("labMgr"), { encounterId: "e1", patientId: "p1", recordedBy: "labMgr", status: "active", triageId: "t2", measure: "spo2", level: "critical", ruleId: "r", ruleVersion: 1, ackBy: "labMgr" })));
+});
+
+// ======================= v27 (Lead): reviewed proposals (all values are fake test values) =======================
+test("v27 review: an approval without the reviewer's credential is refused; a proposal can be REJECTED with a reason (kept, never active); the original proposal and origin cannot be edited", async () => {
+  await seedRR("rr_k1_v1", { origin: "evidence_proposal", proposal: { refMin: 1, refMax: 2, source: "TEST source" } });
+  await seedRR("rr_k2_v1", { rangeKey: "k2" });
+  const ap = (id, extra) => updateDoc(doc(db("labLead"), "pc_reference_ranges", id), Object.assign({ approvalStatus: "approved", approvedBy: "labLead", approvedByName: "L", approvedAt: serverTimestamp(), selfApproved: false }, rrU("labLead"), extra || {}));
+  await assertFails(ap("rr_k1_v1"));                                              // no credential
+  await assertFails(ap("rr_k1_v1", { reviewerCredential: "x" }));
+  await assertSucceeds(ap("rr_k1_v1", { reviewerCredential: "TEST reviewer", approvalNote: "checked against the source page" }));
+  const rj = (uid, id, extra) => updateDoc(doc(db(uid), "pc_reference_ranges", id), Object.assign({ approvalStatus: "rejected", rejectedReason: "does not fit our practice", rejectedBy: uid, rejectedByName: uid, rejectedAt: Date.now() }, rrU(uid), extra || {}));
+  await assertFails(rj("labMgr", "rr_k2_v1"));                                    // reject needs ranges.approve
+  await assertFails(rj("labLead", "rr_k2_v1", { rejectedReason: "x" }));
+  await assertFails(rj("labLead", "rr_k2_v1", { rejectedBy: "labMgr" }));
+  await assertSucceeds(rj("labLead", "rr_k2_v1"));
+  await assertFails(updateDoc(doc(db("labBoth"), "pc_reference_ranges", "rr_k2_v1"), Object.assign({ approvalStatus: "approved", approvedBy: "labBoth", approvedAt: serverTimestamp(), selfApproved: false, reviewerCredential: "TEST" }, rrU("labBoth"))));   // rejected is final
+  await assertFails(rj("labLead", "rr_k1_v1"));                                   // an approved range cannot be rejected (retire or replace it)
+  await seedRR("rr_k3_v1", { rangeKey: "k3", origin: "evidence_proposal", proposal: { refMin: 1, refMax: 2 } });
+  await assertSucceeds(updateDoc(doc(db("labMgr"), "pc_reference_ranges", "rr_k3_v1"), Object.assign({ refMax: 5, changeReason: "our laboratory's validated interval" }, rrU("labMgr"))));
+  await assertFails(updateDoc(doc(db("labMgr"), "pc_reference_ranges", "rr_k3_v1"), Object.assign({ proposal: { refMin: 9, refMax: 9 } }, rrU("labMgr"))));
+  await assertFails(updateDoc(doc(db("labMgr"), "pc_reference_ranges", "rr_k3_v1"), Object.assign({ origin: "custom" }, rrU("labMgr"))));
+});
+test("v27 alert rules: screening, alert and emergency types; an emergency (or critical) rule must require acknowledgement; a screening rule need not; rejection works like ranges", async () => {
+  const f = db("labMgr"), mk = (key, extra) => setDoc(doc(f, "pc_alert_rules", "ar_" + key + "_v1"), ar26("labMgr", Object.assign({ ruleKey: key }, extra || {})));
+  await assertSucceeds(mk("s1", { ruleType: "screening", level: "screening", requiresAck: false, operator: "gte", value: 50 }));
+  await assertSucceeds(mk("s2", { ruleType: "alert", level: "moderate", requiresAck: false }));
+  await assertSucceeds(mk("s3", { ruleType: "emergency", level: "critical", requiresAck: true }));
+  await assertFails(mk("s4", { ruleType: "emergency", level: "moderate", requiresAck: false }));
+  await assertFails(mk("s5", { ruleType: "bogus" }));
+  await assertSucceeds(updateDoc(doc(db("labLead"), "pc_alert_rules", "ar_s1_v1"), Object.assign({ approvalStatus: "rejected", rejectedReason: "UCG wording differs", rejectedBy: "labLead" }, rrU("labLead"))));
+  await assertFails(updateDoc(doc(db("labLead"), "pc_alert_rules", "ar_s2_v1"), Object.assign({ approvalStatus: "approved", approvedBy: "labLead", approvedAt: serverTimestamp(), selfApproved: false }, rrU("labLead"))));   // no credential
 });
