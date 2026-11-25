@@ -148,7 +148,7 @@ test("validate mirrors the rules and explains each refusal", () => {
   assert.match(bad({ minAgeMonths: -1 })[0], /negative/); assert.match(bad({ minAgeMonths: 10, maxAgeMonths: 10 })[0], /below the highest/); assert.match(bad({ minAgeMonths: 11, maxAgeMonths: 10 })[0], /below the highest/);
   assert.match(bad({ sex: "other" })[0], /sex/); assert.match(bad({ pregnancy: "maybe" })[0], /pregnancy/); assert.match(bad({ subjectType: "x" })[0], /what the range is for/); assert.match(bad({ subjectId: "" })[0], /test or vital/);
   assert.match(bad({ subjectType: "lab_param", paramKey: "" })[0], /parameter/); assert.match(bad({ effectiveDate: "2026-02-30" })[0], /not a valid date/); assert.match(bad({ reviewDate: "2019-01-01" })[0], /before the effective/);
-  assert.match(bad({ subjectType: "vital", subjectId: "pulse", unit: "bpm" })[0], /recorded in \/min/); assert.match(bad({ subjectType: "vital", subjectId: "nope", unit: "x" })[0], /Unknown vital/); assert.deepEqual(bad({ subjectType: "vital", subjectId: "pulse", unit: "/min" }), []);
+  assert.match(bad({ subjectType: "vital", subjectId: "pulse", unit: "bpm" })[0], /recorded in \/min/); assert.match(bad({ subjectType: "vital", subjectId: "nope", unit: "x" })[0], /Unknown vital/); assert.deepEqual(bad({ subjectType: "vital", subjectId: "pulse", unit: "/min", allAges: true }), []);
   assert.deepEqual(PCR.approvalErrors(R()), []); assert.match(PCR.approvalErrors(R({ effectiveDate: "" }))[0], /effective date/);
   assert.deepEqual(bad({ refMin: 0, refMax: 0 }), [], "zero is a real limit, not 'missing'");
 });
@@ -183,4 +183,17 @@ test("property: with no numeric range that applies, a flag is NEVER given (no fa
     assert.ok(["context_range", "legacy_catalogue", "unavailable"].includes(x.basis)); if (x.state === "range") assert.ok(x.rangeId && x.source);
     JSON.stringify(PCR.refAppliedOf("T", x));
   }
+});
+
+test("v28 rules: lactation, flag lists, notes, allAges, approval stamp and clean writes", () => {
+  const ok = R(), bad = (o) => PCR.validate(Object.assign({}, ok, o)).join(" | "), vit = { subjectType: "vital", subjectId: "pulse", unit: "/min" };
+  assert.match(bad({ lactation: null }), /lactation/); assert.match(bad({ lactation: "maybe" }), /lactation/); assert.deepEqual(bad({ lactation: "not_lactating" }), "");
+  assert.match(bad({ reproductive: "pregnant" }), /reproductive/); assert.deepEqual(bad({ reproductive: "any" }), "");
+  assert.match(bad({ requireFlags: new Array(11).fill("flag_a") }), /at most 10/); assert.match(bad({ forbidFlags: new Array(11).fill("flag_a") }), /at most 10/); assert.deepEqual(bad({ requireFlags: new Array(10).fill("flag_a") }), "");
+  assert.match(bad({ boundaryNote: "x".repeat(501) }), /boundary note/); assert.match(bad({ decisionReason: 7 }), /decision reason/); assert.deepEqual(bad({ boundaryNote: "x".repeat(500), decisionReason: "TEST" }), "");
+  assert.match(bad(vit), /age limit/); assert.match(bad(Object.assign({ allAges: false }, vit)), /age limit/); assert.deepEqual(bad(Object.assign({ allAges: true }, vit)), ""); assert.deepEqual(bad(Object.assign({ maxAgeMonths: 24 }, vit)), ""); assert.deepEqual(bad({ allAges: undefined }), "", "labs need no age limit");
+  assert.equal(PCR.approvalStampErrors({ reviewerCredential: "RN" }).length, 0); assert.equal(PCR.approvalStampErrors({ reviewerCredential: "x" }).length, 1); assert.equal(PCR.approvalStampErrors({ reviewerCredential: "" }).length, 1); assert.equal(PCR.approvalStampErrors({ reviewerCredential: "x".repeat(101) }).length, 1); assert.equal(PCR.approvalStampErrors({ reviewerCredential: "MD", approvalNote: "x".repeat(501) }).length, 1);
+  const c = PCR.cleanForWrite({ boundaryNote: "", decisionReason: null, requireFlags: [], forbidFlags: ["flag_a"], lactation: null, reproductive: "any", refMin: 1 });
+  assert.deepEqual(Object.keys(c).sort(), ["forbidFlags", "refMin"]); assert.equal(Object.values(c).includes(null), false);
+  const d = PCR.cleanForWrite({ boundaryNote: " TEST ", lactation: "lactating" }); assert.equal(d.boundaryNote, "TEST"); assert.equal(d.lactation, "lactating"); const src = { boundaryNote: "", x: 1 }; PCR.cleanForWrite(src); assert.equal(src.boundaryNote, "", "the input is not changed");
 });

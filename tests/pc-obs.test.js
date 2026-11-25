@@ -8,8 +8,8 @@ const PCO = require("../pc-obs.js");
 
 const DATE = "2026-11-24";
 const pat = (months, o) => { const d = new Date(Date.UTC(2026, 10, 24)); d.setUTCMonth(d.getUTCMonth() - months); return Object.assign({ sex: "female", dobPrecision: "exact", dob: d.toISOString().slice(0, 10) }, o); };
-const R = (o) => Object.assign({ approvalStatus: "approved", rangeKey: "k1", version: 1, subjectType: "vital", subjectId: "pulse", paramKey: "", unit: "/min", refMin: 10, refMax: 20, refText: "", sex: "any", minAgeMonths: null, maxAgeMonths: null, pregnancy: "any", lactation: "any", specimen: "", method: "", labName: "", setting: "", requireFlags: [], forbidFlags: [], source: "TEST SOURCE", effectiveDate: "2020-01-01", reviewDate: "" }, o);
-const A = (o) => Object.assign({ approvalStatus: "approved", ruleKey: "a1", version: 1, subjectType: "vital", subjectId: "pulse", paramKey: "", unit: "/min", ruleType: "alert", operator: "gt", value: 100, min: null, max: null, message: "", urgencyText: "", group: "", sex: "any", minAgeMonths: null, maxAgeMonths: null, pregnancy: "any", lactation: "any", method: "", setting: "", requireFlags: [], forbidFlags: [], source: "TEST SOURCE", sourceTitle: "TEST title", sourcePage: "p. 1", effectiveDate: "2020-01-01" }, o);
+const R = (o) => Object.assign({ approvalStatus: "approved", allAges: true, rangeKey: "k1", version: 1, subjectType: "vital", subjectId: "pulse", paramKey: "", unit: "/min", refMin: 10, refMax: 20, refText: "", sex: "any", minAgeMonths: null, maxAgeMonths: null, pregnancy: "any", lactation: "any", specimen: "", method: "", labName: "", setting: "", requireFlags: [], forbidFlags: [], source: "TEST SOURCE", effectiveDate: "2020-01-01", reviewDate: "" }, o);
+const A = (o) => Object.assign({ approvalStatus: "approved", allAges: true, ruleKey: "a1", version: 1, subjectType: "vital", subjectId: "pulse", paramKey: "", unit: "/min", ruleType: "alert", operator: "gt", value: 100, min: null, max: null, message: "", urgencyText: "", group: "", sex: "any", minAgeMonths: null, maxAgeMonths: null, pregnancy: "any", lactation: "any", method: "", setting: "", requireFlags: [], forbidFlags: [], source: "TEST SOURCE", sourceTitle: "TEST title", sourcePage: "p. 1", effectiveDate: "2020-01-01" }, o);
 const I = (o) => PCO.interpret(Object.assign({ key: "pulse", raw: 15, patient: pat(300), ctx: {}, date: DATE, ranges: [], alerts: [] }, o));
 
 test("validateEntry: blank, formats, unit, entry limits and decimals; an invalid entry is never a clinical result", () => {
@@ -213,10 +213,10 @@ test("snapshot: what is stored at entry is plain, complete, and does not change 
 });
 
 test("rule validation for the management screen and the importer", () => {
-  assert.deepEqual(PCO.ruleErrors(A()), []); const bad = (o) => PCO.ruleErrors(Object.assign(A(), o));
+  assert.deepEqual(PCO.ruleErrors(A({ message: "TEST message" })), []); const bad = (o) => PCO.ruleErrors(Object.assign(A({ message: "TEST message" }), o));
   assert.match(bad({ ruleKey: "" })[0], /rule key/); assert.match(bad({ version: 0 })[0], /version/); assert.match(bad({ ruleType: "x" })[0], /rule type/); assert.match(bad({ operator: "eq" })[0], /compared/); assert.match(bad({ value: null })[0], /threshold value/);
   assert.match(bad({ operator: "range", min: 5, max: 5 })[0], /minimum must be below/); assert.match(bad({ operator: "range", min: null, max: 5 })[0], /needs a minimum and a maximum/); assert.match(bad({ source: "", sourceTitle: "" })[0], /source/); assert.match(bad({ unit: "" })[0], /unit/);
-  assert.match(bad({ minAgeMonths: 10, maxAgeMonths: 10 }).join(" "), /below the highest/); assert.match(bad({ lactation: "x" }).join(" "), /lactation/); assert.match(bad({ requireFlags: ["Bad Flag"] }).join(" "), /flags must be short/); assert.deepEqual(PCO.ruleErrors(A({ operator: "range", value: null, min: 11.5, max: 12.5 })), []);
+  assert.match(bad({ minAgeMonths: 10, maxAgeMonths: 10 }).join(" "), /below the highest/); assert.match(bad({ lactation: "x" }).join(" "), /lactation/); assert.match(bad({ requireFlags: ["Bad Flag"] }).join(" "), /flags must be a list/); assert.deepEqual(PCO.ruleErrors(A({ operator: "range", value: null, min: 11.5, max: 12.5, message: "TEST message" })), []);
 });
 
 test("source view: everything a reviewer needs to see about a rule", () => {
@@ -241,4 +241,16 @@ test("property: every result is one of the ten states; only approved rules ever 
     if (x.state !== "critical_alert") assert.equal(x.ackItems.length, 0);
     assert.deepEqual(JSON.parse(JSON.stringify(x.snapshot)), x.snapshot);
   }
+});
+
+test("v28 rules: what the alert-rule rules refuse is refused here first", () => {
+  const ok = (o) => A(Object.assign({ message: "TEST message" }, o)), bad = (o) => PCO.ruleErrors(ok(o)).join(" | ");
+  assert.deepEqual(PCO.ruleErrors(ok({})), []);
+  assert.match(bad({ message: "ab" }), /at least 3/); assert.match(bad({ message: "x".repeat(301) }), /at most 300/); assert.deepEqual(PCO.ruleErrors(ok({ message: "x".repeat(300) })), []);
+  assert.match(bad({ urgencyText: "x".repeat(301) }), /urgency text/); assert.match(bad({ contextRequired: ["a", "b", "c", "d", "e", "f"] }), /at most 5/);
+  assert.match(bad({ ruleType: "emergency", requiresAck: false }), /acknowledgement/); assert.match(bad({ level: "critical" }), /acknowledgement/); assert.deepEqual(PCO.ruleErrors(ok({ ruleType: "emergency", requiresAck: true })), []);
+  assert.match(bad({ level: "severe" }), /level must be/);
+  assert.match(bad({ allAges: false }), /age limit/); assert.deepEqual(PCO.ruleErrors(ok({ allAges: false, minAgeMonths: 12 })), []);
+  assert.match(bad({ reproductive: "pregnant" }), /reproductive/); assert.match(bad({ lactation: null }), /lactation/);
+  assert.match(bad({ requireFlags: new Array(11).fill("flag_a") }), /at most 10/); assert.match(bad({ boundaryNote: "x".repeat(501) }), /500/); assert.match(bad({ decisionReason: 5 }), /500/);
 });
