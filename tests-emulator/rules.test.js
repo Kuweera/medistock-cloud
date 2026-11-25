@@ -876,6 +876,9 @@ test("v26 alert rules: ranges.manage creates a draft; operator/value, range boun
   await assertFails(mk("a9", { level: "severe" }));
   await assertFails(mk("a10", { message: "x" }));
   await assertFails(mk("a11", { reproductive: "maybe" }));
+  await assertFails(mk("v28a", { reproductive: "pregnant" }));   // v28
+  await assertFails(mk("v28b", { lactation: "maybe" }));
+  await assertFails(mk("v28c", { pregnancy: "maybe" }));
   await assertFails(setDoc(doc(db("labLead"), "pc_alert_rules", "ar_a12_v1"), ar26("labLead", { ruleKey: "a12" })));          // approve is not manage
   await assertFails(mk("a13", { approvalStatus: "approved" }));
 });
@@ -895,8 +898,14 @@ test("v26 alert rules: approve by a person with ranges.approve; replace by a new
 });
 test("v26 ranges: lactation values are accepted, a bad value is refused, and a vital range without age limits needs allAges", async () => {
   const f = db("labMgr"), mk = (key, extra) => setDoc(doc(f, "pc_reference_ranges", "rr_" + key + "_v1"), rr25("labMgr", Object.assign({ rangeKey: key }, extra)));
-  for (const [i, v] of ["pregnant", "lactating", "pregnant_or_lactating", "neither", "any"].entries()) await assertSucceeds(mk("rp" + i, { reproductive: v }));
-  await assertFails(mk("rpx", { reproductive: "maybe" }));
+  for (const [i, v] of ["lactating", "not_lactating", "any"].entries()) await assertSucceeds(mk("rp" + i, { lactation: v }));   // v28: its own field
+  await assertSucceeds(mk("rpb", { pregnancy: "pregnant", lactation: "lactating" }));   // both at once is expressible
+  await assertFails(mk("rpx", { lactation: "maybe" }));
+  for (const [i, v] of ["pregnant", "lactating", "pregnant_or_lactating", "neither", "maybe"].entries()) await assertFails(mk("rq" + i, { reproductive: v }));   // v28: the v26 field can no longer hold a value the engine would ignore
+  await assertSucceeds(mk("rfl", { requireFlags: ["a"], forbidFlags: ["b"], boundaryNote: "TEST", decisionReason: "TEST" }));
+  await assertFails(mk("rfx", { requireFlags: "a" }));
+  await assertFails(mk("rfy", { forbidFlags: new Array(11).fill("x") }));
+  await assertFails(mk("rfz", { boundaryNote: "x".repeat(501) }));
   await assertFails(mk("rv1", { subjectType: "vital", subjectId: "pulse" }));
   await assertSucceeds(mk("rv2", { subjectType: "vital", subjectId: "pulse", allAges: true }));
   await assertSucceeds(mk("rv3", { subjectType: "vital", subjectId: "pulse", minAgeMonths: 0, maxAgeMonths: 12 }));
