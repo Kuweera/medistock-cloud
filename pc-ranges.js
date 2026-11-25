@@ -206,13 +206,33 @@
     if ((hasLo && !isNum(lo)) || (hasHi && !isNum(hi))) e.push("The age limits must be numbers (months).");
     else { if (hasLo && lo < 0) e.push("The lowest age cannot be negative."); if (hasLo && hasHi && lo >= hi) e.push("The lowest age must be below the highest age."); }
     if (SEXES.indexOf(d.sex) < 0) e.push("Choose the sex the range applies to."); if (PREGS.indexOf(d.pregnancy) < 0) e.push("Choose the pregnancy condition.");
-    if (d.lactation !== undefined && d.lactation !== null && LACTS.indexOf(d.lactation) < 0) e.push("Choose the lactation condition.");
+    if (d.lactation !== undefined && LACTS.indexOf(d.lactation) < 0) e.push("Choose the lactation condition.");   // v28: a null is refused by the rules, so it is refused here (cleanForWrite leaves it out)
+    if (d.reproductive !== undefined && d.reproductive !== "any") e.push("The old \"reproductive\" field is not used. Use pregnancy and lactation.");
+    if (d.subjectType === "vital" && !isNum(d.minAgeMonths) && !isNum(d.maxAgeMonths) && d.allAges !== true) e.push("A vital-sign range needs an age limit, or \"all ages\" must be chosen.");
+    ["boundaryNote", "decisionReason"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null && (typeof d[k] !== "string" || d[k].length > 500)) e.push("The " + (k === "boundaryNote" ? "boundary note" : "decision reason") + " must be text of at most 500 characters."); });
     if (d.setting !== undefined && str(d.setting).length > 60) e.push("The clinical setting is too long.");
-    ["requireFlags", "forbidFlags"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null && (!Array.isArray(d[k]) || d[k].some(function (x) { return typeof x !== "string" || !/^[a-z][a-z0-9_]{1,40}$/.test(x); }))) e.push("The clinical flags must be short lower-case names."); });
+    ["requireFlags", "forbidFlags"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null && (!Array.isArray(d[k]) || d[k].length > 10 || d[k].some(function (x) { return typeof x !== "string" || !/^[a-z][a-z0-9_]{1,40}$/.test(x); }))) e.push("The clinical flags must be a list of at most 10 short lower-case names."); });
     if (str(d.source).length < 3) e.push("Name the source of this range (a reference, a kit insert, or the laboratory's own validated interval).");
     if (str(d.effectiveDate) && !isIso(str(d.effectiveDate))) e.push("The effective date is not a valid date.");
     if (str(d.reviewDate) && !isIso(str(d.reviewDate))) e.push("The review date is not a valid date."); else if (str(d.reviewDate) && str(d.effectiveDate) && str(d.reviewDate) < str(d.effectiveDate)) e.push("The review date is before the effective date.");
     return e;
+  }
+
+  /* approvalStampErrors({ reviewerCredential, approvalNote }) -> list. The v27 rules refuse an approval without the approver's stated credential (2 to 100 characters); the note is optional, at most 500. */
+  function approvalStampErrors(s) {
+    var e = [], c = str(s && s.reviewerCredential), n = s && s.approvalNote;
+    if (c.length < 2 || c.length > 100) e.push("State who you are as a reviewer (2 to 100 characters, for example your clinical role).");
+    if (n !== undefined && n !== null && (typeof n !== "string" || n.length > 500)) e.push("The approval note is too long (at most 500 characters).");
+    return e;
+  }
+  /* cleanForWrite(doc) -> a copy that is safe to write. The Lead's rule (v28): optional notes and flag lists are OMITTED when empty, never written as null. lactation "null" is left out too (the rules refuse it). Nothing else is changed. */
+  function cleanForWrite(d) {
+    var o = {}; Object.keys(d || {}).forEach(function (k) { o[k] = d[k]; });
+    ["boundaryNote", "decisionReason"].forEach(function (k) { if (o[k] === undefined || o[k] === null || str(o[k]) === "") delete o[k]; else o[k] = str(o[k]); });
+    ["requireFlags", "forbidFlags"].forEach(function (k) { if (o[k] === undefined || o[k] === null || (Array.isArray(o[k]) && !o[k].length)) delete o[k]; });
+    if (o.lactation === null) delete o.lactation;
+    if (o.reproductive === "any") delete o.reproductive;
+    return o;
   }
   /* approvalErrors(doc) -> extra things needed to approve (the rules also require these) */
   function approvalErrors(d) { var e = validate(d); if (!isIso(str(d && d.effectiveDate))) e.push("An effective date is needed to approve."); return e; }
@@ -232,6 +252,6 @@
   }
 
   var api = { VITALS: VITALS, SEXES: SEXES, PREGS: PREGS, LACTS: LACTS, TYPES: TYPES, STATUSES: STATUSES, PENDING: PENDING, ageOf: ageOf, sexOf: sexOf, pregOf: pregOf, lactOf: lactOf, listOf: listOf, flagVal: flagVal, failures: failures, contextOf: contextOf, codeOf: codeOf, onlyMissing: onlyMissing, needName: needName, isPending: isPending, check: check, specificity: specificity, resolve: resolve, flag: flag, describe: describe, contextText: contextText, ageText: ageText,
-    refAppliedOf: refAppliedOf, staleNotice: staleNotice, validate: validate, approvalErrors: approvalErrors, conflictRisk: conflictRisk, docId: docId, newRangeKey: newRangeKey, normUnit: normUnit, isIso: isIso, WHY: WHY };
+    refAppliedOf: refAppliedOf, staleNotice: staleNotice, validate: validate, approvalErrors: approvalErrors, approvalStampErrors: approvalStampErrors, cleanForWrite: cleanForWrite, conflictRisk: conflictRisk, docId: docId, newRangeKey: newRangeKey, normUnit: normUnit, isIso: isIso, WHY: WHY };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.PCR = api;
 })(typeof self !== "undefined" ? self : (typeof window !== "undefined" ? window : this));

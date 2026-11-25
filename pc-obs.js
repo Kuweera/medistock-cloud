@@ -78,9 +78,14 @@
     if (OPS.indexOf(r.operator) < 0) e.push("Choose how the threshold is compared.");
     else if (r.operator === "range") { if (!isNum(r.min) || !isNum(r.max)) e.push("A range needs a minimum and a maximum."); else if (r.min >= r.max) e.push("The minimum must be below the maximum."); }
     else if (!isNum(r.value)) e.push("Enter the threshold value.");
-    if (str(r.message).length > 500) e.push("The message is too long.");
+    if (str(r.message).length < 3) e.push("Write the message the clinician will see (at least 3 characters).");
+    if (str(r.message).length > 300) e.push("The message is too long (at most 300 characters).");
+    if (r.urgencyText !== undefined && r.urgencyText !== null && (typeof r.urgencyText !== "string" || r.urgencyText.length > 300)) e.push("The urgency text must be text of at most 300 characters.");
+    if (r.contextRequired !== undefined && r.contextRequired !== null && (!Array.isArray(r.contextRequired) || r.contextRequired.length > 5)) e.push("The required context must be a list of at most 5 items.");
+    if ((r.ruleType === "emergency" || r.level === "critical") && r.requiresAck !== true) e.push("An emergency or critical rule must require acknowledgement.");
+    if (r.level !== undefined && ["screening", "moderate", "critical"].indexOf(r.level) < 0) e.push("The level must be screening, moderate or critical.");
     if (str(r.source).length < 3 && str(r.sourceTitle).length < 3) e.push("Name the source of this rule.");
-    var base = PCR.validate({ subjectType: r.subjectType || "vital", subjectId: r.subjectId || "x", paramKey: r.paramKey, unit: r.unit || "x", refMin: 0, refMax: 1, minAgeMonths: r.minAgeMonths, maxAgeMonths: r.maxAgeMonths, sex: r.sex || "any", pregnancy: r.pregnancy || "any", lactation: r.lactation, setting: r.setting, requireFlags: r.requireFlags, forbidFlags: r.forbidFlags, source: "xxx", effectiveDate: r.effectiveDate, reviewDate: r.reviewDate });
+    var base = PCR.validate({ subjectType: r.subjectType || "vital", subjectId: r.subjectId || "x", paramKey: r.paramKey, unit: r.unit || "x", refMin: 0, refMax: 1, minAgeMonths: r.minAgeMonths, maxAgeMonths: r.maxAgeMonths, sex: r.sex || "any", pregnancy: r.pregnancy || "any", lactation: r.lactation, setting: r.setting, requireFlags: r.requireFlags, forbidFlags: r.forbidFlags, boundaryNote: r.boundaryNote, decisionReason: r.decisionReason, reproductive: r.reproductive, allAges: r.allAges, source: "xxx", effectiveDate: r.effectiveDate, reviewDate: r.reviewDate });
     base.forEach(function (m) { if (e.indexOf(m) < 0) e.push(m); });
     return e;
   }
