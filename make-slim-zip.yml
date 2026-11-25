@@ -1,0 +1,19 @@
+name: Make a slim repo zip (manual)
+# Produces a small download for sharing the code with Claude: everything except vendor/ (large library files already described in vendor/VENDOR_MANIFEST.md), screenshots and test fixtures.
+# Run: Actions > "Make a slim repo zip (manual)" > Run workflow. When it is green, open the run, scroll to Artifacts, download "slim-repo".
+on: workflow_dispatch
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the slim copy
+        run: |
+          mkdir -p /tmp/slim
+          rsync -a --exclude '.git' --exclude 'node_modules' --exclude 'vendor/*/' --exclude 'docs/screenshots*' --exclude 'tests/fixtures' --exclude '*.png' --exclude '*.jpg' ./ /tmp/slim/
+          du -sh /tmp/slim
+          find /tmp/slim -type f | wc -l
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slim-repo
+          path: /tmp/slim
