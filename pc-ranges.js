@@ -10,7 +10,10 @@
    - Context counts: sex, age, pregnancy status stated at result entry, unit, specimen, method, laboratory. A range that sets a context only applies when that context is known and matches.
    - The most specific range wins. Two equally specific ranges are a conflict: no range is chosen and no flag is produced.
    - A range past its review date is still used and is marked "review overdue".
-   - An estimated date of birth is used and the result says the age was estimated. */
+   - An estimated date of birth is used and the result says the age was estimated.
+   - Pregnancy and lactation are separate, independent contexts. A rule saved before lactation existed has no lactation field and means "any".
+   - Context a rule needs but the entry did not state (age, sex, pregnancy, lactation, method, setting, a clinical flag) never matches: the answer is "context required", not a guess.
+   - Only `approved` rules are active. Drafts and review-required rules are never used; rejected, superseded and retired rules are ignored. */
 (function (root) {
   "use strict";
 
@@ -19,7 +22,8 @@
     temperatureC: { label: "Temperature", unit: "°C" }, bpSys: { label: "Systolic BP", unit: "mmHg" }, bpDia: { label: "Diastolic BP", unit: "mmHg" },
     pulse: { label: "Pulse", unit: "/min" }, respRate: { label: "Breathing rate", unit: "/min" }, spo2: { label: "Oxygen saturation", unit: "%" }
   };
-  var SEXES = ["any", "male", "female"], PREGS = ["any", "pregnant", "not_pregnant"], TYPES = ["lab_test", "lab_param", "vital"], STATUSES = ["draft", "approved", "superseded", "retired"];
+  var SEXES = ["any", "male", "female"], PREGS = ["any", "pregnant", "not_pregnant"], LACTS = ["any", "lactating", "not_lactating"], TYPES = ["lab_test", "lab_param", "vital"];
+  var PENDING = ["draft", "draft_evidence_based", "review_required"], STATUSES = PENDING.concat(["approved", "rejected", "superseded", "retired"]);   // only "approved" is active; PENDING ones are proposals; the rest are ignored
 
   // ---------------------------------------------------------------- small helpers
   function isNum(v) { return typeof v === "number" && isFinite(v); }
@@ -43,24 +47,40 @@
   }
   function sexOf(p) { var s = str(p && p.sex).toLowerCase(); return s === "male" || s === "female" ? s : "unknown"; }
   function pregOf(v) { return v === "pregnant" || v === "not_pregnant" ? v : "unknown"; }
+  function lactOf(v) { return v === "lactating" || v === "not_lactating" ? v : "unknown"; }
+  function listOf(v) { return Array.isArray(v) ? v.map(str).filter(Boolean) : []; }
+  function flagVal(f, k) { return f && typeof f[k] === "boolean" ? f[k] : null; }
 
-  // ---------------------------------------------------------------- one range against one situation
-  /* ctx: { unit, sex, ageMonths, pregnancy, specimen, method, labName, date }
-     check(range, ctx) -> { ok, fail }   fail is the first context that did not fit: "unit", "age_unknown", "age_outside", "sex_unknown", "sex_outside", "pregnancy_not_stated", "pregnancy_outside", "order_context", "not_yet_effective" */
-  function check(r, c) {
-    if (r.approvalStatus !== "approved") return { ok: false, fail: "not_approved" };
-    if (!isIso(str(r.effectiveDate)) || str(r.effectiveDate) > c.date) return { ok: false, fail: "not_yet_effective" };
-    if (normUnit(r.unit) !== normUnit(c.unit)) return { ok: false, fail: "unit" };
-    if (r.sex === "male" || r.sex === "female") { if (c.sex === "unknown") return { ok: false, fail: "sex_unknown" }; if (c.sex !== r.sex) return { ok: false, fail: "sex_outside" }; }
+  // ---------------------------------------------------------------- one rule against one situation
+  /* ctx: { unit, sex, ageMonths, pregnancy, lactation, specimen, method, labName, setting, flags, date }   flags = { name: true | false } for what was stated; a flag not in the object was not stated.
+     failures(rule, ctx) -> every reason the rule does not apply, as "code" or "code:detail". Empty = applies.
+     "…_not_stated", "age_unknown", "sex_unknown" and "order_context_missing" mean the situation lacks something the rule needs (context required); the others mean the rule does not cover this situation. */
+  function failures(r, c) {
+    var f = [];
+    if (r.approvalStatus !== "approved") return ["not_approved"];
+    if (!isIso(str(r.effectiveDate)) || str(r.effectiveDate) > c.date) f.push("not_yet_effective");
+    if (normUnit(r.unit) !== normUnit(c.unit)) f.push("unit");
+    if (r.sex === "male" || r.sex === "female") { if (c.sex === "unknown") f.push("sex_unknown"); else if (c.sex !== r.sex) f.push("sex_outside"); }
     var lo = isNum(r.minAgeMonths) ? r.minAgeMonths : null, hi = isNum(r.maxAgeMonths) ? r.maxAgeMonths : null;
-    if (lo !== null || hi !== null) { if (!isNum(c.ageMonths)) return { ok: false, fail: "age_unknown" }; if ((lo !== null && c.ageMonths < lo) || (hi !== null && c.ageMonths >= hi)) return { ok: false, fail: "age_outside" }; }   // min inclusive, max exclusive
-    if (r.pregnancy === "pregnant" || r.pregnancy === "not_pregnant") { if (c.pregnancy === "unknown") return { ok: false, fail: "pregnancy_not_stated" }; if (c.pregnancy !== r.pregnancy) return { ok: false, fail: "pregnancy_outside" }; }
-    var ords = [["specimen", r.specimen], ["method", r.method], ["labName", r.labName]];
-    for (var i = 0; i < ords.length; i++) if (str(ords[i][1]) && !sameText(ords[i][1], c[ords[i][0]])) return { ok: false, fail: "order_context" };
-    return { ok: true, fail: "" };
+    if (lo !== null || hi !== null) { if (!isNum(c.ageMonths)) f.push("age_unknown"); else if ((lo !== null && c.ageMonths < lo) || (hi !== null && c.ageMonths >= hi)) f.push("age_outside"); }   // minimum inclusive, maximum exclusive
+    if (r.pregnancy === "pregnant" || r.pregnancy === "not_pregnant") { if (c.pregnancy === "unknown") f.push("pregnancy_not_stated"); else if (c.pregnancy !== r.pregnancy) f.push("pregnancy_outside"); }
+    if (r.lactation === "lactating" || r.lactation === "not_lactating") { if (c.lactation === "unknown") f.push("lactation_not_stated"); else if (c.lactation !== r.lactation) f.push("lactation_outside"); }
+    [["specimen", r.specimen], ["method", r.method], ["labName", r.labName]].forEach(function (o) { if (str(o[1])) { if (!str(c[o[0]])) f.push("order_context_missing:" + o[0]); else if (!sameText(o[1], c[o[0]])) f.push("order_context"); } });
+    if (str(r.setting)) { if (!str(c.setting)) f.push("setting_not_stated"); else if (!sameText(r.setting, c.setting)) f.push("setting_outside"); }
+    listOf(r.requireFlags).forEach(function (k) { var v = flagVal(c.flags, k); if (v === null) f.push("flag_not_stated:" + k); else if (v !== true) f.push("flag_outside:" + k); });
+    listOf(r.forbidFlags).forEach(function (k) { var v = flagVal(c.flags, k); if (v === null) f.push("flag_not_stated:" + k); else if (v !== false) f.push("flag_outside:" + k); });
+    return f;
   }
-  /* specificity(range): how many context conditions the range sets (age bounds count once) */
-  function specificity(r) { return (r.sex === "male" || r.sex === "female" ? 1 : 0) + (isNum(r.minAgeMonths) || isNum(r.maxAgeMonths) ? 1 : 0) + (r.pregnancy === "pregnant" || r.pregnancy === "not_pregnant" ? 1 : 0) + (str(r.specimen) ? 1 : 0) + (str(r.method) ? 1 : 0) + (str(r.labName) ? 1 : 0); }
+  function codeOf(x) { return x.split(":")[0]; }
+  var NOT_STATED = { age_unknown: 1, sex_unknown: 1, pregnancy_not_stated: 1, lactation_not_stated: 1, order_context_missing: 1, setting_not_stated: 1, flag_not_stated: 1 };
+  function onlyMissing(f) { return f.length > 0 && f.every(function (x) { return NOT_STATED[codeOf(x)]; }); }
+  var NEED = { age_unknown: "age", sex_unknown: "sex", pregnancy_not_stated: "pregnancy status", lactation_not_stated: "lactation status", setting_not_stated: "clinical setting" };
+  function needName(x) { var c = codeOf(x), d = x.indexOf(":") > 0 ? x.slice(x.indexOf(":") + 1) : ""; if (c === "order_context_missing") return d === "labName" ? "laboratory" : d; if (c === "flag_not_stated") return d.replace(/_/g, " "); return NEED[c] || c; }
+  /* check(rule, ctx) -> { ok, fail }   the first failure (kept for the laboratory screens) */
+  function check(r, c) { var f = failures(r, c); return f.length ? { ok: false, fail: codeOf(f[0]) } : { ok: true, fail: "" }; }
+  /* specificity(rule): how many context conditions the rule sets (age bounds count once; each flag counts) */
+  function specificity(r) { return (r.sex === "male" || r.sex === "female" ? 1 : 0) + (isNum(r.minAgeMonths) || isNum(r.maxAgeMonths) ? 1 : 0) + (r.pregnancy === "pregnant" || r.pregnancy === "not_pregnant" ? 1 : 0) + (r.lactation === "lactating" || r.lactation === "not_lactating" ? 1 : 0) + (str(r.specimen) ? 1 : 0) + (str(r.method) ? 1 : 0) + (str(r.labName) ? 1 : 0) + (str(r.setting) ? 1 : 0) + listOf(r.requireFlags).length + listOf(r.forbidFlags).length; }
+  function isPending(r) { return PENDING.indexOf(r && r.approvalStatus) >= 0; }
 
   var WHY = {
     no_range: "Reference range not configured.",
@@ -71,33 +91,51 @@
     sex_outside: "No reference range covers this patient's sex.",
     pregnancy_not_stated: "Reference ranges for this test depend on pregnancy, and pregnancy status was not stated for this result.",
     pregnancy_outside: "No reference range covers this pregnancy status.",
-    order_context: "Reference ranges exist for a specific specimen, method or laboratory, and this order does not state a matching one.",
+    lactation_not_stated: "Reference ranges for this test depend on lactation, and lactation status was not stated for this result.",
+    lactation_outside: "No reference range covers this lactation status.",
+    order_context_missing: "Reference ranges exist for a specific specimen, method or laboratory, and this order does not state one.",
+    order_context: "Reference ranges exist for a specific specimen, method or laboratory, and none matches this order.",
+    setting_not_stated: "Reference ranges depend on the clinical setting, and none was stated.",
+    setting_outside: "No reference range covers this clinical setting.",
+    flag_not_stated: "A reference range depends on a clinical sign or condition that was not stated.",
+    flag_outside: "No reference range covers this clinical situation.",
     not_yet_effective: "The reference range recorded for this test is not in effect yet.",
     conflict: "Reference ranges conflict: more than one equally specific range applies. Ask the laboratory lead to fix them. No flag is given."
   };
-  var FAIL_ORDER = ["age_unknown", "sex_unknown", "pregnancy_not_stated", "order_context", "age_outside", "sex_outside", "pregnancy_outside", "unit", "not_yet_effective"];
+  var FAIL_ORDER = ["age_unknown", "sex_unknown", "pregnancy_not_stated", "lactation_not_stated", "setting_not_stated", "flag_not_stated", "order_context_missing", "age_outside", "sex_outside", "pregnancy_outside", "lactation_outside", "setting_outside", "flag_outside", "order_context", "unit", "not_yet_effective"];
+
+  /* contextOf(input) -> { ctx, age }   the one place that turns patient + entry details into the context every rule is checked against (ranges and alert rules alike) */
+  function contextOf(inp) {
+    inp = inp || {}; var date = iso(inp.date || new Date()), age = ageOf(inp.patient, date);
+    return { age: age, ctx: { unit: str(inp.unit), sex: sexOf(inp.patient), ageMonths: age.months, pregnancy: pregOf(inp.pregnancy), lactation: lactOf(inp.lactation), specimen: str(inp.specimen), method: str(inp.method), labName: str(inp.labName), setting: str(inp.setting), flags: inp.flags || {}, date: date } };
+  }
 
   /* resolve(input) -> result
-     input:  { subjectType, subjectId, paramKey, unit, patient, pregnancy, specimen, method, labName, date, ranges: [pc_reference_ranges docs],
+     input:  { subjectType, subjectId, paramKey, unit, patient, pregnancy, lactation, specimen, method, labName, setting, flags, date, ranges: [pc_reference_ranges docs],
                legacy: { refMin, refMax, refText, refSource } | null }
      result: { basis: "context_range" | "legacy_catalogue" | "unavailable", state: "range" | "legacy" | "unavailable" | "conflict", reason, reasonText,
-               rangeId, rangeKey, rangeVersion, min, max, text, unit, source, reviewOverdue, contextRangesExist,
-               ageMonths, ageBasis, sex, pregnancy, resolvedAt, flagAllowed } */
+               rangeId, rangeKey, rangeVersion, min, max, text, unit, source, reviewOverdue, contextRangesExist, pendingExists, contextMissing: [names],
+               ageMonths, ageBasis, sex, pregnancy, lactation, setting, resolvedAt, flagAllowed }
+     contextMissing lists context that was not stated and that a MORE SPECIFIC approved range needs. The laboratory screens show it as a note; the observation engine treats it as "context required". */
   function resolve(inp) {
-    inp = inp || {}; var date = iso(inp.date || new Date()), age = ageOf(inp.patient, date);
-    var ctx = { unit: str(inp.unit), sex: sexOf(inp.patient), ageMonths: age.months, pregnancy: pregOf(inp.pregnancy), specimen: str(inp.specimen), method: str(inp.method), labName: str(inp.labName), date: date };
-    var out = { basis: "unavailable", state: "unavailable", reason: "no_range", reasonText: WHY.no_range, rangeId: null, rangeKey: null, rangeVersion: null, min: null, max: null, text: "", unit: ctx.unit, source: "", reviewOverdue: false, contextRangesExist: false,
-      ageMonths: age.months, ageBasis: age.basis, sex: ctx.sex, pregnancy: ctx.pregnancy, resolvedAt: date, flagAllowed: false };
-    var mine = (inp.ranges || []).filter(function (r) { return r && r.subjectType === inp.subjectType && r.subjectId === inp.subjectId && str(r.paramKey) === str(inp.paramKey) && r.approvalStatus === "approved"; });
-    out.contextRangesExist = mine.length > 0;
-    var fits = [], fails = {};
-    mine.forEach(function (r) { var c = check(r, ctx); if (c.ok) fits.push(r); else fails[c.fail] = true; });
+    inp = inp || {}; var cx = contextOf(inp), date = cx.ctx.date, age = cx.age, ctx = cx.ctx;
+    var out = { basis: "unavailable", state: "unavailable", reason: "no_range", reasonText: WHY.no_range, rangeId: null, rangeKey: null, rangeVersion: null, min: null, max: null, text: "", unit: ctx.unit, source: "", reviewOverdue: false, contextRangesExist: false, pendingExists: false, contextMissing: [],
+      ageMonths: age.months, ageBasis: age.basis, sex: ctx.sex, pregnancy: ctx.pregnancy, lactation: ctx.lactation, setting: ctx.setting, resolvedAt: date, flagAllowed: false };
+    var same = function (r) { return r && r.subjectType === inp.subjectType && r.subjectId === inp.subjectId && str(r.paramKey) === str(inp.paramKey); };
+    var all = (inp.ranges || []).filter(same), mine = all.filter(function (r) { return r.approvalStatus === "approved"; });
+    out.contextRangesExist = mine.length > 0; out.pendingExists = all.some(isPending);
+    var fits = [], fails = {}, partial = [];
+    mine.forEach(function (r) { var f = failures(r, ctx); if (!f.length) fits.push(r); else { f.forEach(function (x) { fails[codeOf(x)] = true; }); if (onlyMissing(f)) partial.push({ r: r, f: f }); } });
+    var chosenSpec = -1;
     if (fits.length) {
-      var top = Math.max.apply(null, fits.map(specificity)), best = fits.filter(function (r) { return specificity(r) === top; });
+      var top = Math.max.apply(null, fits.map(specificity)), best = fits.filter(function (r) { return specificity(r) === top; }); chosenSpec = top;
       if (best.length > 1) { out.state = "conflict"; out.reason = "conflict"; out.reasonText = WHY.conflict; return out; }
+    }
+    partial.forEach(function (p) { if (specificity(p.r) > chosenSpec) p.f.forEach(function (x) { var n = needName(x); if (out.contextMissing.indexOf(n) < 0) out.contextMissing.push(n); }); });
+    if (fits.length) {
       var r = best[0]; out.basis = "context_range"; out.state = "range"; out.reason = ""; out.reasonText = ""; out.rangeId = docId(r.rangeKey, r.version); out.rangeKey = r.rangeKey; out.rangeVersion = r.version;
       out.min = isNum(r.refMin) ? r.refMin : null; out.max = isNum(r.refMax) ? r.refMax : null; out.text = str(r.refText); out.unit = str(r.unit); out.source = str(r.source);
-      out.reviewOverdue = isIso(str(r.reviewDate)) && str(r.reviewDate) < date; out.flagAllowed = out.min !== null || out.max !== null; return out;
+      out.reviewOverdue = isIso(str(r.reviewDate)) && str(r.reviewDate) < date; out.flagAllowed = out.min !== null || out.max !== null; out.boundaryNote = str(r.boundaryNote); return out;
     }
     var lg = inp.legacy;   // the facility's own single range on the catalogue test (it always had a source); used when no context range applies
     if (lg && (isNum(lg.refMin) || isNum(lg.refMax) || str(lg.refText))) {
@@ -123,6 +161,8 @@
     var lo = isNum(r.minAgeMonths) ? r.minAgeMonths : null, hi = isNum(r.maxAgeMonths) ? r.maxAgeMonths : null;
     if (lo !== null && hi !== null) p.push("age " + ageText(lo) + " up to " + ageText(hi)); else if (lo !== null) p.push("age " + ageText(lo) + " and over"); else if (hi !== null) p.push("age under " + ageText(hi));
     if (r.pregnancy === "pregnant") p.push("pregnant"); else if (r.pregnancy === "not_pregnant") p.push("not pregnant");
+    if (r.lactation === "lactating") p.push("lactating"); else if (r.lactation === "not_lactating") p.push("not lactating");
+    if (str(r.setting)) p.push("setting " + str(r.setting)); listOf(r.requireFlags).forEach(function (k) { p.push(k.replace(/_/g, " ") + " present"); }); listOf(r.forbidFlags).forEach(function (k) { p.push(k.replace(/_/g, " ") + " absent"); });
     if (str(r.specimen)) p.push("specimen " + str(r.specimen)); if (str(r.method)) p.push("method " + str(r.method)); if (str(r.labName)) p.push("laboratory " + str(r.labName));
     return p.join(", ");
   }
@@ -140,7 +180,7 @@
   /* refApplied element for pc_inv_results (written once at result entry; never rewritten). Plain values only: no undefined, no nested arrays. */
   function refAppliedOf(param, res) {
     return { param: str(param), basis: res.basis, state: res.state, reason: res.reason || "", rangeId: res.rangeId || null, rangeVersion: res.rangeVersion == null ? null : res.rangeVersion, min: res.min, max: res.max, text: res.text || "", unit: res.unit || "", source: res.source || "",
-      ageMonths: res.ageMonths, ageBasis: res.ageBasis, sex: res.sex, pregnancy: res.pregnancy, reviewOverdue: !!res.reviewOverdue, resolvedAt: res.resolvedAt };
+      ageMonths: res.ageMonths, ageBasis: res.ageBasis, sex: res.sex, pregnancy: res.pregnancy, lactation: res.lactation || "unknown", setting: res.setting || "", reviewOverdue: !!res.reviewOverdue, resolvedAt: res.resolvedAt };
   }
   /* staleNotice(stored, nowResolved) -> "" or a short notice for the verify screen. Display only: a stored flag is never changed. */
   function staleNotice(stored, now) {
@@ -166,6 +206,9 @@
     if ((hasLo && !isNum(lo)) || (hasHi && !isNum(hi))) e.push("The age limits must be numbers (months).");
     else { if (hasLo && lo < 0) e.push("The lowest age cannot be negative."); if (hasLo && hasHi && lo >= hi) e.push("The lowest age must be below the highest age."); }
     if (SEXES.indexOf(d.sex) < 0) e.push("Choose the sex the range applies to."); if (PREGS.indexOf(d.pregnancy) < 0) e.push("Choose the pregnancy condition.");
+    if (d.lactation !== undefined && d.lactation !== null && LACTS.indexOf(d.lactation) < 0) e.push("Choose the lactation condition.");
+    if (d.setting !== undefined && str(d.setting).length > 60) e.push("The clinical setting is too long.");
+    ["requireFlags", "forbidFlags"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null && (!Array.isArray(d[k]) || d[k].some(function (x) { return typeof x !== "string" || !/^[a-z][a-z0-9_]{1,40}$/.test(x); }))) e.push("The clinical flags must be short lower-case names."); });
     if (str(d.source).length < 3) e.push("Name the source of this range (a reference, a kit insert, or the laboratory's own validated interval).");
     if (str(d.effectiveDate) && !isIso(str(d.effectiveDate))) e.push("The effective date is not a valid date.");
     if (str(d.reviewDate) && !isIso(str(d.reviewDate))) e.push("The review date is not a valid date."); else if (str(d.reviewDate) && str(d.effectiveDate) && str(d.reviewDate) < str(d.effectiveDate)) e.push("The review date is before the effective date.");
@@ -179,15 +222,16 @@
     if (!a || !b || a.rangeKey === b.rangeKey) return false;
     if (a.subjectType !== b.subjectType || a.subjectId !== b.subjectId || str(a.paramKey) !== str(b.paramKey) || normUnit(a.unit) !== normUnit(b.unit)) return false;
     if (specificity(a) !== specificity(b)) return false;
-    var sx = (a.sex === "male" || a.sex === "female") && (b.sex === "male" || b.sex === "female") ? a.sex === b.sex : true;
-    var pg = (a.pregnancy === "pregnant" || a.pregnancy === "not_pregnant") && (b.pregnancy === "pregnant" || b.pregnancy === "not_pregnant") ? a.pregnancy === b.pregnancy : true;
+    var two = function (k, set) { return set.indexOf(a[k]) >= 0 && set.indexOf(b[k]) >= 0 ? a[k] === b[k] : true; };
+    var sx = two("sex", ["male", "female"]), pg = two("pregnancy", ["pregnant", "not_pregnant"]), lc = two("lactation", ["lactating", "not_lactating"]);
     var A = ageSpan(a), B = ageSpan(b), ag = Math.max(A[0], B[0]) < Math.min(A[1], B[1]);
-    var ct = ["specimen", "method", "labName"].every(function (k) { return !str(a[k]) || !str(b[k]) || sameText(a[k], b[k]); });
-    var sameKinds = ["sex", "pregnancy"].every(function (k) { return ((a[k] === "any") === (b[k] === "any")); }) && ["specimen", "method", "labName"].every(function (k) { return !!str(a[k]) === !!str(b[k]); }) && ((isNum(a.minAgeMonths) || isNum(a.maxAgeMonths)) === (isNum(b.minAgeMonths) || isNum(b.maxAgeMonths)));
-    return sx && pg && ag && ct && sameKinds;
+    var ct = ["specimen", "method", "labName", "setting"].every(function (k) { return !str(a[k]) || !str(b[k]) || sameText(a[k], b[k]); });
+    var fl = listOf(a.requireFlags).every(function (k) { return listOf(b.forbidFlags).indexOf(k) < 0; }) && listOf(b.requireFlags).every(function (k) { return listOf(a.forbidFlags).indexOf(k) < 0; });
+    var sameKinds = ["sex", "pregnancy", "lactation"].every(function (k) { return ((!a[k] || a[k] === "any") === (!b[k] || b[k] === "any")); }) && ["specimen", "method", "labName", "setting"].every(function (k) { return !!str(a[k]) === !!str(b[k]); }) && ((isNum(a.minAgeMonths) || isNum(a.maxAgeMonths)) === (isNum(b.minAgeMonths) || isNum(b.maxAgeMonths))) && listOf(a.requireFlags).length + listOf(a.forbidFlags).length === listOf(b.requireFlags).length + listOf(b.forbidFlags).length;
+    return sx && pg && lc && ag && ct && fl && sameKinds;
   }
 
-  var api = { VITALS: VITALS, SEXES: SEXES, PREGS: PREGS, TYPES: TYPES, STATUSES: STATUSES, ageOf: ageOf, sexOf: sexOf, check: check, specificity: specificity, resolve: resolve, flag: flag, describe: describe, contextText: contextText, ageText: ageText,
+  var api = { VITALS: VITALS, SEXES: SEXES, PREGS: PREGS, LACTS: LACTS, TYPES: TYPES, STATUSES: STATUSES, PENDING: PENDING, ageOf: ageOf, sexOf: sexOf, pregOf: pregOf, lactOf: lactOf, listOf: listOf, flagVal: flagVal, failures: failures, contextOf: contextOf, codeOf: codeOf, onlyMissing: onlyMissing, needName: needName, isPending: isPending, check: check, specificity: specificity, resolve: resolve, flag: flag, describe: describe, contextText: contextText, ageText: ageText,
     refAppliedOf: refAppliedOf, staleNotice: staleNotice, validate: validate, approvalErrors: approvalErrors, conflictRisk: conflictRisk, docId: docId, newRangeKey: newRangeKey, normUnit: normUnit, isIso: isIso, WHY: WHY };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.PCR = api;
 })(typeof self !== "undefined" ? self : (typeof window !== "undefined" ? window : this));
