@@ -234,7 +234,7 @@
   const num = v => { const n = Number(v); return isFinite(n) ? n : 0; };
 
   let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
-  let orders = new Map(), rxPartial = new Map(), rxDone = new Map(), rxPending = new Map(), stoppedOrders = new Map(), allergies = [], drugs = [];
+  let orders = new Map(), rxPartial = new Map(), rxDone = new Map(), rxPending = new Map(), rxCancelled = new Map(), stoppedOrders = new Map(), allergies = [], drugs = [];
   let regNos = {}, regAsked = {}, filter = "waiting", tab = "queue", D = null, queue = null, syncing = false, doneLoaded = false, stoppedLoaded = false;
   let hRecords = [], hMonthLoaded = "", unsubHist = null, creditAccounts = [], consItems = [], consBundles = [], consSel = {}, consCtx = { orderId: "", procedure: "" }, consMsg = null, consBusy = false, consReq = null;
   const can = k => role === "owner" || perms[k] === true;
@@ -255,7 +255,7 @@
   }
 
   // ---------------------------------------------------------------- rows for the queue
-  function rxOf(id) { return rxPartial.get(id) || rxDone.get(id) || rxPending.get(id) || null; }
+  function rxOf(id) { return rxPartial.get(id) || rxDone.get(id) || rxPending.get(id) || rxCancelled.get(id) || null; }
   function info(r) {
     const o = r.order || {}, x = r.rx || {};
     const pick = k => (o[k] != null && o[k] !== "") ? o[k] : x[k];
@@ -265,11 +265,20 @@
   function allRows() {
     const m = new Map();
     orders.forEach(o => m.set(o.id, { id: o.id, order: o, rx: rxOf(o.id) }));
-    [rxPartial, rxDone].forEach(mp => mp.forEach(x => { if (!m.has(x.id)) m.set(x.id, { id: x.id, order: stoppedOrders.get(x.id) || null, rx: x }); }));
+    [rxPartial, rxDone, rxCancelled].forEach(mp => mp.forEach(x => { if (!m.has(x.id)) m.set(x.id, { id: x.id, order: stoppedOrders.get(x.id) || null, rx: x }); }));
     stoppedOrders.forEach(o => { if (!m.has(o.id)) m.set(o.id, { id: o.id, order: o, rx: rxOf(o.id) }); });
     return Array.from(m.values()).map(r => Object.assign(r, { group: PCD.queueGroup(r.order, r.rx), q: r.order ? PCD.qtyState(r.order, r.rx) : PCD.qtyState({}, r.rx) }));
   }
-  function queuedQty(orderId) { return queue ? queue.list().filter(x => x.params.orderId === orderId && x.status !== "conflict").reduce((s, x) => s + num(x.params.qty), 0) : 0; }
+  // reservations come from the queued dispensing of EVERY user of this device at this facility (not only the signed-in user): see PCD.deviceQueued
+  function queuedQty(orderId) { return orderId ? PCD.reservedByOrder(window.localStorage, facilityId, orderId) : 0; }
+  // OFFLINE SAFETY: a queued dispensing is not yet a server deduction, but that stock is SPOKEN FOR on this phone. Every stock figure and every batch plan below
+  // uses the stock that is left after the queued items (all prescriptions, same medicine), so the same stock cannot be dispensed twice while offline.
+  function queuedByDrug(drugId) { return drugId ? PCD.reservedByDrug(window.localStorage, facilityId, drugId) : 0; }
+  function effBatches() {
+    const q = D && D.drug ? queuedByDrug(D.drug.id) : 0; if (!(q > 0)) return D.batches;
+    const used = {}; PCD.planFefo(D.batches, q, new Date()).allocations.forEach(a => { used[a.batchId] = PCD.r4((used[a.batchId] || 0) + a.qty); });
+    return D.batches.map(b => used[b.id] ? Object.assign({}, b, { quantity: PCD.r4(Math.max(0, num(b.quantity) - used[b.id])) }) : b);
+  }
   function queuedItems(orderId) { return queue ? queue.list().filter(x => x.params.orderId === orderId) : []; }
 
   function chipsOf(r) {
@@ -288,13 +297,14 @@
   const STATUS = { waiting: ["Waiting", "warn"], partial: ["Partly dispensed", "warn"], done: ["Fully dispensed", "ok"], stopped: ["Stopped", "bad"] };
   // One medicine line inside a prescription. The patient is named once, in the prescription header (groupHtml).
   function cardHtml(r) {
-    const i = info(r), st = statusOf(r), u = (r.rx && r.rx.qtyUnit) || "";
+    const i = info(r), st = statusOf(r), u = (r.rx && r.rx.qtyUnit) || "", rsv = queuedQty(r.id);
     const q = r.q;
     return '<div class="pt' + (D && D.id === r.id ? " sel" : "") + '" data-id="' + esc(r.id) + '">' +
       '<div class="pt-name">' + esc(i.medicine) + ' <span class="chip ' + st[1] + '">' + esc(st[0]) + "</span>" + chipsOf(r) + "</div>" +
       '<div class="pt-meta">' + (i.formulation ? esc(i.formulation) : "") + (i.strength ? (i.formulation ? " · " : "") + esc(i.strength) : "") + ((i.formulation || i.strength) ? "<br>" : "") +
       (i.dose ? "Dose: " + esc(i.dose) + (i.route ? " · " + esc(i.route) : "") + "<br>" : "") + (i.instructions ? esc(i.instructions) + "<br>" : "") + "</div>" +
-      (q.known ? '<div class="qty3"><div><b>' + esc(q.prescribed) + '</b><span>Prescribed</span></div><div><b>' + esc(q.dispensed) + '</b><span>Dispensed</span></div><div class="out"><b>' + esc(q.outstanding) + '</b><span>Outstanding' + (u ? " (" + esc(u) + ")" : "") + "</span></div></div>" : "") + "</div>";
+      (q.known ? '<div class="qty3"><div><b>' + esc(q.prescribed) + '</b><span>Prescribed</span></div><div><b>' + esc(q.dispensed) + '</b><span>Dispensed</span></div><div class="out"><b>' + esc(Math.max(0, PCD.r4(q.outstanding - rsv))) + '</b><span>Outstanding' + (u ? " (" + esc(u) + ")" : "") + "</span></div></div>" : "") +
+      (rsv > 0 ? '<div class="pt-meta" style="margin-top:4px;color:var(--warn);">' + esc(rsv) + (u ? " " + esc(u) : "") + " saved on this device, waiting to sync. The server has not confirmed it yet, so it is already taken off what can be dispensed.</div>" : "") + "</div>";
   }
   // A prescription = one patient + one visit. Medicines of different visits are never merged, even for the same patient.
   function visitKey(r) {
@@ -319,14 +329,15 @@
     const cnt = k => g.rows.filter(r => r.group === k).length;
     const parts = []; [["waiting", "waiting"], ["partial", "partly dispensed"], ["done", "fully dispensed"], ["stopped", "stopped"]].forEach(p => { const n = cnt(p[0]); if (n) parts.push(n + " " + p[1]); });
     const prescribers = Array.from(new Set(g.rows.map(r => info(r).prescriber).filter(Boolean))).join(", ");
-    let body = "";
+    // ONLY the lines that belong to the open tab are listed (a stopped or finished medicine must never sit in the Waiting list); the header still summarises the whole visit
+    const shown = g.shown || g.rows; let body = "";
     if (g.plans.length > 1) {
-      g.plans.forEach((pl, n) => { const rs = g.rows.filter(r => ((r.order && r.order.planId) || (r.rx && r.rx.planId) || "") === pl);
+      g.plans.forEach((pl, n) => { const rs = shown.filter(r => ((r.order && r.order.planId) || (r.rx && r.rx.planId) || "") === pl); if (!rs.length) return;
         body += '<div class="pt-meta" style="margin-top:8px;font-weight:600;">Treatment plan ' + (n + 1) + "</div>" + rs.map(cardHtml).join(""); });
-    } else body = g.rows.map(cardHtml).join("");
+    } else body = shown.map(cardHtml).join("");
     return '<div class="rxgroup" data-g="' + esc(g.key) + '"><div class="rxhead"><div class="pt-name">' + esc(i.patientName) + (reg ? " · " + esc(reg) : "") + "</div>" +
       '<div class="pt-meta">Prescription from ' + (i.encounterNo ? "Visit " + esc(i.encounterNo) : "a visit with no number") + " · " + esc((facility && facility.name) || "") + (prescribers ? " · Prescriber: " + esc(prescribers) : "") + (i.prescribedAt ? " · " + esc(fmtWhen(i.prescribedAt)) : "") +
-      "<br>" + g.rows.length + (g.rows.some(r => r.order && r.order.kind === "consumable") ? " item" : " medicine") + (g.rows.length === 1 ? "" : "s") + (parts.length ? ": " + esc(parts.join(", ")) : "") + "</div></div>" + body + "</div>";
+      "<br>" + g.rows.length + (g.rows.some(r => r.order && r.order.kind === "consumable") ? " item" : " medicine") + (g.rows.length === 1 ? " in this visit" : "s in this visit") + (parts.length ? ": " + esc(parts.join(", ")) : "") + (shown.length < g.rows.length ? ". Listed here: " + shown.length : "") + "</div></div>" + body + "</div>";
   }
   function resolveRegNos(rows) {
     rows.forEach(r => {
@@ -351,7 +362,8 @@
     // Group by prescription (patient + visit). A prescription is listed here when at least one of its medicines belongs to this tab;
     // all of its loaded medicines are then shown, each with its own status.
     const keys = new Set(list.map(visitKey));
-    const groups = groupRows(rows.filter(r => keys.has(visitKey(r))));
+    const inTab = new Set(list.map(r => r.id)), groups = groupRows(rows.filter(r => keys.has(visitKey(r))));
+    groups.forEach(g => { g.shown = g.rows.filter(r => inTab.has(r.id)); });
     const firstSeen = {}; list.forEach((r, n) => { const k = visitKey(r); if (!(k in firstSeen)) firstSeen[k] = n; });
     groups.sort((a, b) => firstSeen[a.key] - firstSeen[b.key]);
     $("list").innerHTML = groups.length ? groups.map(groupHtml).join("") : '<div class="empty">Nothing here.</div>';
@@ -399,20 +411,20 @@
     let prescribed = q.known ? q.prescribed : num(D.qtyOver), dispensed = q.known ? q.dispensed : 0;
     const reserved = queuedQty(D.id);
     const outstanding = PCD.r4(Math.max(0, prescribed - dispensed - reserved));
-    const sum = PCD.summarise(D.batches, now);
+    const sum = PCD.summarise(effBatches(), now), queuedStock = dr ? queuedByDrug(dr.id) : 0;
     const unbatched = !!dr && D.batchesLoaded && D.batches.length === 0 && num(dr.currentStockBase) > 0;
-    const usable = unbatched ? num(dr.currentStockBase) : sum.usable;
-    return { prescribed: prescribed, dispensed: dispensed, reserved: reserved, outstanding: outstanding, sum: sum, unbatched: unbatched, usable: PCD.r4(usable), known: q.known };
+    const usable = unbatched ? Math.max(0, num(dr.currentStockBase) - queuedStock) : sum.usable;
+    return { prescribed: prescribed, dispensed: dispensed, reserved: reserved, queuedStock: queuedStock, outstanding: outstanding, sum: sum, unbatched: unbatched, usable: PCD.r4(usable), known: q.known };
   }
   function plan(st) {
     const qty = PCD.r4(num(D.qty)), now = new Date();
     if (!(qty > 0)) return { allocations: [], short: 0, error: "" };
     if (st.unbatched) return { allocations: [{ batchId: null, batchNumber: "", expiryDate: "", qty: qty }], short: Math.max(0, PCD.r4(qty - st.usable)), error: "" };
     if (D.mode === "manual") {
-      try { return Object.assign(PCD.planManual(D.batches, Object.keys(D.picks).map(k => ({ batchId: k, qty: D.picks[k] })), qty, now), { error: "" }); }
+      try { return Object.assign(PCD.planManual(effBatches(), Object.keys(D.picks).map(k => ({ batchId: k, qty: D.picks[k] })), qty, now), { error: "" }); }
       catch (e) { return { allocations: [], short: 0, error: PCD.friendlyError(e) }; }
     }
-    return Object.assign(PCD.planFefo(D.batches, qty, now), { error: "" });
+    return Object.assign(PCD.planFefo(effBatches(), qty, now), { error: "" });
   }
   function expLabel(d, asOf) { if (!d) return "No expiry date"; const n = PCD.daysUntil(d, asOf); return d + (n < 0 ? " (EXPIRED)" : n <= 90 ? " (" + n + " days left)" : ""); }
 
@@ -528,8 +540,8 @@
     if (closed) {
       h += revHtml();
       if (r.group === "stopped") {
-        const o = r.order || {}, replaced = o.status === "superseded", n = r.q.dispensed, left = r.q.outstanding;
-        h += '<div class="alert-box">This prescription was ' + (replaced ? "replaced by a newer version" : "STOPPED by the prescriber") + (o.endedByName ? " (" + esc(o.endedByName) + ")" : "") + (o.endReason ? ". Reason: " + esc(o.endReason) : "") + ". It cannot be dispensed." +
+        const o = r.order || {}, replaced = o.status === "superseded", n = r.q.dispensed, left = r.q.outstanding, why = o.endReason || (r.rx && r.rx.endReason) || "";
+        h += '<div class="alert-box">This prescription was ' + (replaced ? "replaced by a newer version" : (o.status === "stopped" ? "STOPPED" : "CANCELLED") + " by the prescriber (the treatment was stopped or completed)") + (o.endedByName ? " (" + esc(o.endedByName) + ")" : "") + (why ? ". Reason: " + esc(why) : "") + ". It cannot be dispensed." +
           (n > 0 ? " <b>" + esc(n) + "</b> " + esc((r.rx && r.rx.qtyUnit) || "") + " already dispensed stays on record." + (left > 0 ? " <b>Do not dispense the remaining " + esc(left) + ".</b>" : "") : " Nothing had been dispensed.") + "</div>";
       } else h += '<div class="info-box">This prescription has been fully dispensed.</div>';
       h += '<button type="button" class="btn-primary" data-act="close">Close</button>'; card.innerHTML = h; return;
@@ -582,10 +594,10 @@
       h += '<div class="step"><h3><i>4</i>Check stock and choose the batch</h3>';
       if (!D.batchesLoaded) h += '<div class="pt-meta">Checking stock…</div>';
       else if (st.unbatched) {
-        h += '<div class="pt-meta">Stock on record: ' + esc(stockText(dr, st.usable)) + '</div><div class="warn-box">This medicine has no batch record, so the batch number and expiry date are unknown. Check the pack in your hand.</div>' +
+        h += '<div class="pt-meta">Stock on record: ' + esc(stockText(dr, st.usable)) + (st.queuedStock ? '<br><b>' + esc(st.queuedStock) + " " + esc(u) + "(s) already reserved by dispensing waiting to sync on this phone.</b>" : "") + '</div><div class="warn-box">This medicine has no batch record, so the batch number and expiry date are unknown. Check the pack in your hand.</div>' +
           '<label class="chk"><input type="checkbox" id="cUnb"' + (D.allowUnbatched ? " checked" : "") + '><span>I have checked the pack and it is not expired. Dispense without a batch record.</span></label>';
       } else {
-        h += '<div class="pt-meta">Available to dispense: <b>' + esc(stockText(dr, st.usable)) + "</b>" + (st.sum.expired > 0 ? '<br><span style="color:var(--danger)">' + esc(st.sum.expired) + " " + esc(u) + "(s) are expired and cannot be dispensed. Write them off in Batches.</span>" : "") + "</div>";
+        h += '<div class="pt-meta">Available to dispense: <b>' + esc(stockText(dr, st.usable)) + "</b>" + (st.queuedStock ? '<br><b>' + esc(st.queuedStock) + " " + esc(u) + "(s) already reserved by dispensing waiting to sync on this phone.</b> It is taken off what you can dispense now, so the same stock cannot be given twice." : "") + (st.sum.expired > 0 ? '<br><span style="color:var(--danger)">' + esc(st.sum.expired) + " " + esc(u) + "(s) are expired and cannot be dispensed. Write them off in Batches.</span>" : "") + "</div>";
         if (st.usable <= 0) h += '<div class="alert-box">This medicine is not available in the selected stock.</div>';
       }
       h += '<label for="qDo">Quantity to dispense now (' + esc(u) + "s)</label><input type=\"number\" inputmode=\"decimal\" step=\"any\" min=\"0\" id=\"qDo\" value=\"" + esc(D.qty) + '">';
@@ -594,7 +606,7 @@
       else if (q > 0 && q > st.usable) h += '<div class="warn-box">Only ' + esc(st.usable) + " " + esc(u) + "(s) can be dispensed now. Lower the quantity to dispense what is available; the rest stays outstanding for a later dispensing.</div>";
       else if (q > 0 && q < st.outstanding) h += '<div class="info-box">Partial dispensing: ' + esc(q) + " now, " + esc(PCD.r4(st.outstanding - q)) + " will stay outstanding.</div>";
       if (!st.unbatched && st.usable > 0) {
-        const list = PCD.fefoSort(D.batches.filter(b => PCD.sellable(b, now)));
+        const list = PCD.fefoSort(effBatches().filter(b => PCD.sellable(b, now)));
         h += '<div class="hint2" style="margin-top:10px">Batches are chosen automatically, earliest expiry first.</div>';
         if (D.mode === "manual") {
           h += '<div class="tablewrap"><table><tr><th>Batch</th><th>Expiry</th><th class="n">In stock</th><th class="n">Give</th></tr>' + list.map(b => '<tr><td>' + esc(b.batchNumber || "—") + "</td><td>" + esc(expLabel(b.expiryDate, now)) + '</td><td class="n">' + esc(b.quantity) + '</td><td class="n"><input type="number" inputmode="decimal" step="any" min="0" style="width:90px" data-pick="' + esc(b.id) + '" value="' + esc(D.picks[b.id] != null ? D.picks[b.id] : "") + '"></td></tr>').join("") + "</table></div>";
@@ -737,7 +749,7 @@
     try {
       await setDoc(doc(db, "pc_audit_logs", "dispq_" + requestId), { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now(), actorUid: me.id, actorName: myName, action: "dispense.queue_discard", recordPath: "prescriptions/" + it.params.orderId, patientId: null, orderId: it.params.orderId, qty: it.params.qty, reason: reason.trim(), lastProblem: it.message || "", at: serverTimestamp() });
     } catch (e) { if (!confirm("The removal could not be logged (no connection or no permission). Remove it from this phone anyway?")) return; }
-    queue.remove(requestId); renderSync(); renderList();
+    queue.remove(requestId); renderSync(); renderList(); if (D && !D.result) renderAct();
   }
 
   // ---------------------------------------------------------------- consumables (selected, never fixed)
@@ -828,8 +840,13 @@
 
   // ---------------------------------------------------------------- reports
   function ensureStopped() {
-    if (stoppedLoaded) return; stoppedLoaded = true;
+    if (stoppedLoaded) return; stoppedLoaded = true; ensureCancelledRx();
     ["stopped", "superseded"].forEach(st => onSnapshot(query(collection(db, "pc_treatment_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("kind", "in", ["medicine", "consumable"]), where("status", "==", st), limit(300)), s => { s.docs.forEach(x => stoppedOrders.set(x.id, { id: x.id, ...x.data() })); renderList(); if (tab === "reports") renderReports(); }, () => {}));
+  }
+  // a medicine or consumable that was never dispensed and whose order was stopped OR COMPLETED by the prescriber has its prescription cancelled: it is listed under "Cancelled or stopped" so it never just vanishes
+  function ensureCancelledRx() {
+    if (ensureCancelledRx.on) return; ensureCancelledRx.on = true;
+    onSnapshot(query(collection(db, "prescriptions"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "cancelled"), limit(300)), s => { rxCancelled = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); renderList(); }, () => {});
   }
   function ensureDone() {
     if (doneLoaded) return; doneLoaded = true;

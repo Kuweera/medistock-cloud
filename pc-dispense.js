@@ -392,6 +392,17 @@
     };
   }
 
+  /* OFFLINE SAFETY. A dispensing saved offline has NOT reduced the server stock yet, but that stock is spoken for. The queue key is per signed-in user
+     ("mcDispQ:<userId>:<facilityId>"), so two people using the same phone or computer offline must see EACH OTHER'S saved dispensing, not only their own.
+     Returns the queued items of every user of this device for this facility (conflicts excluded). Other screens may use reservedByDrug() to show the stock that is really left. */
+  function deviceQueued(storage, facilityId) {
+    var out = [], suffix = ":" + facilityId;
+    try { for (var i = 0; i < storage.length; i++) { var k = storage.key(i); if (k && k.indexOf("mcDispQ:") === 0 && k.slice(-suffix.length) === suffix) out = out.concat(Queue(storage, k).list()); } } catch (e) {}
+    return out.filter(function (x) { return x && x.status !== "conflict" && x.params; });
+  }
+  function reservedByDrug(storage, facilityId, drugId) { return deviceQueued(storage, facilityId).filter(function (x) { return x.params.drugId === drugId; }).reduce(function (s, x) { return s + num(x.params.qty); }, 0); }
+  function reservedByOrder(storage, facilityId, orderId) { return deviceQueued(storage, facilityId).filter(function (x) { return x.params.orderId === orderId; }).reduce(function (s, x) { return s + num(x.params.qty); }, 0); }
+
   /* Sends queued requests to the server one at a time.
      candidates(item) must return the batch ids to consider (needs the internet). Stops at the first "no internet".
      Returns { done, conflicts, waiting }. */
@@ -450,6 +461,6 @@
   var api = { SCHEMA: SCHEMA, PCDError: PCDError, FRIENDLY: FRIENDLY, friendlyError: friendlyError, technicalDetail: technicalDetail, stepRef: stepRef, diagnose: diagnose, isOfflineError: isOfflineError,
     daysUntil: daysUntil, expiryMs: expiryMs, isExpired: isExpired, sellable: sellable, fefoSort: fefoSort, summarise: summarise, planFefo: planFefo, planManual: planManual,
     statusFor: statusFor, doseText: doseText, qtyState: qtyState, queueGroup: queueGroup, newRequestId: newRequestId, lineId: lineId, localDay: localDay, r4: r4,
-    runDispense: runDispense, Queue: Queue, syncQueue: syncQueue, buildReport: buildReport };
+    runDispense: runDispense, Queue: Queue, syncQueue: syncQueue, buildReport: buildReport, deviceQueued: deviceQueued, reservedByDrug: reservedByDrug, reservedByOrder: reservedByOrder };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.PCD = api;
 })(typeof window !== "undefined" ? window : this);
