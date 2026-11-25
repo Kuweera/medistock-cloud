@@ -1,6 +1,7 @@
 rules_version = '2';
 
 // MediStock Cloud — multi-shop roles & security (v19 verified in CI run #68; v20 journey field proposed)
+// v27 (Lead, PROPOSED): reviewed proposals: 'rejected' status, approval needs reviewerCredential, original proposal/origin immutable, alert ruleType screening|alert|emergency.
 // v26 (Lead, PROPOSED): pc_alert_rules, pc_obs_acks; reference ranges accept 'reproductive' (lactation) and require 'allAges' for vitals without age limits; triage accepts interp, ctx, repeatOf.
 // v25 (Lead, PROPOSED): pc_reference_ranges (facility-scoped reference intervals; keys ranges.manage / ranges.approve). No values shipped.
 // v24 (Lead, PROPOSED): guideline_sources and guideline_sections (import of guideline files; reviewer-only raw extracts).
@@ -1848,6 +1849,7 @@ service cloud.firestore {
       allow update: if pcUpdateStamped() && canAccessShop(resource.data.businessId, resource.data.facilityId) && (
         // 1. edit a DRAFT (identity and scope never change)
         (resource.data.approvalStatus == 'draft' && request.resource.data.approvalStatus == 'draft' && hasPerm(resource.data.businessId, 'ranges.manage')
+          && request.resource.data.get('proposal', null) == resource.data.get('proposal', null) && request.resource.data.get('origin', '') == resource.data.get('origin', '')   // the original research proposal is never edited
           && request.resource.data.diff(resource.data).unchangedKeys().hasAll(['businessId', 'facilityId', 'rangeKey', 'version', 'subjectType', 'subjectId', 'createdBy', 'createdAt'])
           && rrBoundsOk(request.resource.data))
         ||
@@ -1855,7 +1857,9 @@ service cloud.firestore {
         (resource.data.approvalStatus == 'draft' && request.resource.data.approvalStatus == 'approved' && hasPerm(resource.data.businessId, 'ranges.approve')
           && request.resource.data.approvedBy == request.auth.uid && request.resource.data.approvedAt == request.time
           && request.resource.data.selfApproved == (resource.data.createdBy == request.auth.uid)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedByName', 'approvedAt', 'selfApproved', 'updatedAt', 'updatedBy'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedByName', 'approvedAt', 'selfApproved', 'reviewerCredential', 'approvalNote', 'updatedAt', 'updatedBy'])
+          && request.resource.data.get('reviewerCredential', '') is string && request.resource.data.get('reviewerCredential', '').size() >= 2 && request.resource.data.get('reviewerCredential', '').size() <= 100   // v27: the approver states who they are (clinical attestation)
+          && request.resource.data.get('approvalNote', '') is string && request.resource.data.get('approvalNote', '').size() <= 500
           && resource.data.get('effectiveDate', '') is string && resource.data.get('effectiveDate', '').size() == 10
           && (resource.data.get('reviewDate', '') == '' || (resource.data.reviewDate.size() == 10 && resource.data.reviewDate >= resource.data.effectiveDate)))
         ||
@@ -1874,6 +1878,12 @@ service cloud.firestore {
           && request.resource.data.get('retiredReason', null) is string && request.resource.data.retiredReason.size() >= 3
           && request.resource.data.get('retiredBy', null) == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'retiredReason', 'retiredBy', 'retiredByName', 'retiredAt', 'updatedAt', 'updatedBy']))
+        ||
+        // v27: reject a DRAFT proposal (kept, never active, never deleted); the reason is kept
+        (resource.data.approvalStatus == 'draft' && request.resource.data.approvalStatus == 'rejected' && hasPerm(resource.data.businessId, 'ranges.approve')
+          && request.resource.data.get('rejectedReason', null) is string && request.resource.data.rejectedReason.size() >= 3
+          && request.resource.data.get('rejectedBy', null) == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'rejectedReason', 'rejectedBy', 'rejectedByName', 'rejectedAt', 'updatedAt', 'updatedBy']))
       );
       allow delete: if false;
     }
@@ -1886,8 +1896,9 @@ service cloud.firestore {
     function arOk(d) {
       return d.subjectType in ['lab_test', 'lab_param', 'vital']
         && d.subjectId is string && d.subjectId.size() > 0 && d.subjectId.size() <= 100
-        && d.level in ['moderate', 'critical']
-        && (d.level != 'critical' || d.get('requiresAck', false) == true)
+        && d.get('level', 'moderate') in ['screening', 'moderate', 'critical']
+        && d.get('ruleType', 'alert') in ['screening', 'alert', 'emergency']     // v27: a screening threshold is not an alert and not an emergency
+        && ((d.get('level', '') != 'critical' && d.get('ruleType', '') != 'emergency') || d.get('requiresAck', false) == true)
         && d.operator in ['lt', 'lte', 'gt', 'gte', 'range']
         && (d.operator == 'range'
             ? (d.get('min', null) is number && d.get('max', null) is number && d.min < d.max)
@@ -1913,13 +1924,16 @@ service cloud.firestore {
         && arOk(request.resource.data);
       allow update: if pcUpdateStamped() && canAccessShop(resource.data.businessId, resource.data.facilityId) && (
         (resource.data.approvalStatus == 'draft' && request.resource.data.approvalStatus == 'draft' && hasPerm(resource.data.businessId, 'ranges.manage')
+          && request.resource.data.get('proposal', null) == resource.data.get('proposal', null) && request.resource.data.get('origin', '') == resource.data.get('origin', '')   // the original research proposal is never edited
           && request.resource.data.diff(resource.data).unchangedKeys().hasAll(['businessId', 'facilityId', 'ruleKey', 'version', 'subjectType', 'subjectId', 'createdBy', 'createdAt'])
           && arOk(request.resource.data))
         ||
         (resource.data.approvalStatus == 'draft' && request.resource.data.approvalStatus == 'approved' && hasPerm(resource.data.businessId, 'ranges.approve')
           && request.resource.data.approvedBy == request.auth.uid && request.resource.data.approvedAt == request.time
           && request.resource.data.selfApproved == (resource.data.createdBy == request.auth.uid)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedByName', 'approvedAt', 'selfApproved', 'updatedAt', 'updatedBy'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedByName', 'approvedAt', 'selfApproved', 'reviewerCredential', 'approvalNote', 'updatedAt', 'updatedBy'])
+          && request.resource.data.get('reviewerCredential', '') is string && request.resource.data.get('reviewerCredential', '').size() >= 2 && request.resource.data.get('reviewerCredential', '').size() <= 100   // v27: the approver states who they are (clinical attestation)
+          && request.resource.data.get('approvalNote', '') is string && request.resource.data.get('approvalNote', '').size() <= 500
           && resource.data.get('effectiveDate', '') is string && resource.data.get('effectiveDate', '').size() == 10
           && (resource.data.get('reviewDate', '') == '' || (resource.data.reviewDate.size() == 10 && resource.data.reviewDate >= resource.data.effectiveDate)))
         ||
@@ -1936,6 +1950,12 @@ service cloud.firestore {
           && request.resource.data.get('retiredReason', null) is string && request.resource.data.retiredReason.size() >= 3
           && request.resource.data.get('retiredBy', null) == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'retiredReason', 'retiredBy', 'retiredByName', 'retiredAt', 'updatedAt', 'updatedBy']))
+        ||
+        // v27: reject a DRAFT proposal (kept, never active, never deleted); the reason is kept
+        (resource.data.approvalStatus == 'draft' && request.resource.data.approvalStatus == 'rejected' && hasPerm(resource.data.businessId, 'ranges.approve')
+          && request.resource.data.get('rejectedReason', null) is string && request.resource.data.rejectedReason.size() >= 3
+          && request.resource.data.get('rejectedBy', null) == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'rejectedReason', 'rejectedBy', 'rejectedByName', 'rejectedAt', 'updatedAt', 'updatedBy']))
       );
       allow delete: if false;
     }
