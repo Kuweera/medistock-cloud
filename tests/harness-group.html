@@ -45,7 +45,7 @@
     var docs = [];
     store.forEach(function (v, k) {
       var i = k.indexOf("/"), c = k.slice(0, i), id = k.slice(i + 1); if (c !== q.coll) return;
-      for (var j = 0; j < q.wheres.length; j++) { var w = q.wheres[j]; if (v[w.f] !== w.v) return; }
+      for (var j = 0; j < q.wheres.length; j++) { var w = q.wheres[j]; if (w.op === "in" ? w.v.indexOf(v[w.f]) < 0 : v[w.f] !== w.v) return; }
       docs.push({ id: id, data: function () { return JSON.parse(JSON.stringify(v)); }, exists: function () { return true; }, metadata: { hasPendingWrites: false } });
     });
     return { docs: docs, size: docs.length, empty: !docs.length, metadata: { fromCache: false }, forEach: function (f) { docs.forEach(f); } };

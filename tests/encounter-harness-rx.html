@@ -12,6 +12,10 @@
   put("users", "owner1", { businessId: B, role: "owner", name: "Dr Owner", active: true });
   put("users", "nop1", { businessId: B, role: "operator", shopId: F, name: "Nurse NoPrescribe", active: true, perms: { "patient.view": true, "consult.record": true, "consult.sign": true } });
   var uid = as === "nopres" ? "nop1" : "owner1";
+  // stage 6 seed: stock items (the main inventory); two are consumables
+  put("drugs", "sd1", { businessId: B, shopId: F, name: "IV cannula 20G", baseUnit: "Piece", currentStockBase: 40, retailBase: 200, drugClass: "First aid / Consumable", active: true });
+  put("drugs", "sd2", { businessId: B, shopId: F, name: "Gauze swab 10x10", baseUnit: "Pack", currentStockBase: 0, retailBase: 500, drugClass: "First aid / Consumable", active: true });
+  put("drugs", "sd3", { businessId: B, shopId: F, name: "Paracetamol 500mg", generic: "Paracetamol", baseUnit: "Tablet", currentStockBase: 100, retailBase: 30, drugClass: "Painkillers", active: true });
   put("pc_encounters", "e1", { businessId: B, facilityId: F, encId: "e1", encounterNo: "V-1", patientId: "p1", patientName: "Test Patient", patientSex: "female", patientDob: dob, patientDobPrecision: "exact", status: "open", stage: "triaged", type: "outpatient", arrivalAt: Date.now() - 3600000 });
   var st = { businessId: B, facilityId: F, encounterId: "e1", patientId: "p1", status: "active", recordedBy: "owner1", recordedByName: "Dr Owner", recordedAt: Date.now() - 600000 };
   if (!qs.get("nodata")) {
@@ -65,7 +69,7 @@
           if (r.coll !== "prescriptions") continue;
           if (o[0] === "set") {
             var ord = inBatch("pc_treatment_orders", r.id);
-            if (!ord || ord[2].status !== "active" || ord[2].kind !== "medicine") return deny("prescription create needs its active medicine order in the same batch");
+            if (!ord || ord[2].status !== "active" || ["medicine", "consumable"].indexOf(ord[2].kind) < 0) return deny("prescription create needs its active medicine or consumable order in the same batch");
             if (!(d.id === r.id && d.orderId === r.id && d.status === "pending" && d.qtyDispensed === 0 && typeof d.qtyPrescribed === "number" && d.qtyPrescribed >= 0 && (d.qtyPrescribed > 0 || d.qtyUnknown === true) && d.patientId === ord[2].patientId && d.prescriberId === "owner1")) return deny("prescription create shape");
           } else {
             var cur = store.get(r.path);
@@ -80,6 +84,8 @@
         // STAND-IN of the v22 administrationMode rules: enum at creation; no planned doses for a take-home order (Lead: take-home creates a prescription and no events and no MAR rows)
         for (var k = 0; k < ops.length; k++) {
           var q = ops[k]; if (q[0] !== "set") continue;
+          if (q[1].coll === "pc_treatment_orders" && q[2].kind === "consumable" && !(q[2].scheduleType === "once" && typeof q[2].medicineId === "string" && q[2].medicineId.length > 0 && typeof q[2].medicineName === "string" && q[2].medicineName.length > 0 && typeof q[2].quantityPrescribed === "number" && q[2].quantityPrescribed > 0 && q[2].prescriberId === "owner1")) return deny("v23 C1 consumable order shape");
+          if (q[1].coll === "pc_treatment_events") { var oc = inBatch("pc_treatment_orders", q[2].orderId); var odc = oc ? oc[2] : store.get("pc_treatment_orders/" + q[2].orderId); if (odc && odc.kind === "consumable") return deny("v23 consumables have no dose events"); }
           if (q[1].coll === "pc_treatment_orders" && q[2].administrationMode != null && ["take_home", "facility_administered", "inpatient_mar"].indexOf(q[2].administrationMode) < 0) return deny("administrationMode value");
           if (q[1].coll === "pc_treatment_events") { var oo = inBatch("pc_treatment_orders", q[2].orderId); var od = oo ? oo[2] : store.get("pc_treatment_orders/" + q[2].orderId); if (od && od.administrationMode === "take_home") return deny("take_home order cannot have dose events"); }
         }

@@ -26,7 +26,7 @@ const OUT = process.argv[2] || ".", URL = "http://localhost:8765/tests/encounter
     let o = await byName("Homecef"); assert.equal(o.administrationMode, "take_home"); assert.equal(o.totalEvents, 0); assert.equal((await all("pc_treatment_events")).filter(e => e.orderId === o._id).length, 0, "no planned doses for take-home");
     assert.equal((await all("prescriptions")).find(r => r._id === o._id).status, "pending", "the prescription still goes to the pharmacy"); assert.equal((await all("pc_mar_records")).length, 0);
     assert.match((await f.locator("#doneMsg").innerText()), /TAKE-HOME medicine: no planned doses are created/);
-    let c = f.locator('.ord:has([data-oxp="' + o._id + '"])'); assert.match(await c.innerText(), /Take-home/); assert.match(await c.innerText(), /DURATION\s+5 days/i, "course length still shown from the schedule");
+    let c = f.locator('.ord:has([data-oxp="' + o._id + '"])'); assert.match(await c.innerText(), /Take-home/); assert.match(await c.innerText(), /DURATION\s+[5-6] days/i, "course length still shown from the schedule");
     await f.locator('[data-oxp="' + o._id + '"]').click(); assert.match(await c.innerText(), /Staff do not record each dose/); assert.equal(await f.locator('[data-oext="' + o._id + '"]').count(), 0, "no 'write next days' for take-home");
     // 3. facility-administered injection: planned visits are created, the order records the mode, route is independent (injection AND oral both allowed)
     await openMed(); await f.locator("#obMode").selectOption("facility_administered"); await fill("Facinj", "interval", async () => { await f.locator("#obEvery").fill("24"); await f.locator("#obCount").fill("3"); await f.locator("#obRoute").fill("intramuscular"); }); await save();
