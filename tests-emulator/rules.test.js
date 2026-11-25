@@ -710,6 +710,20 @@ test("v23 consumables: the supplies user reads the consumable order; a consumabl
   await assertFails(e.commit());
 });
 
+test("v27-review: a consumable is really SUPPLIED through the pharmacy engine (partial then complete), and a user without dispense.perform is refused", async () => {
+  await seedV19();
+  const consO = { kind: "consumable", medicineId: "d1", medicineName: "TEST gauze", quantityPrescribed: 3, scheduleType: "once" };
+  const mk = id => { const f = db("prescriber"), b = writeBatch(f), o = orderDoc("prescriber", consO); delete o.doseValue;
+    b.set(doc(f, "pc_treatment_orders", id), o); b.set(doc(f, "prescriptions", id), rxPending("prescriber", id, { medicineName: "TEST gauze", qtyPrescribed: 3, qtyOutstanding: 3 })); return b.commit(); };
+  await assertSucceeds(mk("c20"));
+  await assertFails(dispense(db("nurse"), "nurse", { order: "c20", req: "c2a", qty: 1, prescribed: 3, first: false }).commit());
+  await assertSucceeds(dispense(db("pharm"), "pharm", { order: "c20", req: "c2b", qty: 1, prescribed: 3, first: false }).commit());
+  await assertSucceeds(dispense(db("pharm"), "pharm", { order: "c20", req: "c2c", qty: 2, already: 1, prescribed: 3, first: false }).commit());
+  let rx; await env.withSecurityRulesDisabled(async c => { rx = (await getDoc(doc(c.firestore(), "prescriptions", "c20"))).data(); });
+  assert.equal(rx.status, "completed"); assert.equal(rx.qtyOutstanding, 0);
+  await assertFails(dispense(db("pharm"), "pharm", { order: "c20", req: "c2d", qty: 1, already: 3, prescribed: 3, first: false }).commit());   // nothing left to supply
+});
+
 // ======================= v24 (Lead): guideline import (sources and sections) =======================
 const SHA = "ab12cd34ef56ab78" + "0".repeat(48);
 const src24 = (uid, extra) => Object.assign(stamp(uid), { id: "gsrc_" + SHA.slice(0, 16), fileName: "ucg.pdf", fileType: "pdf", fileSizeBytes: 1000, sha256: SHA, pageCount: 3, extractionMethod: "text", ocrUsed: false,
