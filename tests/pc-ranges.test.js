@@ -79,7 +79,7 @@ test("pregnancy: only the status stated at result entry counts; 'not stated' nev
 test("specimen, method and laboratory: when a range sets them, the order must state the same (case-insensitive)", () => {
   const rng = [R({ specimen: "Serum", method: "TEST method", labName: "TEST Lab" })];
   assert.equal(res(rng, { specimen: "serum", method: "test METHOD", labName: " test lab " }).state, "range");
-  assert.equal(res(rng, { specimen: "serum", method: "test method" }).reason, "order_context"); assert.equal(res(rng, { specimen: "plasma", method: "test method", labName: "test lab" }).reason, "order_context"); assert.equal(res(rng, {}).reason, "order_context");
+  assert.equal(res(rng, { specimen: "serum", method: "test method" }).reason, "order_context_missing", "not stated is different from not matching"); assert.equal(res(rng, { specimen: "plasma", method: "test method", labName: "test lab" }).reason, "order_context"); assert.equal(res(rng, {}).reason, "order_context_missing");
   assert.equal(res([R()], {}).state, "range");
 });
 
