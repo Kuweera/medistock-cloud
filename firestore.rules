@@ -1,6 +1,7 @@
 rules_version = '2';
 
 // MediStock Cloud — multi-shop roles & security (v19 verified in CI run #68; v20 journey field proposed)
+// v28 (Lead, PROPOSED): lactation is its OWN field on ranges and alert rules (lactation any | lactating | not_lactating), independent of pregnancy, as Developer 4's engine reads it. The v26 'reproductive' field is no longer accepted with any value but 'any' (no data exists), so a value the engine would ignore can never be saved. Flag lists and notes are bounded.
 // v27 (Lead, PROPOSED): reviewed proposals: 'rejected' status, approval needs reviewerCredential, original proposal/origin immutable, alert ruleType screening|alert|emergency.
 // v26 (Lead, PROPOSED): pc_alert_rules, pc_obs_acks; reference ranges accept 'reproductive' (lactation) and require 'allAges' for vitals without age limits; triage accepts interp, ctx, repeatOf.
 // v25 (Lead, PROPOSED): pc_reference_ranges (facility-scoped reference intervals; keys ranges.manage / ranges.approve). No values shipped.
@@ -1822,6 +1823,15 @@ service cloud.firestore {
     // =====================================================================================
     function rrPath(id) { return /databases/$(database)/documents/pc_reference_ranges/$(id); }
     function rrNumOrNull(v) { return v == null || v is number; }
+    // v28: lactation is independent of pregnancy; 'reproductive' (v26) is refused unless 'any'; flag lists and notes are bounded (never trusted as free-form)
+    function ctxFieldsOk(d) {
+      return d.get('lactation', 'any') in ['any', 'lactating', 'not_lactating']
+        && d.get('reproductive', 'any') == 'any'
+        && d.get('requireFlags', []) is list && d.get('requireFlags', []).size() <= 10
+        && d.get('forbidFlags', []) is list && d.get('forbidFlags', []).size() <= 10
+        && (d.get('boundaryNote', null) == null || (d.boundaryNote is string && d.boundaryNote.size() <= 500))
+        && (d.get('decisionReason', null) == null || (d.decisionReason is string && d.decisionReason.size() <= 500));
+    }
     function rrBoundsOk(d) {
       return rrNumOrNull(d.get('refMin', null)) && rrNumOrNull(d.get('refMax', null))
         && (d.get('refMin', null) != null || d.get('refMax', null) != null || (d.get('refText', '') is string && d.get('refText', '').size() > 0))
@@ -1830,7 +1840,7 @@ service cloud.firestore {
         && (d.get('minAgeMonths', null) == null || d.minAgeMonths >= 0)
         && (d.get('minAgeMonths', null) == null || d.get('maxAgeMonths', null) == null || d.minAgeMonths < d.maxAgeMonths)
         && d.sex in ['any', 'male', 'female'] && d.get('pregnancy', 'any') in ['any', 'pregnant', 'not_pregnant']
-        && d.get('reproductive', 'any') in ['any', 'pregnant', 'lactating', 'pregnant_or_lactating', 'neither']   // v26: lactation; the old 'pregnancy' field stays accepted
+        && ctxFieldsOk(d)   // v28
         && (d.subjectType != 'vital' || d.get('minAgeMonths', null) != null || d.get('maxAgeMonths', null) != null || d.get('allAges', false) == true)   // a vital range without age limits must say it applies to all ages
         && d.unit is string && d.unit.size() > 0 && d.unit.size() <= 30
         && d.source is string && d.source.size() >= 3
@@ -1910,7 +1920,7 @@ service cloud.firestore {
         && (d.get('minAgeMonths', null) == null || d.minAgeMonths >= 0)
         && (d.get('minAgeMonths', null) == null || d.get('maxAgeMonths', null) == null || d.minAgeMonths < d.maxAgeMonths)
         && (d.subjectType != 'vital' || d.get('minAgeMonths', null) != null || d.get('maxAgeMonths', null) != null || d.get('allAges', false) == true)
-        && d.get('reproductive', 'any') in ['any', 'pregnant', 'lactating', 'pregnant_or_lactating', 'neither']
+        && d.get('pregnancy', 'any') in ['any', 'pregnant', 'not_pregnant'] && ctxFieldsOk(d)   // v28
         && d.get('contextRequired', []) is list && d.get('contextRequired', []).size() <= 5
         && d.source is string && d.source.size() >= 3;
     }
