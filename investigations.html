@@ -147,6 +147,14 @@
   .op-actions{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
   .op-actions button{flex:1; min-width:120px;}
   .breakdown-line .v{text-align:right; max-width:62%;}
+
+  /* ===== Stage 3B: ranges and alert rules ===== */
+  .r2{display:flex; gap:8px;} .r2 > div{flex:1; min-width:0;}
+  .rbox{border:1px solid var(--border); border-radius:10px; padding:10px; margin:8px 0;}
+  .rwarn{background:var(--bg); border:1px solid var(--warn); border-radius:8px; padding:8px 10px; margin:8px 0; font-size:12.5px; line-height:1.5;}
+  .rline{font-size:12.5px; color:var(--muted); margin-top:3px; line-height:1.5; overflow-wrap:anywhere;}
+  .rline a{color:var(--accent);}
+  textarea.rt{min-height:60px;}
   textarea{width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px; font-family:inherit;}
   textarea:focus{outline:none; border-color:var(--accent);}
   .back{display:inline-block; font-size:13px; color:var(--accent); margin:0 0 10px; text-decoration:none; font-weight:600;}
@@ -252,6 +260,8 @@
 <div class="card hidden" id="gateCard"><div id="gateMsg" class="empty"></div></div>
 
 <div id="mainArea" class="hidden">
+  <div class="pill-row" id="areaTabs"><button class="pill-btn selected" id="tabTests" type="button">Tests</button><button class="pill-btn" id="tabRanges" type="button">Reference ranges and alert rules</button></div>
+  <div id="testsArea">
   <div class="card">
     <h2>Tests this facility offers</h2>
     <div class="hint2" style="margin-top:0;">Doctors choose from this list when requesting tests, and the laboratory enters results against it. Prices, units and reference ranges are only what you enter here. Nothing is filled in for you.</div>
@@ -305,13 +315,106 @@
   <datalist id="nameList"></datalist>
   <datalist id="specList"><option value="Blood"><option value="Serum"><option value="Plasma"><option value="Whole blood (EDTA)"><option value="Urine"><option value="Stool"><option value="Sputum"><option value="Swab"><option value="Fluid"><option value="No sample (imaging)"></datalist>
   <datalist id="unitList"><option value="g/dL"><option value="g/L"><option value="mmol/L"><option value="mg/dL"><option value="µmol/L"><option value="U/L"><option value="%"><option value="cells/µL"><option value="×10⁹/L"><option value="×10¹²/L"><option value="fL"><option value="mm/hr"><option value="IU/mL"><option value="ng/mL"></datalist>
+  </div>
+  </div>
+  <div id="rangesArea" class="hidden">
+    <div class="card">
+      <h2>Reference ranges and alert rules</h2>
+      <div class="hint2" style="margin-top:0;">A reference range shows what is usual for a measurement. An alert rule is a separate clinical threshold. Nothing here is used until a reviewer approves it. The app supplies no values: every number must come from a source you name. These are not the entry limits that stop impossible readings.</div>
+      <div class="pill-row"><button class="pill-btn selected" id="kRange" type="button">Reference ranges</button><button class="pill-btn" id="kRule" type="button">Alert rules</button></div>
+      <label>Show</label>
+      <select id="rStatus"><option value="">All</option><option value="draft">Drafts (not in use)</option><option value="approved">Approved (in use)</option><option value="rejected">Rejected</option><option value="superseded">Replaced by a newer version</option><option value="retired">Retired</option></select>
+      <input type="search" id="rQ" placeholder="Search by test, measurement or source" autocomplete="off" style="margin-top:8px;">
+      <div class="hint2" id="rInfo"></div>
+      <div id="rList"></div>
+    </div>
+    <div class="op-actions" style="margin-bottom:10px;">
+      <button class="btn-primary hidden" id="rNewBtn" type="button" style="margin-top:0;">Add a range</button>
+      <button class="btn-small btn-secondary hidden" id="rImportBtn" type="button">Import a proposals file (drafts only)</button>
+      <input type="file" id="rFile" accept=".json,application/json" class="hidden">
+    </div>
+    <div class="msg ok" id="rDone"></div>
+
+    <div class="card hidden" id="rFormCard">
+      <h2 id="rFTitle">Add a range</h2>
+      <div class="hint2" style="margin-top:0;">Saved as a draft. A reviewer must approve it before it is used. Required: what it is for, the unit, the numbers or text, and the source.</div>
+      <label>What is it for? *</label>
+      <select id="rSubType"><option value="vital">A vital sign</option><option value="lab_test">A laboratory test (single number)</option><option value="lab_param">One part of a multi-part test</option></select>
+      <label>Which one? *</label><select id="rSubject"></select>
+      <div id="rParamWrap" class="hidden"><label>Which part? *</label><select id="rParam"></select></div>
+      <label>Unit *</label><input type="text" id="rUnit" list="unitList" autocomplete="off">
+      <div id="rRangeOnly">
+        <div class="r2"><div><label>Lower limit</label><input type="text" inputmode="decimal" id="rRefMin" autocomplete="off"></div><div><label>Upper limit</label><input type="text" inputmode="decimal" id="rRefMax" autocomplete="off"></div></div>
+        <label>Or the interval as text</label><input type="text" id="rRefText" autocomplete="off">
+        <div class="hint2">Text-only intervals are shown but never produce a high or low flag.</div>
+      </div>
+      <div id="rRuleOnly" class="hidden">
+        <label>Kind of rule *</label><select id="rRuleType"><option value="screening">Screening (a first check, not an alert)</option><option value="alert">Alert (needs attention)</option><option value="emergency">Emergency (must be acknowledged)</option></select>
+        <label>When is it triggered? *</label><select id="rOperator"><option value="lt">Below the value</option><option value="lte">At or below the value</option><option value="gt">Above the value</option><option value="gte">At or above the value</option><option value="range">From a minimum up to (not including) a maximum</option></select>
+        <div id="rValWrap"><label>Value *</label><input type="text" inputmode="decimal" id="rValue" autocomplete="off"></div>
+        <div id="rMinMax" class="r2 hidden"><div><label>Minimum (included) *</label><input type="text" inputmode="decimal" id="rMin" autocomplete="off"></div><div><label>Maximum (not included) *</label><input type="text" inputmode="decimal" id="rMax" autocomplete="off"></div></div>
+        <label>Message the clinician sees * (3 to 300 characters)</label><textarea class="rt" id="rMessage" maxlength="300"></textarea>
+        <label>What to do about urgency (optional, from your source)</label><input type="text" id="rUrgency" maxlength="300" autocomplete="off">
+        <label class="chk"><input type="checkbox" id="rAck"> Must be acknowledged before saving</label>
+        <div class="hint2">An emergency rule always must be acknowledged.</div>
+        <label>Group (optional)</label><input type="text" id="rGroup" autocomplete="off">
+        <div class="hint2">Rules in the same group: only the most specific one applies.</div>
+      </div>
+      <label>Who does it apply to?</label>
+      <div class="r2"><div><label>Lowest age (months)</label><input type="text" inputmode="decimal" id="rMinAge" autocomplete="off"></div><div><label>Highest age (months, not included)</label><input type="text" inputmode="decimal" id="rMaxAge" autocomplete="off"></div></div>
+      <label class="chk"><input type="checkbox" id="rAllAges"> Applies to all ages (needed for a vital sign with no age limits)</label>
+      <div class="r2"><div><label>Sex</label><select id="rSex"><option value="any">Any</option><option value="male">Male</option><option value="female">Female</option></select></div><div><label>Pregnancy</label><select id="rPreg"><option value="any">Any</option><option value="pregnant">Pregnant</option><option value="not_pregnant">Not pregnant</option></select></div><div><label>Breastfeeding</label><select id="rLact"><option value="any">Any</option><option value="lactating">Breastfeeding</option><option value="not_lactating">Not breastfeeding</option></select></div></div>
+      <details class="rbox"><summary style="font-weight:700; cursor:pointer;">More context</summary>
+        <label>Clinical setting (optional)</label><input type="text" id="rSetting" maxlength="60" autocomplete="off">
+        <div id="rLabCtx"><label>Sample type (optional)</label><input type="text" id="rSpecimen" list="specList" autocomplete="off"><label>Method (optional)</label><input type="text" id="rMethod" autocomplete="off"><label>Laboratory (optional)</label><input type="text" id="rLabName" autocomplete="off"></div>
+        <label>Applies only when these are present (optional, names separated by commas)</label><input type="text" id="rReq" autocomplete="off">
+        <label>Does not apply when these are present (optional)</label><input type="text" id="rForb" autocomplete="off">
+        <div class="hint2">Flag names use lower-case letters, digits and underscores, at most 10 each.</div>
+        <label>Note about a boundary value (optional, up to 500 characters)</label><textarea class="rt" id="rBoundary" maxlength="500"></textarea>
+      </details>
+      <label>Source * (a guideline, a kit insert or the laboratory's own validated interval)</label><input type="text" id="rSource" autocomplete="off">
+      <details class="rbox"><summary style="font-weight:700; cursor:pointer;">Source details</summary>
+        <label>Publisher</label><input type="text" id="rSourceOrg" autocomplete="off"><label>Title</label><input type="text" id="rSourceTitle" autocomplete="off">
+        <div class="r2"><div><label>Version</label><input type="text" id="rSourceVersion" autocomplete="off"></div><div><label>Page</label><input type="text" id="rSourcePage" autocomplete="off"></div></div>
+        <label>Web address</label><input type="text" id="rSourceUrl" autocomplete="off"><label>Notes</label><textarea class="rt" id="rNotes"></textarea>
+      </details>
+      <div class="r2"><div><label>Effective from (needed to approve)</label><input type="text" id="rEff" placeholder="YYYY-MM-DD" autocomplete="off"></div><div><label>Review by (optional)</label><input type="text" id="rReview" placeholder="YYYY-MM-DD" autocomplete="off"></div></div>
+      <label>Reason for this change (optional)</label><input type="text" id="rReason" maxlength="500" autocomplete="off">
+      <button class="btn-primary" id="rSaveBtn" type="button">Save as draft</button>
+      <button class="btn-small btn-secondary" id="rCancelBtn" type="button" style="width:100%; margin-top:8px;">Cancel</button>
+      <div class="msg" id="rFMsg"></div>
+    </div>
+
+    <div class="card hidden" id="rActCard">
+      <h2 id="rATitle"></h2>
+      <div id="rASummary" class="rline" style="margin-top:0;"></div>
+      <div id="rAWarn"></div>
+      <div id="rACred"><label>Who you are as a reviewer * (for example your clinical role)</label><input type="text" id="rCred" maxlength="100" autocomplete="off"><label>Note (optional)</label><textarea class="rt" id="rNote" maxlength="500"></textarea></div>
+      <div id="rAReason" class="hidden"><label id="rAReasonLbl">Reason *</label><textarea class="rt" id="rReasonTxt" maxlength="500"></textarea></div>
+      <button class="btn-primary" id="rAGo" type="button"></button>
+      <button class="btn-small btn-secondary" id="rACancel" type="button" style="width:100%; margin-top:8px;">Cancel</button>
+      <div class="msg" id="rAMsg"></div>
+    </div>
+
+    <div class="card hidden" id="rImpCard">
+      <h2>Proposals file</h2>
+      <div class="hint2" style="margin-top:0;">Drafts only. Nothing in the file becomes active: each item arrives as a draft that a reviewer must check, edit, approve or reject. An item that already exists in any state is skipped and never overwritten.</div>
+      <div id="rImpBody"></div>
+      <button class="btn-primary" id="rImpGo" type="button"></button>
+      <button class="btn-small btn-secondary" id="rImpCancel" type="button" style="width:100%; margin-top:8px;">Close</button>
+      <div class="msg" id="rImpMsg"></div>
+    </div>
+  </div>
 </div>
 
 <script src="pc-ux.js"></script>
 <script src="pc-fields.js"></script>
 <script src="pc-lab.js"></script>
+<script src="pc-ranges.js"></script>
+<script src="pc-obs.js"></script>
+<script src="pc-ranges-admin.js"></script>
 <script type="module">
-  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, getDocFromCache } = window.top.MC.api(window);
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, getDocFromCache, writeBatch } = window.top.MC.api(window);
 
   const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
   async function getDocServerFirst(ref) {
@@ -473,6 +576,197 @@
   });
   CATS.forEach(c => { const o = document.createElement("option"); o.value = c[0]; o.textContent = c[1]; $("catFilter").appendChild(o); const o2 = o.cloneNode(true); $("fCat").appendChild(o2); });
 
+
+  // ===================== Stage 3B: reference ranges and alert rules (management) =====================
+  // Drafts are created and edited here; a reviewer approves, rejects or retires. Nothing is used until it is approved. No clinical value is built into the app.
+  const RK = { range: "pc_reference_ranges", rule: "pc_alert_rules" };
+  let rKind = "range", rDocs = { range: [], rule: [] }, rEdit = null, rMode = "", rAct = null, rPlan = null, rStarted = false;
+  const subjName = r => {
+    if (r.subjectType === "vital") return (PCR.VITALS[r.subjectId] || {}).label || r.subjectId;
+    const it = items.find(x => x.id === r.subjectId); let n = it ? it.name : r.subjectId + " (test not in this facility's list)";
+    if (r.paramKey) { const pp = it && (it.params || []).find(x => x.key === r.paramKey); n += " · " + (pp ? pp.label : r.paramKey); } return n;
+  };
+  const rCtx = () => ({ businessId: businessId, facilityId: facilityId, uid: me.id, name: myName, ts: serverTimestamp(), now: Date.now() });
+  function audit(action, path, extra) {
+    setDoc(doc(collection(db, "pc_audit_logs")), Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, action: action, recordPath: path, at: serverTimestamp() }, extra || {})).catch(() => {});
+  }
+  const rDone = (t, bad) => { $("rDone").className = "msg " + (bad ? "err" : "ok"); $("rDone").textContent = t; };
+  const kindWord = () => rKind === "range" ? "range" : "rule";
+
+  function showArea(which) {
+    $("testsArea").classList.toggle("hidden", which !== "tests"); $("rangesArea").classList.toggle("hidden", which !== "ranges");
+    $("tabTests").classList.toggle("selected", which === "tests"); $("tabRanges").classList.toggle("selected", which === "ranges");
+    if (which === "ranges") renderR();
+  }
+  function setKind(k) {
+    rKind = k; $("kRange").classList.toggle("selected", k === "range"); $("kRule").classList.toggle("selected", k === "rule");
+    $("rNewBtn").textContent = k === "range" ? "Add a range" : "Add an alert rule"; closeRForms(); renderR();
+  }
+  function closeRForms() { ["rFormCard", "rActCard", "rImpCard"].forEach(i => $(i).classList.add("hidden")); rEdit = null; rMode = ""; rAct = null; rPlan = null; $("rNewBtn").classList.toggle("hidden", !can("ranges.manage")); }
+
+  function chipR(st) { return '<span class="chip ' + ({ approved: "ok", draft: "warn", rejected: "bad" }[st] || "") + '">' + esc(PCA.STATUS_LABEL[st] || st) + "</span>"; }
+  function renderR() {
+    const st = $("rStatus").value, q = $("rQ").value.trim().toLowerCase(), all = rDocs[rKind], mg = can("ranges.manage"), ap = can("ranges.approve");
+    const rows = all.filter(r => (!st || r.approvalStatus === st) && (!q || [subjName(r), r.source, r.sourceTitle, r.sourceOrg, r.message].join(" ").toLowerCase().indexOf(q) >= 0))
+      .sort((a, b) => subjName(a).localeCompare(subjName(b)) || (b.version - a.version));
+    const drafts = all.filter(r => r.approvalStatus === "draft").length, appr = all.filter(r => r.approvalStatus === "approved").length;
+    $("rInfo").textContent = all.length ? rows.length + " shown. In use: " + appr + ". Waiting for a reviewer: " + drafts + "." : "";
+    if (!rows.length) { $("rList").innerHTML = '<div class="empty">' + (all.length ? "Nothing matches." : (kindWord() === "range" ? "No reference ranges yet. Without an approved range, a result is shown as \"Reference range not configured\"." : "No alert rules yet. Without an approved rule, no alert is raised.")) + "</div>"; return; }
+    $("rList").innerHTML = rows.map(r => {
+      const url = PCA.safeUrl(r.sourceUrl), src = [r.sourceOrg, r.sourceTitle, r.sourceVersion ? "version " + r.sourceVersion : "", r.sourcePage ? "page " + r.sourcePage : ""].filter(Boolean).join(", ") || r.source || "";
+      const lines = [rKind === "range" ? PCA.intervalText(r) : PCA.ruleText(r), PCA.contextLine(r)];
+      let h = '<div class="op"><div class="op-name"><span>' + esc(subjName(r)) + " · v" + esc(r.version) + "</span>" + chipR(r.approvalStatus) + (PCA.needsDecision(r) ? '<span class="chip warn">Clinician decision needed</span>' : "") + "</div>";
+      h += '<div class="rline"><b>' + esc(lines[0]) + "</b></div><div class=\"rline\">" + esc(lines[1]) + "</div>";
+      if (r.message) h += '<div class="rline">Message: ' + esc(r.message) + (r.urgencyText ? " " + esc(r.urgencyText) : "") + (r.requiresAck ? " (must be acknowledged)" : "") + "</div>";
+      h += '<div class="rline">Source: ' + esc(src) + (url ? ' · <a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">open the source</a>' : (r.sourceUrl ? " · " + esc(r.sourceUrl) : "")) + "</div>";
+      if (r.boundaryNote) h += '<div class="rline">Boundary: ' + esc(r.boundaryNote) + "</div>";
+      if (PCA.origin(r)) h += '<div class="rline">' + esc(PCA.origin(r)) + (r.proposal && r.proposal.source && r.origin === "evidence_proposal" ? ". Original source: " + esc(r.proposal.source) : "") + "</div>";
+      if (r.effectiveDate) h += '<div class="rline">Effective from ' + esc(r.effectiveDate) + (r.reviewDate ? ", review by " + esc(r.reviewDate) : "") + "</div>";
+      const al = PCA.approvalLabel(r); if (al) h += '<div class="rline">' + esc(al) + "</div>";
+      if (r.rejectedReason) h += '<div class="rline">Rejected: ' + esc(r.rejectedReason) + "</div>"; if (r.retiredReason) h += '<div class="rline">Retired: ' + esc(r.retiredReason) + "</div>"; if (r.decisionReason || r.changeReason) h += '<div class="rline">Reason for change: ' + esc(r.decisionReason || r.changeReason) + "</div>";
+      const a = [];
+      if (r.approvalStatus === "draft") { if (mg) a.push(["edit", "Edit"]); if (ap) a.push(["approve", "Approve…"], ["reject", "Reject…"]); if (mg || ap) a.push(["retire", "Discard…"]); }
+      if (r.approvalStatus === "approved") { if (mg) a.push(["version", "New version"]); if (ap) a.push(["retire", "Retire…"]); }
+      if (a.length) h += '<div class="op-actions">' + a.map(x => '<button type="button" class="btn-small btn-secondary" data-ract="' + x[0] + '" data-rid="' + esc(r.id) + '">' + x[1] + "</button>").join("") + "</div>";
+      return h + "</div>";
+    }).join("");
+  }
+
+  // ---- form
+  function fillSubjects(keep) {
+    const t = $("rSubType").value, sel = $("rSubject");
+    let opts = t === "vital" ? Object.keys(PCR.VITALS).map(k => [k, PCR.VITALS[k].label])
+      : items.filter(i => t === "lab_test" ? i.resultType === "number" : (i.params || []).some(x => x.type === "number")).sort((a, b) => String(a.name).localeCompare(String(b.name))).map(i => [i.id, i.name]);
+    sel.innerHTML = '<option value="">Choose…</option>' + opts.map(o => '<option value="' + esc(o[0]) + '">' + esc(o[1]) + "</option>").join("");
+    if (keep && !opts.some(o => o[0] === keep)) sel.insertAdjacentHTML("beforeend", '<option value="' + esc(keep) + '">' + esc(keep) + "</option>");
+    sel.value = keep || ""; fillParams();
+  }
+  function fillParams(keep) {
+    const t = $("rSubType").value, it = items.find(x => x.id === $("rSubject").value); $("rParamWrap").classList.toggle("hidden", t !== "lab_param");
+    $("rParam").innerHTML = '<option value="">Choose…</option>' + (t === "lab_param" && it ? (it.params || []).filter(x => x.type === "number").map(x => '<option value="' + esc(x.key) + '">' + esc(x.label) + "</option>").join("") : "");
+    if (keep) { if (!Array.prototype.some.call($("rParam").options, o => o.value === keep)) $("rParam").insertAdjacentHTML("beforeend", '<option value="' + esc(keep) + '">' + esc(keep) + "</option>"); $("rParam").value = keep; }
+    syncUnit();
+  }
+  function syncUnit() {
+    const t = $("rSubType").value, id = $("rSubject").value, it = items.find(x => x.id === id);
+    $("rLabCtx").classList.toggle("hidden", t === "vital");
+    if (t === "vital") { $("rUnit").value = (PCR.VITALS[id] || {}).unit || ""; $("rUnit").readOnly = true; return; }
+    $("rUnit").readOnly = false;
+    if ($("rUnit").dataset.touched === "1" || !it) return;
+    const pp = t === "lab_param" ? (it.params || []).find(x => x.key === $("rParam").value) : null; $("rUnit").value = pp ? (pp.unit || "") : (t === "lab_test" ? it.units || "" : "");
+  }
+  function syncRule() { const op = $("rOperator").value, em = $("rRuleType").value === "emergency"; $("rValWrap").classList.toggle("hidden", op === "range"); $("rMinMax").classList.toggle("hidden", op !== "range"); if (em) $("rAck").checked = true; $("rAck").disabled = em; }
+  const V = (id, v) => { $(id).value = v == null ? "" : v; };
+  function openRForm(mode, r) {
+    if (!can("ranges.manage")) return; closeRForms(); rMode = mode; rEdit = r || null; const isRule = rKind === "rule", f = r ? PCA.formOf(rKind, r) : {};
+    $("rFTitle").textContent = mode === "edit" ? "Edit draft" : mode === "version" ? "New version (v" + PCA.nextVersion(rKind, r, rDocs[rKind]) + ")" : (isRule ? "Add an alert rule" : "Add a range");
+    $("rRangeOnly").classList.toggle("hidden", isRule); $("rRuleOnly").classList.toggle("hidden", !isRule);
+    $("rSubType").value = f.subjectType || "vital"; fillSubjects(f.subjectId || ""); fillParams(f.paramKey || "");
+    $("rUnit").dataset.touched = r ? "1" : ""; V("rUnit", f.unit); if ($("rSubType").value === "vital") syncUnit();
+    ["rRefMin:refMin", "rRefMax:refMax", "rRefText:refText", "rValue:value", "rMin:min", "rMax:max", "rMessage:message", "rUrgency:urgencyText", "rGroup:group", "rMinAge:minAgeMonths", "rMaxAge:maxAgeMonths", "rSetting:setting", "rSpecimen:specimen", "rMethod:method", "rLabName:labName", "rReq:requireFlags", "rForb:forbidFlags", "rBoundary:boundaryNote",
+      "rSource:source", "rSourceOrg:sourceOrg", "rSourceTitle:sourceTitle", "rSourceVersion:sourceVersion", "rSourcePage:sourcePage", "rSourceUrl:sourceUrl", "rNotes:notes", "rEff:effectiveDate", "rReview:reviewDate"].forEach(x => { const a = x.split(":"); V(a[0], f[a[1]]); });
+    V("rReason", mode === "edit" ? (r.decisionReason || r.changeReason || "") : ""); V("rEff", mode === "version" ? "" : f.effectiveDate); V("rReview", mode === "version" ? "" : f.reviewDate);
+    $("rSex").value = f.sex || "any"; $("rPreg").value = f.pregnancy || "any"; $("rLact").value = f.lactation || "any"; $("rAllAges").checked = !!f.allAges; $("rRuleType").value = f.ruleType || "alert"; $("rOperator").value = f.operator || "gt"; $("rAck").checked = !!f.requiresAck; syncRule();
+    const lock = mode !== "new"; ["rSubType", "rSubject", "rParam"].forEach(i => { $(i).disabled = lock; });
+    $("rSaveBtn").textContent = mode === "edit" ? "Save changes (stays a draft)" : "Save as draft"; $("rFMsg").textContent = ""; $("rFormCard").classList.remove("hidden"); $("rFormCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function readRForm() {
+    const g = id => $(id).value, o = { subjectType: g("rSubType"), subjectId: g("rSubject"), paramKey: $("rSubType").value === "lab_param" ? g("rParam") : "", unit: g("rUnit"), minAgeMonths: g("rMinAge"), maxAgeMonths: g("rMaxAge"), allAges: $("rAllAges").checked, sex: g("rSex"), pregnancy: g("rPreg"), lactation: g("rLact"),
+      setting: g("rSetting"), requireFlags: g("rReq"), forbidFlags: g("rForb"), boundaryNote: g("rBoundary"), source: g("rSource"), sourceOrg: g("rSourceOrg"), sourceTitle: g("rSourceTitle"), sourceVersion: g("rSourceVersion"), sourcePage: g("rSourcePage"), sourceUrl: g("rSourceUrl"), notes: g("rNotes"), effectiveDate: g("rEff"), reviewDate: g("rReview") };
+    if ($("rSubType").value !== "vital") { o.specimen = g("rSpecimen"); o.method = g("rMethod"); o.labName = g("rLabName"); }
+    if (rKind === "range") { o.refMin = g("rRefMin"); o.refMax = g("rRefMax"); o.refText = g("rRefText"); }
+    else { o.ruleType = g("rRuleType"); o.operator = g("rOperator"); o.value = g("rValue"); o.min = g("rMin"); o.max = g("rMax"); o.message = g("rMessage"); o.urgencyText = g("rUrgency"); o.group = g("rGroup"); o.requiresAck = $("rAck").checked; }
+    if (g("rReason").trim()) o[rMode === "edit" ? "decisionReason" : "changeReason"] = g("rReason"); return o;
+  }
+  function saveR() {
+    const m = $("rFMsg"); m.className = "msg err"; if (!can("ranges.manage")) { m.textContent = "You do not have permission to set up ranges."; return; }
+    const f = readRForm(), ctx = rCtx(), coll = RK[rKind]; let res, id;
+    if (rMode === "edit") { res = PCA.editDraft(rKind, rEdit, f, ctx); id = rEdit.id; }
+    else { const o = rMode === "version" ? { key: rEdit[PCA.KINDS[rKind].key], version: PCA.nextVersion(rKind, rEdit, rDocs[rKind]) } : {}; res = PCA.buildDraft(rKind, f, ctx, o); id = res.id; }
+    if (!res.ok) { m.textContent = res.errors.join(" "); return; }
+    setDoc(doc(db, coll, id), res.data).catch(saveFailed); audit(kindWord() + "." + (rMode === "edit" ? "edit" : "create"), coll + "/" + id);
+    rDone("Saved on this phone as a draft. It is not used until a reviewer approves it."); closeRForms();
+  }
+
+  // ---- reviewer actions
+  function openAct(type, r) {
+    closeRForms(); rAct = { type: type, doc: r }; const K = rKind, ap = type === "approve", w = { approve: "Approve", reject: "Reject", retire: r.approvalStatus === "draft" ? "Discard" : "Retire" }[type];
+    $("rATitle").textContent = w + " " + (K === "range" ? "range" : "rule") + ": " + subjName(r) + " v" + r.version; $("rAMsg").textContent = ""; V("rCred", ""); V("rNote", ""); V("rReasonTxt", "");
+    $("rACred").classList.toggle("hidden", !ap); $("rAReason").classList.toggle("hidden", ap);
+    $("rASummary").textContent = (K === "range" ? PCA.intervalText(r) : PCA.ruleText(r)) + " · " + PCA.contextLine(r) + " · Source: " + (r.source || r.sourceTitle || "");
+    let warn = "";
+    if (ap) {
+      const pre = PCA.approve(K, r, { reviewerCredential: "xx" }, rDocs[K], rCtx());
+      if (pre.selfApproved) warn += '<div class="rwarn">You created this draft. Approving it yourself is allowed, but it is recorded as self-approved and shown that way. A second person should check it.</div>';
+      if (pre.replaces) warn += '<div class="rwarn">Approving this replaces the version now in use. Both changes are saved together.</div>';
+      (pre.warnings || []).forEach(x => { warn += '<div class="rwarn">' + esc(x) + "</div>"; }); pre.errors.forEach(x => { warn += '<div class="rwarn">' + esc(x) + "</div>"; });
+      $("rAGo").textContent = "Approve (a clinical attestation)";
+    } else { $("rAReasonLbl").textContent = "Reason * (at least 3 characters)"; $("rAGo").textContent = w; }
+    $("rAWarn").innerHTML = warn; $("rActCard").classList.remove("hidden"); $("rActCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function confirmAct() {
+    const t = rAct.type, r = rAct.doc, ctx = rCtx(), coll = RK[rKind], m = $("rAMsg"); m.className = "msg err";
+    if (t === "approve") {
+      if (!can("ranges.approve")) { m.textContent = "You do not have permission to approve."; return; }
+      const res = PCA.approve(rKind, r, { reviewerCredential: $("rCred").value, approvalNote: $("rNote").value }, rDocs[rKind], ctx); if (!res.ok) { m.textContent = res.errors.join(" "); return; }
+      const b = writeBatch(db); res.ops.forEach(o => b.update(doc(db, coll, o.id), o.patch)); b.commit().catch(saveFailed);
+      res.ops.forEach((o, i) => audit(kindWord() + (i ? ".supersede" : ".approve"), coll + "/" + o.id, i ? {} : { selfApproved: res.selfApproved }));
+      rDone("Approved on this phone" + (res.replaces ? " (the previous version is replaced)" : "") + (res.selfApproved ? ". Recorded as self-approved." : ".")); closeRForms(); return;
+    }
+    const need = t === "reject" ? can("ranges.approve") : (can("ranges.approve") || (r.approvalStatus === "draft" && can("ranges.manage"))); if (!need) { m.textContent = "You do not have permission to do this."; return; }
+    const res = t === "reject" ? PCA.reject(r, $("rReasonTxt").value, ctx) : PCA.retire(r, $("rReasonTxt").value, ctx); if (!res.ok) { m.textContent = res.errors.join(" "); return; }
+    updateDoc(doc(db, coll, r.id), res.patch).catch(saveFailed); audit(kindWord() + "." + t, coll + "/" + r.id);
+    rDone(t === "reject" ? "Rejected. It is kept for the record and never used." : "Done. It is no longer used."); closeRForms();
+  }
+
+  // ---- importer (drafts only)
+  const IMP_TEXT = { create: "Will be created as a draft", skip_exists: "Already exists: skipped, never overwritten", invalid: "Not imported", unchecked: "Could not check whether it exists (offline?): not imported" };
+  function renderImp() {
+    const pl = rPlan; let h = ""; if (pl.fileErrors.length) h += '<div class="msg err">' + esc(pl.fileErrors.join(" ")) + "</div>";
+    if (pl.ok) {
+      const c = { create: 0, skip_exists: 0, invalid: 0, unchecked: 0 }; pl.items.forEach(i => { c[i.status] = (c[i.status] || 0) + 1; });
+      h += '<div class="hint2" style="margin-top:0;">' + esc(pl.items.length + " in the file. Drafts to create: " + c.create + ". Already there: " + c.skip_exists + ". Not imported: " + (c.invalid + c.unchecked) + ".") + "</div>";
+      h += pl.items.map(i => '<div class="rbox"><b>' + esc((i.kind === "rule" ? "Alert rule " : "Range ") + i.label) + '</b><div class="rline">' + esc(IMP_TEXT[i.status] || i.status) + (i.errors.length ? ": " + esc(i.errors.join(" ")) : "") + "</div></div>").join("");
+    }
+    $("rImpBody").innerHTML = h; const n = pl.ok ? pl.items.filter(i => i.status === "create").length : 0; $("rImpGo").textContent = "Create " + n + " draft" + (n === 1 ? "" : "s"); $("rImpGo").classList.toggle("hidden", !n);
+  }
+  async function readImport(file) {
+    closeRForms(); $("rImpCard").classList.remove("hidden"); $("rImpMsg").textContent = ""; $("rImpBody").textContent = "Reading the file…"; $("rImpGo").classList.add("hidden");
+    let text = ""; try { text = await file.text(); } catch (e) { $("rImpBody").textContent = "The file could not be read."; return; }
+    const have = new Set(); ["range", "rule"].forEach(k => rDocs[k].forEach(d => have.add(RK[k] + "/" + d.id)));
+    rPlan = PCA.planImport(text, rCtx(), have); renderImp();
+    if (!rPlan.ok) return;
+    // the screen only knows what it has loaded: ask the server, item by item, before anything is written
+    await Promise.all(rPlan.items.filter(i => i.status === "create").map(async i => {
+      try { const sn = await getDocServerFirst(doc(db, i.coll, i.id)); if (sn.exists()) { i.status = "skip_exists"; i.data = null; } }
+      catch (e) { if (e && e.code === "permission-denied") { i.status = "skip_exists"; i.data = null; i.errors = ["This id is already used by another facility."]; } else { i.status = "unchecked"; i.data = null; } }
+    }));
+    renderImp();
+  }
+  function confirmImport() {
+    if (!can("ranges.manage") || !rPlan || !rPlan.ok) return; const list = rPlan.items.filter(i => i.status === "create" && i.data); if (!list.length) return;
+    for (let k = 0; k < list.length; k += 200) { const b = writeBatch(db); list.slice(k, k + 200).forEach(i => b.set(doc(db, i.coll, i.id), i.data)); b.commit().catch(saveFailed); }
+    audit("ranges.import", "pc_reference_ranges", { created: list.length, skipped: rPlan.items.length - list.length });
+    const n = list.length; closeRForms(); rDone(n + " draft" + (n === 1 ? "" : "s") + " saved on this phone. None is in use: a reviewer must check and approve each one.");
+  }
+
+  function startRanges() {
+    if (rStarted) return; rStarted = true;
+    ["range", "rule"].forEach(k => onSnapshot(query(collection(db, RK[k]), where("businessId", "==", businessId), where("facilityId", "==", facilityId), limit(1000)), s => { rDocs[k] = s.docs.map(d => ({ id: d.id, ...d.data() })); if (rKind === k && !$("rangesArea").classList.contains("hidden")) renderR(); },
+      err => { if (rKind === k) $("rList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view these." : "These could not be loaded. Check your internet connection and try again.") + "</div>"; }));
+    $("rNewBtn").classList.toggle("hidden", !can("ranges.manage")); $("rImportBtn").classList.toggle("hidden", !can("ranges.manage"));
+  }
+  $("tabTests").onclick = () => showArea("tests"); $("tabRanges").onclick = () => showArea("ranges"); $("kRange").onclick = () => setKind("range"); $("kRule").onclick = () => setKind("rule");
+  $("rStatus").addEventListener("change", renderR); $("rQ").addEventListener("input", renderR);
+  $("rNewBtn").onclick = () => openRForm("new", null); $("rCancelBtn").onclick = closeRForms; $("rSaveBtn").onclick = saveR; $("rACancel").onclick = closeRForms; $("rAGo").onclick = confirmAct; $("rImpCancel").onclick = closeRForms; $("rImpGo").onclick = confirmImport;
+  $("rImportBtn").onclick = () => { $("rFile").value = ""; $("rFile").click(); }; $("rFile").addEventListener("change", e => { const f = e.target.files && e.target.files[0]; if (f) readImport(f); });
+  $("rSubType").addEventListener("change", () => { $("rUnit").dataset.touched = ""; fillSubjects(""); }); $("rSubject").addEventListener("change", () => { $("rUnit").dataset.touched = ""; fillParams(); }); $("rParam").addEventListener("change", () => { $("rUnit").dataset.touched = ""; syncUnit(); });
+  $("rUnit").addEventListener("input", () => { $("rUnit").dataset.touched = "1"; }); $("rOperator").addEventListener("change", syncRule); $("rRuleType").addEventListener("change", syncRule);
+  $("rList").addEventListener("click", e => {
+    const b = e.target.closest("[data-ract]"); if (!b) return; const r = rDocs[rKind].find(x => x.id === b.dataset.rid); if (!r) return; const a = b.dataset.ract;
+    if (a === "edit") openRForm("edit", r); else if (a === "version") openRForm("version", r); else openAct(a, r);
+  });
+
   function mark(s) {
     const badge = $("netBadge");
     badge.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)";
@@ -487,6 +781,7 @@
     onSnapshot(query(collection(db, "pc_inv_catalogue"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), limit(1000)), { includeMetadataChanges: true }, s => {
       items = s.docs.map(d => ({ id: d.id, ...d.data() })); mark(s); renderList();
     }, err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view tests." : "The tests could not be loaded. Check your internet connection and try again.") + "</div>"; });
+    startRanges();
   }
 
   onAuthStateChanged(auth, async (user) => {
