@@ -299,6 +299,10 @@
       <details class="more" id="tMore"><summary>More measurements: blood glucose, consciousness, arm circumference</summary>
 <label>Blood glucose</label>
       <div class="row"><div><input type="number" inputmode="decimal" step="0.1" id="tGlu" placeholder="Value"></div><div><select id="tGluUnit"><option value="mmol/L">mmol/L</option><option value="mg/dL">mg/dL</option></select></div></div>
+<div class="hint2" id="tGluLimit">Allowed: above 0 and at most 55.5 mmol/L.</div>
+<label>Device reading</label><select id="tGluStatus"><option value="">A number was shown</option><option value="below_device_range">Below the device's measuring range</option><option value="above_device_range">Above the device's measuring range</option></select><div class="hint2" id="fhelp-tGluStatus">Choose this only when the meter shows that the result is outside what it can measure, instead of a number. No number is saved. The unit is kept.</div>
+<div id="tGluDevWrap" class="hidden"><label>Device name (optional)</label><input type="text" id="tGluDevice" maxlength="100" autocomplete="off"><div class="hint2" id="fhelp-tGluDevice">The name or model of the meter. At most 100 characters.</div></div>
+<div class="hint2" id="tGluNote" role="status"></div>
 
 <label>Consciousness</label><select id="tCons"><option value="">Not assessed</option><option value="alert">Alert</option><option value="voice">Responds to voice</option><option value="pain">Responds to pain</option><option value="unresponsive">Unresponsive</option></select><div class="hint2" id="fhelp-tCons">How awake the patient is. Alert: awake and responding normally. Responds to voice: wakes when spoken to. Responds to pain: reacts only to pain. Unresponsive: no reaction.</div>
 <label>MUAC (cm) - children</label><input type="number" inputmode="decimal" step="0.1" id="tMuac"><div class="hint2" id="fhelp-tMuac">Mid-upper arm circumference: the distance around the upper arm, measured with a tape. Mostly used for young children.</div>
@@ -534,6 +538,8 @@
 <script src="pc-guidelines.js"></script>
 <script src="pc-abbrev.js"></script>
 <script src="pc-guidance-ui.js"></script>
+<script src="pc-ranges.js"></script>
+<script src="pc-obs.js"></script>
 <script type="module">
   const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, writeBatch, getDocFromCache } = window.top.MC.api(window);
 
@@ -580,7 +586,25 @@
     if (years != null && years < 2) return null;
     return Math.round((w / Math.pow(h / 100, 2)) * 10) / 10;
   }
-  const BOUNDS = { temperatureC: [25, 45], bpSys: [20, 300], bpDia: [10, 200], pulse: [10, 300], respRate: [2, 100], spo2: [30, 100], weightKg: [0.3, 500], heightCm: [20, 260], muacCm: [3, 60], glucose: [0, 1000], painScore: [0, 10] };
+  const BOUNDS = { temperatureC: [25, 45], bpSys: [20, 300], bpDia: [10, 200], pulse: [10, 300], respRate: [2, 100], spo2: [30, 100], weightKg: [0.3, 500], heightCm: [20, 260], muacCm: [3, 60], painScore: [0, 10] };
+  // owner-approved technical entry limits (DATA_CONTRACT_V19 section 18). Glucose depends on the unit: above 0, at most 1000 mg/dL or 55.5 mmol/L. Never a clinical range.
+  const GLU_MAX = { "mg/dL": 1000, "mmol/L": 55.5 };
+  const OBS_NAME = { temperatureC: "Temperature", bpSys: "Systolic (top) blood pressure", bpDia: "Diastolic (bottom) blood pressure", pulse: "Pulse", respRate: "Breathing rate", spo2: "Oxygen saturation", weightKg: "Weight", heightCm: "Height", muacCm: "MUAC", painScore: "Pain score", glucose: "Blood glucose" };
+  function limitProblem(k, val, unit) {
+    const name = OBS_NAME[k] || k;
+    if (typeof val !== "number" || !isFinite(val)) return "Check the value for " + name + ": it is not a number.";
+    if (k === "glucose") {
+      const mx = GLU_MAX[unit];
+      if (mx == null) return "Choose the unit for blood glucose (mmol/L or mg/dL).";
+      if (val <= 0) return "Blood glucose must be above zero. Zero and negative values are not accepted.";
+      if (val > mx) return "Blood glucose must be above 0 and at most " + mx + " " + unit + ". Check the number and the unit.";
+      return null;
+    }
+    const lo = BOUNDS[k][0], hi = BOUNDS[k][1];
+    if (val >= lo && val <= hi) return null;
+    if (lo > 0 && val <= 0) return name + " must be above zero. Zero and negative values are not accepted.";
+    return "Check the value for " + name + ": it must be between " + lo + " and " + hi + ".";
+  }
   const OBS_LABEL = { temperatureC: "Temperature", bpSys: "Systolic BP", bpDia: "Diastolic BP", pulse: "Pulse", respRate: "Breathing rate", spo2: "Oxygen saturation" };
   // warning ranges are the facility's own (set by their clinician); this only compares, it never interprets
   function flagsFor(rec, ranges) {
@@ -603,7 +627,10 @@
     if (t.weightKg != null) p.push("Wt " + t.weightKg + " kg");
     if (t.heightCm != null) p.push("Ht " + t.heightCm + " cm");
     if (t.bmi != null) p.push("BMI " + t.bmi);
-    if (t.glucose != null) p.push("Glucose " + t.glucose + " " + (t.glucoseUnit || ""));
+    const gs = window.PCO ? PCO.statusOfRecord(t, "glucose") : null;   // Developer 4: a stored device status; never a number or an interpretation
+    if (gs) p.push(gs.line);
+    else if (t.glucoseStatus) p.push("Glucose: outside the device's measuring range (" + (t.glucoseUnit || "unit not recorded") + ")");   // only if pc-obs.js did not load
+    else if (t.glucose != null) p.push("Glucose " + t.glucose + " " + (t.glucoseUnit || ""));
     if (t.painScore != null) p.push("Pain " + t.painScore + "/10");
     if (t.consciousness) p.push("Consciousness: " + ({ alert: "Alert", voice: "Responds to voice", pain: "Responds to pain", unresponsive: "Unresponsive" }[t.consciousness] || t.consciousness));
     if (t.muacCm != null) p.push("MUAC " + t.muacCm + " cm");
@@ -702,17 +729,30 @@
   function saveTriage() {
     const msg = $("tMsg"); msg.className = "msg err"; msg.textContent = "";
     const v = { temperatureC: num("tTemp"), bpSys: num("tSys"), bpDia: num("tDia"), pulse: num("tPulse"), respRate: num("tResp"), spo2: num("tSpo2"), weightKg: num("tWeight"), heightCm: num("tHeight"), muacCm: num("tMuac"), glucose: num("tGlu"), painScore: $("tPain").value === "" ? null : Number($("tPain").value) };
+    const unit = $("tGluUnit").value, gst = $("tGluStatus").value;
+    // text the browser could not read as a number is refused, never treated as empty
+    const idKey = { tTemp: "temperatureC", tSys: "bpSys", tDia: "bpDia", tPulse: "pulse", tResp: "respRate", tSpo2: "spo2", tWeight: "weightKg", tHeight: "heightCm", tMuac: "muacCm", tGlu: "glucose" };
+    for (const id in idKey) { const el = $(id); if (el.validity && el.validity.badInput) { msg.textContent = "Check the value for " + OBS_NAME[idKey[id]] + ": it is not a number."; if (id === "tGlu") $("tMore").open = true; return; } }
+    let gs = null;
+    if (gst) {
+      if (!window.PCO) { msg.textContent = "The device reading cannot be saved because part of the page did not load. Reload the page and try again."; return; }
+      gs = PCO.deviceStatus({ key: "glucose", status: gst, unit: unit, device: $("tGluDevice").value, raw: $("tGlu").value });
+      if (!gs.ok) { msg.textContent = gs.errors.join(" "); $("tMore").open = true; return; }
+      v.glucose = null;   // a status saves no number
+    }
     for (const k in v) {
       if (v[k] == null) continue;
-      if (isNaN(v[k]) || v[k] < BOUNDS[k][0] || v[k] > BOUNDS[k][1]) { msg.textContent = "Check the value for " + (OBS_LABEL[k] || k) + ": it must be between " + BOUNDS[k][0] + " and " + BOUNDS[k][1] + "."; return; }
+      const why = limitProblem(k, v[k], unit);
+      if (why) { msg.textContent = why; if (k === "glucose") $("tMore").open = true; return; }
     }
-    if (v.bpSys != null && v.bpDia != null && v.bpDia > v.bpSys) { msg.textContent = "The bottom blood pressure number is higher than the top number. Check them."; return; }
+    if (v.bpSys != null && v.bpDia != null && v.bpDia >= v.bpSys) { msg.textContent = "The bottom blood pressure number (" + v.bpDia + ") must be lower than the top number (" + v.bpSys + "). Check both numbers and correct them."; return; }
     const cons = $("tCons").value || null, cat = $("tCat").value || null, notesT = $("tNotes").value.trim();
-    const any = Object.keys(v).some(k => v[k] != null) || cons || cat || notesT;
+    const any = Object.keys(v).some(k => v[k] != null) || gs || cons || cat || notesT;
     if (!any) { msg.textContent = "Enter at least one measurement, a category or a note."; return; }
     const yrs = ageYears({ dobPrecision: enc.patientDobPrecision, dob: enc.patientDob, dobApprox: enc.patientDobApprox }, new Date());
     const ref = doc(collection(db, "pc_triage"));
-    const data = child(Object.assign({}, v, { bmi: bmiOf(v.weightKg, v.heightCm, yrs), glucoseUnit: v.glucose != null ? $("tGluUnit").value : null, consciousness: cons, category: cat, notes: notesT }));
+    const data = child(Object.assign({}, v, { bmi: bmiOf(v.weightKg, v.heightCm, yrs), glucoseUnit: (v.glucose != null || gs) ? unit : null, consciousness: cons, category: cat, notes: notesT }));
+    if (gs) { delete data.glucose; Object.assign(data, gs.fields); }   // glucoseStatus, glucoseUnit, glucoseDevice (only when given); no number, no interp
     const batch = writeBatch(db);
     batch.set(ref, data);
     const upd = {}; if (enc.stage === "registered") upd.stage = "triaged"; if (cat) upd.triageCategory = cat;
@@ -721,6 +761,7 @@
     batch.commit().catch(saveFailed);
     ["tTemp", "tSys", "tDia", "tPulse", "tResp", "tSpo2", "tWeight", "tHeight", "tMuac", "tGlu", "tNotes"].forEach(id => { $(id).value = ""; });
     $("tPain").value = ""; $("tCons").value = ""; $("tCat").value = ""; updateBmi();
+    $("tGluStatus").value = ""; $("tGluDevice").value = ""; $("tGluDevWrap").classList.add("hidden"); $("tGlu").disabled = false; $("tGluNote").textContent = "";   // the unit stays as chosen
     ok("Triage saved on this phone. It will sync when you are online.");
   }
   function renderTriage() {
@@ -1635,6 +1676,24 @@
   $("tSaveBtn").onclick = saveTriage; $("cSaveBtn").onclick = addComplaint; $("mSaveBtn").onclick = addMed;
   $("nDraftBtn").onclick = () => saveNote(false); $("nSignBtn").onclick = () => saveNote(true); $("nCancelBtn").onclick = resetNoteForm;
   $("nType").addEventListener("change", syncNoteForm);
+  // glucose: the unit decides the limit; switching never keeps an invalid number and never converts one
+  let gluUnitNow = $("tGluUnit").value;
+  const gluLimitText = u => "above 0 and at most " + GLU_MAX[u] + " " + u;
+  $("tGluLimit").textContent = "Allowed: " + gluLimitText(gluUnitNow) + ".";
+  $("tGluUnit").addEventListener("change", () => {
+    const u = $("tGluUnit").value, raw = $("tGlu").value.trim(), note = $("tGluNote"); gluUnitNow = u;
+    $("tGluLimit").textContent = "Allowed: " + gluLimitText(u) + ".";
+    note.textContent = "";
+    if (raw === "") return;
+    if (limitProblem("glucose", Number(raw), u)) { $("tGlu").value = ""; note.textContent = "The number " + raw + " is not allowed in " + u + " (" + gluLimitText(u) + "), so it was cleared. Enter the value again."; return; }
+    note.textContent = "The unit is now " + u + ". The number " + raw + " was not converted. Check that " + raw + " is what the meter showed in " + u + ".";
+  });
+  $("tGluStatus").addEventListener("change", () => {
+    const st = $("tGluStatus").value, box = $("tGlu"), had = box.value.trim();
+    $("tGluDevWrap").classList.toggle("hidden", !st);
+    if (st) { box.value = ""; box.disabled = true; $("tGluNote").textContent = had ? "The number " + had + " was cleared: a result outside the measuring range is saved with no number." : ""; }
+    else { box.disabled = false; $("tGluDevice").value = ""; $("tGluNote").textContent = ""; }
+  });
   $("tWeight").addEventListener("input", updateBmi); $("tHeight").addEventListener("input", updateBmi);
   $("oQ").addEventListener("input", renderOrderPick); $("oCat").addEventListener("change", renderOrderPick); $("oReqBtn").onclick = requestTests;
   $("oPick").addEventListener("change", e => { const c = e.target.closest("[data-pick]"); if (c) pickedTests[c.dataset.pick] = c.checked; });
