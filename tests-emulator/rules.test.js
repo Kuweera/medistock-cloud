@@ -948,6 +948,7 @@ test("v29 triage: glucose limits depend on the unit, zero is refused, a device s
   await assertSucceeds(tri("b2", { bpSys: 120 }));
   await assertFails(tri("b3", { bpSys: 80, bpDia: 80 }));
   await assertFails(tri("b4", { bpSys: 80, bpDia: 120 }));
+  await assertSucceeds(tri("n1", { glucose: null, glucoseUnit: null, glucoseStatus: null, bpSys: null, bpDia: null }));   // the shape the page writes when no glucose is entered
 });
 
 // ======================= v27 (Lead): reviewed proposals (all values are fake test values) =======================
