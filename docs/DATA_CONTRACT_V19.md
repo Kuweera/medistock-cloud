@@ -131,3 +131,28 @@ Note: v27 passed emulator CI (84 tests, including real dispensing of a consumabl
 - `requireFlags` and `forbidFlags`: lists of at most 10; `boundaryNote` and `decisionReason`: text of at most 500 characters, or absent (omit the field; do not write null for the lists). Other extra keys on create remain unrestricted.
 - A range with only `refText` (no minimum or maximum) is valid by design (qualitative results such as "Negative"); the engine must not compute a numeric flag for it.
 - Every measurement is data, not code: blood pressure (systolic and diastolic as two parameters), pulse, respiratory rate, temperature, SpO2, MUAC, glucose and every laboratory range are entered through the ranges screen as `subjectType` vital / lab_test / lab_param, with a source, approval by a second person and review dates. Nothing clinical ships in app code. Data-entry sanity limits (impossible values) are not ranges but must be listed by Developer 4 so the owner can approve them.
+
+## 18. Rules v29 (Lead, PROPOSED, awaiting CI): data-entry limits and device glucose status (2026-11-26)
+Owner (Master Planner) decision: the table below is approved as **technical data-entry boundaries only**. It never decides clinical normality or severity; reference ranges and alert rules stay in the approved clinical process.
+| Measurement | Unit | Minimum | Maximum |
+|---|---|---|---|
+| Temperature (`temperatureC`) | °C | 25 | 45 |
+| Systolic BP (`bpSys`) | mmHg | 20 | 300 |
+| Diastolic BP (`bpDia`) | mmHg | 10 | 200 |
+| Pulse (`pulse`) | beats/min | 10 | 300 |
+| Breathing rate (`respRate`) | breaths/min | 2 | 100 |
+| Oxygen saturation (`spo2`) | % | 30 | 100 |
+| Weight (`weightKg`) | kg | 0.3 | 500 |
+| Height (`heightCm`) | cm | 20 | 260 |
+| MUAC (`muacCm`) | cm | 3 | 60 |
+| Pain score (`painScore`) | 0 to 10 list | 0 | 10 |
+| Glucose (`glucose`) | mg/dL | above 0 | 1000 |
+| Glucose (`glucose`) | mmol/L | above 0 | 55.5 |
+Minimum and maximum are inclusive except glucose (zero excluded). 1000 mg/dL = 55.5 mmol/L (factor 18.018). No silent rounding.
+**`pc_triage` create (rules v29):**
+- `glucose`, when present and not null: a number above 0; `glucoseUnit` is REQUIRED (`mg/dL` or `mmol/L`); maximum 1000 for mg/dL, 55.5 for mmol/L.
+- Device result outside the measuring range: `glucoseStatus` = `below_device_range` | `above_device_range`. With a status, `glucose` is absent or null (never a fabricated number), `glucoseUnit` is required, `glucoseDevice` (text, at most 100) is optional. A status and a number together are refused.
+- `bpSys` and `bpDia`, when both are present: `bpDia < bpSys` (data quality, not an alert).
+- Triage records stay immutable except for the entered-in-error path. Older records are not changed; the rules apply to new records only.
+- Reusable model: a future measurement may add `<measure>Status` with the same two values; do not add UI for other measurements until the owner has established which instruments support them.
+- The status is not a concentration and gets no automatic clinical interpretation: `interp` is not computed for it.
