@@ -1,6 +1,7 @@
 rules_version = '2';
 
 // MediStock Cloud — multi-shop roles & security (v19 verified in CI run #68; v20 journey field proposed)
+// v29 (Lead, PROPOSED): owner-approved data-entry limits applied on the server: glucose above 0 with a unit-dependent maximum (mg/dL 1000, mmol/L 55.5, unit required); diastolic below systolic when both are given; device glucose status (glucoseStatus below_device_range | above_device_range, then no numeric glucose; glucoseDevice optional). Technical validation only, never clinical interpretation.
 // v28 (Lead, PROPOSED): lactation is its OWN field on ranges and alert rules (lactation any | lactating | not_lactating), independent of pregnancy, as Developer 4's engine reads it. The v26 'reproductive' field is no longer accepted with any value but 'any' (no data exists), so a value the engine would ignore can never be saved. Flag lists and notes are bounded.
 // v27 (Lead, PROPOSED): reviewed proposals: 'rejected' status, approval needs reviewerCredential, original proposal/origin immutable, alert ruleType screening|alert|emergency.
 // v26 (Lead, PROPOSED): pc_alert_rules, pc_obs_acks; reference ranges accept 'reproductive' (lactation) and require 'allAges' for vitals without age limits; triage accepts interp, ctx, repeatOf.
@@ -623,11 +624,20 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'errorReason', 'updatedAt', 'updatedBy'])
         && pcUpdateStamped();
     }
+    // v29: glucose entry limits (owner-approved, 2026-11-26). A device result outside its measuring range is stored as a STATUS with no number; the unit is kept.
+    function glucoseOk(d) {
+      return d.get('glucose', null) == null
+        ? (d.get('glucoseStatus', null) == null || (d.glucoseStatus in ['below_device_range', 'above_device_range'] && d.get('glucoseUnit', null) in ['mmol/L', 'mg/dL']))
+        : (d.glucose is number && d.glucose > 0 && d.get('glucoseStatus', null) == null
+            && ((d.get('glucoseUnit', null) == 'mg/dL' && d.glucose <= 1000) || (d.get('glucoseUnit', null) == 'mmol/L' && d.glucose <= 55.5)));
+    }
     function triageOk(d) {
       return numOk(d, 'temperatureC', 25, 45) && numOk(d, 'bpSys', 20, 300) && numOk(d, 'bpDia', 10, 200)
         && numOk(d, 'pulse', 10, 300) && numOk(d, 'respRate', 2, 100) && numOk(d, 'spo2', 30, 100)
         && numOk(d, 'weightKg', 0.3, 500) && numOk(d, 'heightCm', 20, 260) && numOk(d, 'painScore', 0, 10)
-        && numOk(d, 'muacCm', 3, 60) && numOk(d, 'glucose', 0, 1000)
+        && numOk(d, 'muacCm', 3, 60) && glucoseOk(d)
+        && (d.get('bpSys', null) == null || d.get('bpDia', null) == null || d.bpDia < d.bpSys)   // v29: data quality, not an alert
+        && (d.get('glucoseDevice', null) == null || (d.glucoseDevice is string && d.glucoseDevice.size() <= 100))
         && (!('consciousness' in d) || d.consciousness == null || d.consciousness in ['alert', 'voice', 'pain', 'unresponsive'])
         && (!('category' in d) || d.category == null || d.category in ['emergency', 'urgent', 'standard', 'low'])
         && (!('glucoseUnit' in d) || d.glucoseUnit == null || d.glucoseUnit in ['mmol/L', 'mg/dL'])
