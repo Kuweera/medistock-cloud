@@ -197,6 +197,48 @@ Where a field is explained on the screen itself (a short grey line under the box
 | Interpretation notes (from your approved source) | Optional | Notes from your own approved source. The app writes no interpretation itself. |
 | Approval status | Required | Draft tests cannot be requested; approved tests can. |
 
+## Reference ranges and alert rules (`investigations.html`, second tab)
+
+These fields set up drafts. Nothing is used until a reviewer approves it, and the app supplies no values.
+
+| Field | Required or optional | What it means |
+|---|---|---|
+| Which one? | Required (*) | The vital sign, the test or the multi-part test this range or rule is for. Only tests that give a number are listed. |
+| Which part? | Required (*) | For a multi-part test: the numeric part the range or rule is for. |
+| Unit | Required (*) | The unit the numbers are written in, for example mmol/L. For a vital sign it is fixed to the unit the visit screen records, because no conversion is done. |
+| Lower limit | Optional | The lowest value that is usual. Write a number with a decimal point. Give a lower limit, an upper limit, or the interval as text. |
+| Upper limit | Optional | The highest value that is usual. It cannot be below the lower limit. |
+| Or the interval as text | Optional | The interval written as it appears in your source. A text-only interval is shown, but no high or low flag is calculated from it. |
+| Kind of rule | Required (*) | Screening is a first check and is not an alert. Alert needs attention. Emergency must be acknowledged before the visit is saved. |
+| When is it triggered? | Required (*) | How the value is compared: below, at or below, above, at or above, or from a minimum up to (not including) a maximum. |
+| Value | Required (*) | The threshold the measurement is compared with. It comes from your source. It is not a reference range. |
+| Minimum (included) | Required (*) | For a band: the lowest value that triggers the rule. The minimum itself is included. |
+| Maximum (not included) | Required (*) | For a band: the value where the band ends. The maximum itself belongs to the next band. |
+| Message the clinician sees (3 to 300 characters) | Required (*) | The words shown to the clinician when the rule is triggered. |
+| What to do about urgency (optional, from your source) | Optional | A short line about how urgent it is, as your source states it. Do not add advice that is not in the source. |
+| Group (optional) | Optional | Rules with the same group name compete: only the most specific one applies. |
+| Lowest age (months) | Optional | The youngest age, in completed months, the range or rule applies to. The lowest age is included. |
+| Highest age (months, not included) | Optional | Where the age band ends, in completed months. A person of exactly this age is not in the band. |
+| Pregnancy | Not marked | Whether the range or rule applies only to pregnant women, only to women who are not pregnant, or to anyone. |
+| Breastfeeding | Not marked | Whether the range or rule applies only to women who are breastfeeding, only to women who are not, or to anyone. It is separate from pregnancy. |
+| Clinical setting (optional) | Optional | A setting such as outpatient or ward, if the source gives different numbers for it. |
+| Sample type (optional) | Optional | The sample the range was set for, for example serum. It is only used when the result states the same sample. |
+| Method (optional) | Optional | The laboratory method the range was set for. |
+| Laboratory (optional) | Optional | The laboratory whose own validated interval this is. |
+| Applies only when these are present (optional, names separated by commas) | Optional | Findings that must be recorded for this to apply. Lower-case names with underscores, at most 10. |
+| Does not apply when these are present (optional) | Optional | Findings that stop this from applying. Lower-case names with underscores, at most 10. |
+| Note about a boundary value (optional, up to 500 characters) | Optional | A note about a value exactly on a limit, for example where two sources differ. |
+| Publisher | Optional | The organisation that issued the source. |
+| Title | Optional | The title of the guideline, kit insert or document. |
+| Page | Optional | The page of the source. |
+| Web address | Optional | A link to the source. It opens in a new tab only if it starts with http or https. |
+| Effective from (needed to approve) | Optional | The date from which the range or rule may be used, written YYYY-MM-DD. A reviewer cannot approve without it. |
+| Review by (optional) | Optional | The date by which it should be checked again. After this date it is still used and marked review overdue. |
+| Reason for this change (optional) | Optional | Why this draft was edited or why a new version was made. It is kept with the record. |
+| Who you are as a reviewer (for example your clinical role) | Required (*) | Written on the approval, so each approval states who vouched for it. 2 to 100 characters. |
+| Note (optional) | Optional | A note kept with the approval. |
+| Reason | Required (*) | Why it is rejected, discarded or retired. At least 3 characters. It is kept with the record. |
+
 ## Laboratory results (`laboratory.html`)
 
 | Field | Required or optional | What it means |
