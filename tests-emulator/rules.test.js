@@ -926,6 +926,30 @@ test("v26 observations: a triage record may carry interp, ctx and repeatOf (boun
   await assertFails(setDoc(doc(db("labMgr"), "pc_obs_acks", "ack_t2_spo2"), Object.assign(stamp("labMgr"), { encounterId: "e1", patientId: "p1", recordedBy: "labMgr", status: "active", triageId: "t2", measure: "spo2", level: "critical", ruleId: "r", ruleVersion: 1, ackBy: "labMgr" })));
 });
 
+test("v29 triage: glucose limits depend on the unit, zero is refused, a device status stores no number, and diastolic must be below systolic", async () => {
+  await seedV19();
+  const f = db("triager"), tri = (id, extra) => setDoc(doc(f, "pc_triage", id), Object.assign(stamp("triager"), { encounterId: "e1", patientId: "p1", recordedBy: "triager", status: "active" }, extra || {}));
+  await assertSucceeds(tri("g1", { glucose: 1000, glucoseUnit: "mg/dL" }));
+  await assertSucceeds(tri("g2", { glucose: 55.5, glucoseUnit: "mmol/L" }));
+  await assertSucceeds(tri("g3", { glucose: 0.1, glucoseUnit: "mmol/L" }));
+  await assertFails(tri("g4", { glucose: 1000.1, glucoseUnit: "mg/dL" }));
+  await assertFails(tri("g5", { glucose: 55.6, glucoseUnit: "mmol/L" }));
+  await assertFails(tri("g6", { glucose: 0, glucoseUnit: "mg/dL" }));
+  await assertFails(tri("g7", { glucose: -1, glucoseUnit: "mmol/L" }));
+  await assertFails(tri("g8", { glucose: 5 }));                                            // a number needs its unit
+  await assertFails(tri("g9", { glucose: 500, glucoseUnit: "mmol/L" }));                    // the old 1000 limit no longer applies to mmol/L
+  await assertSucceeds(tri("s1", { glucose: null, glucoseUnit: "mg/dL", glucoseStatus: "below_device_range", glucoseDevice: "TEST meter" }));
+  await assertSucceeds(tri("s2", { glucoseUnit: "mmol/L", glucoseStatus: "above_device_range" }));
+  await assertFails(tri("s3", { glucose: 20, glucoseUnit: "mmol/L", glucoseStatus: "above_device_range" }));   // a status never carries a number
+  await assertFails(tri("s4", { glucoseUnit: "mg/dL", glucoseStatus: "high" }));
+  await assertFails(tri("s5", { glucoseStatus: "below_device_range" }));                    // the unit is kept
+  await assertFails(tri("s6", { glucoseUnit: "mg/dL", glucoseStatus: "below_device_range", glucoseDevice: "x".repeat(101) }));
+  await assertSucceeds(tri("b1", { bpSys: 120, bpDia: 80 }));
+  await assertSucceeds(tri("b2", { bpSys: 120 }));
+  await assertFails(tri("b3", { bpSys: 80, bpDia: 80 }));
+  await assertFails(tri("b4", { bpSys: 80, bpDia: 120 }));
+});
+
 // ======================= v27 (Lead): reviewed proposals (all values are fake test values) =======================
 test("v27 review: an approval without the reviewer's credential is refused; a proposal can be REJECTED with a reason (kept, never active); the original proposal and origin cannot be edited", async () => {
   await seedRR("rr_k1_v1", { origin: "evidence_proposal", proposal: { refMin: 1, refMax: 2, source: "TEST source" } });
