@@ -76,7 +76,9 @@ Where a field is explained on the screen itself (a short grey line under the box
 | Oxygen saturation (%) | Optional (at least one entry is needed) | Oxygen saturation: the percentage of oxygen in the blood, read from a finger sensor. |
 | Weight (kg) | Optional (at least one entry is needed) | Weight in kilograms. It is reused for weight-based doses and guideline checks, so it does not need to be typed again. |
 | Height (cm) | Optional (at least one entry is needed) | Height in centimetres. |
-| Blood glucose | Optional (at least one entry is needed) | Blood glucose (sugar) reading. Choose the unit your meter shows. |
+| Blood glucose | Optional (at least one entry is needed) | Blood glucose (sugar) reading. Choose the unit your meter shows. The number must be above 0 and at most 1000 mg/dL or 55.5 mmol/L. It is saved exactly as typed. |
+| Device reading | Optional | Leave as "A number was shown" for a normal reading. Choose below or above the device's measuring range only when the meter shows that the result is outside what it can measure. No number is saved; the unit is kept. |
+| Device name (optional) | Optional | The name or model of the meter, shown only with a below or above range result. At most 100 characters. |
 | Pain score (0-10) | Optional (at least one entry is needed) | 0 means no pain. 10 means the worst pain imaginable. |
 | Consciousness | Optional (at least one entry is needed) | How awake the patient is. See the explanation under the box. |
 | MUAC (cm) - children | Optional (at least one entry is needed) | Mid-upper arm circumference in centimetres, measured with a tape. Mostly used for young children. |
