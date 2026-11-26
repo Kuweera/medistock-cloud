@@ -254,3 +254,58 @@ test("v28 rules: what the alert-rule rules refuse is refused here first", () => 
   assert.match(bad({ reproductive: "pregnant" }), /reproductive/); assert.match(bad({ lactation: null }), /lactation/);
   assert.match(bad({ requireFlags: new Array(11).fill("flag_a") }), /at most 10/); assert.match(bad({ boundaryNote: "x".repeat(501) }), /500/); assert.match(bad({ decisionReason: 5 }), /500/);
 });
+
+/* ---- device result outside the measuring range (contract section 18, rules v29). A JS port of the v29 glucose rule is the oracle: the fields made here must pass it. TEST values only. */
+const V29_STATUS = ["below_device_range", "above_device_range"];
+const glucoseOk = (d) => { const g = d.glucose === undefined ? null : d.glucose, st = d.glucoseStatus === undefined ? null : d.glucoseStatus, u = d.glucoseUnit === undefined ? null : d.glucoseUnit;
+  return g === null ? (st === null || (V29_STATUS.includes(st) && ["mmol/L", "mg/dL"].includes(u))) : (typeof g === "number" && g > 0 && st === null && ((u === "mg/dL" && g <= 1000) || (u === "mmol/L" && g <= 55.5))); };
+const deviceOk = (d) => d.glucoseDevice === undefined || d.glucoseDevice === null || (typeof d.glucoseDevice === "string" && d.glucoseDevice.length <= 100);
+const v29 = (d) => glucoseOk(d) && deviceOk(d);
+const noNullOrUndef = (o) => Object.keys(o).every(k => o[k] !== null && o[k] !== undefined);
+test("the oracle agrees with the Lead's emulator cases (s1 to s6)", () => {
+  assert.equal(v29({ glucose: null, glucoseUnit: "mg/dL", glucoseStatus: "below_device_range", glucoseDevice: "TEST meter" }), true); assert.equal(v29({ glucoseUnit: "mmol/L", glucoseStatus: "above_device_range" }), true);
+  assert.equal(v29({ glucose: 20, glucoseUnit: "mmol/L", glucoseStatus: "above_device_range" }), false); assert.equal(v29({ glucoseUnit: "mg/dL", glucoseStatus: "high" }), false); assert.equal(v29({ glucoseStatus: "below_device_range" }), false); assert.equal(v29({ glucoseUnit: "mg/dL", glucoseStatus: "below_device_range", glucoseDevice: "x".repeat(101) }), false);
+});
+test("deviceStatus: the fields are exactly status, unit and the optional device; no number, no null; they pass the v29 rule", () => {
+  const a = PCO.deviceStatus({ key: "glucose", status: "below_device_range", unit: "mg/dL", device: "  TEST meter  " }), b = PCO.deviceStatus({ key: "glucose", status: "above_device_range", unit: "MMOL/L", device: "   " }), c = PCO.deviceStatus({ key: "glucose", status: "above_device_range", unit: "mmol/L" });
+  assert.equal(a.ok, true); assert.deepEqual(a.fields, { glucoseStatus: "below_device_range", glucoseUnit: "mg/dL", glucoseDevice: "TEST meter" });
+  assert.equal(b.ok, true); assert.deepEqual(b.fields, { glucoseStatus: "above_device_range", glucoseUnit: "mmol/L" }, "the unit is written in the exact form the rules need; a blank device is left out"); assert.deepEqual(c.fields, b.fields);
+  [a, b, c].forEach(r => { assert.equal("glucose" in r.fields, false); assert.ok(noNullOrUndef(r.fields)); assert.equal(v29(Object.assign({ encounterId: "e1" }, r.fields)), true); assert.equal(v29(Object.assign({ glucose: 5 }, r.fields)), false, "a number beside a status is what the rules refuse"); });
+  assert.equal(a.unit, "mg/dL"); assert.equal(a.device, "TEST meter"); assert.equal(a.state, "device_range"); assert.match(a.valueText, /below the measuring range of the device \(mg\/dL\), no number, device TEST meter/); assert.equal(PCO.deviceStatus({ key: "glucose", status: "above_device_range", unit: "mg/dL", device: "x".repeat(100) }).ok, true);
+});
+test("deviceStatus refuses what the rules refuse, in advance, with a plain reason", () => {
+  const bad = (o) => PCO.deviceStatus(Object.assign({ key: "glucose", status: "below_device_range", unit: "mg/dL" }, o)), msg = (o) => bad(o).errors.join(" ");
+  assert.match(msg({ status: "high" }), /below or above/); assert.match(msg({ status: "" }), /below or above/); assert.match(msg({ status: undefined }), /below or above/);
+  assert.match(msg({ unit: "" }), /unit/); assert.match(msg({ unit: undefined }), /unit/); assert.match(msg({ unit: "g/L" }), /unit/); assert.match(msg({ unit: "mg/dL " + "x" }), /unit/);
+  assert.match(msg({ raw: "5.5" }), /cannot be recorded together/); assert.match(msg({ raw: 0 }), /cannot be recorded together/, "even a zero is a number"); assert.equal(bad({ raw: "" }).ok, true); assert.equal(bad({ raw: null }).ok, true);
+  assert.match(msg({ device: "x".repeat(101) }), /at most 100/); assert.match(msg({ device: 5 }), /must be text/);
+  const r = bad({ status: "high" }); assert.equal(r.ok, false); assert.equal(r.saveable, false); assert.deepEqual(r.fields, {}); assert.equal(r.snapshot, null);
+});
+test("only glucose has a device status today; another measurement is not enabled by accident", () => {
+  assert.deepEqual(Object.keys(PCO.STATUS_MEASURES), ["glucose"]); assert.deepEqual(PCO.STATUS_VALUES, ["below_device_range", "above_device_range"]);
+  ["spo2", "pulse", "temperatureC", "bpSys", "muacCm", "weightKg", ""].forEach(k => { const r = PCO.deviceStatus({ key: k, status: "below_device_range", unit: "%" }); assert.equal(r.ok, false); assert.match(r.errors[0], /not available/); assert.deepEqual(r.fields, {}); });
+});
+test("a status is never interpreted: no range, no alert, no acknowledgement, no snapshot, even when an alert rule would fire for any number", () => {
+  const rng = R({ subjectId: "glucose", unit: "mmol/L", refMin: 1, refMax: 2 }), al = A({ subjectId: "glucose", unit: "mmol/L", operator: "lt", value: 99, ruleType: "emergency", requiresAck: true, message: "TEST message" }), al2 = A({ ruleKey: "k2", subjectId: "glucose", unit: "mmol/L", operator: "gt", value: -99, ruleType: "alert", message: "TEST message" });
+  [{ status: "below_device_range" }, { status: "above_device_range", device: "TEST meter" }].forEach(o => {
+    const r = PCO.interpret(Object.assign({ key: "glucose", label: "Blood glucose", unit: "mmol/L", ranges: [rng], alerts: [al, al2], patient: { dob: "2000-01-01", sex: "female" }, ctx: { pregnancy: "not_pregnant" } }, o));
+    assert.equal(r.state, "device_range"); assert.equal(r.tone, "info"); assert.equal(r.value, null); assert.equal(r.unit, "mmol/L"); assert.deepEqual(r.alerts, []); assert.equal(r.reference, null); assert.equal(r.requiresAck, false); assert.deepEqual(r.ackItems === undefined ? [] : r.ackItems, []);
+    assert.equal(r.snapshot, null, "nothing to store in interp"); assert.equal(r.saveable, true); assert.equal(r.fields.glucoseUnit, "mmol/L"); assert.equal(r.referenceLine === undefined || r.referenceLine === "", true); assert.match(r.statusLine, /no interpretation is calculated/); assert.doesNotMatch(r.statusLine, /\b(normal|abnormal|hypoglyc|hyperglyc|critical|emergency)\b/i);
+    assert.deepEqual(PCO.canSave([r], []), { ok: true, reasons: [] }, "a status never blocks saving and never asks for an acknowledgement");
+  });
+  const bad = PCO.interpret({ key: "glucose", status: "below_device_range", unit: "", ranges: [rng], alerts: [al] }); assert.equal(bad.ok, false); assert.equal(bad.snapshot, null); assert.equal(bad.alerts.length, 0);
+});
+test("a number still goes through the normal engine (unchanged), and an empty status field means 'no status'", () => {
+  const al = A({ subjectId: "glucose", unit: "mmol/L", operator: "lt", value: 99, ruleType: "alert", message: "TEST message" });
+  const n = PCO.interpret({ key: "glucose", label: "Blood glucose", unit: "mmol/L", raw: "5.5", limits: { min: 0, max: 55.5 }, alerts: [al], ranges: [], patient: { dob: "2000-01-01", sex: "female" }, status: "" });
+  assert.notEqual(n.state, "device_range"); assert.equal(n.value, 5.5); assert.ok(n.snapshot && n.snapshot.value === 5.5); assert.equal(n.alerts.length, 1);
+});
+
+test("statusOfRecord reads a stored status for history screens: no number, no interpretation; ordinary or malformed records give nothing", () => {
+  const ok = { glucoseStatus: "above_device_range", glucoseUnit: "mmol/L", glucoseDevice: " TEST meter " };
+  assert.deepEqual(PCO.statusOfRecord(ok, "glucose"), { status: "above_device_range", unit: "mmol/L", device: "TEST meter", text: "Blood glucose: above the measuring range of the device (mmol/L), no number, device TEST meter" });
+  assert.equal(PCO.statusOfRecord({ glucoseStatus: "below_device_range", glucoseUnit: "mg/dL" }, "glucose").device, "");
+  [{ glucose: 5, glucoseUnit: "mmol/L" }, { glucoseStatus: "high", glucoseUnit: "mg/dL" }, { glucoseStatus: "below_device_range" }, { glucoseStatus: "below_device_range", glucoseUnit: "g/L" }, null, undefined, "x"].forEach(r => assert.equal(PCO.statusOfRecord(r, "glucose"), null));
+  assert.equal(PCO.statusOfRecord(ok, "spo2"), null, "only glucose is enabled");
+  const a = PCO.deviceStatus({ key: "glucose", status: "above_device_range", unit: "mmol/L", device: "TEST meter" }); assert.equal(PCO.statusOfRecord(a.fields, "glucose").text, a.valueText, "what is written reads back as what was shown");
+});
