@@ -19,12 +19,12 @@
   "use strict";
   var PCR = root.PCR || (typeof require !== "undefined" ? require("./pc-ranges.js") : null);
 
-  var STATES = ["normal", "screening_positive", "moderate_alert", "critical_alert", "outside_reference", "invalid", "not_configured", "context_required", "conflict", "pending_review"];
+  var STATES = ["normal", "screening_positive", "moderate_alert", "critical_alert", "outside_reference", "invalid", "not_configured", "context_required", "conflict", "pending_review", "device_range"];
   var TYPE_LEVEL = { screening: "screening", alert: "moderate", emergency: "critical" };            // ruleType -> level
   var LEVEL_RANK = { screening: 1, moderate: 2, critical: 3 };
   var LEVEL_STATE = { screening: "screening_positive", moderate: "moderate_alert", critical: "critical_alert" };
   var OPS = ["lt", "lte", "gt", "gte", "range"];
-  var TONE = { normal: "ok", outside_reference: "amber", screening_positive: "amber", moderate_alert: "amber", critical_alert: "red", invalid: "invalid", not_configured: "grey", context_required: "info", conflict: "amber", pending_review: "grey" };
+  var TONE = { normal: "ok", outside_reference: "amber", screening_positive: "amber", moderate_alert: "amber", critical_alert: "red", invalid: "invalid", not_configured: "grey", context_required: "info", conflict: "amber", pending_review: "grey", device_range: "info" };
   var NOTE = "A reference-range warning never replaces clinical examination.";
 
   function isNum(v) { return typeof v === "number" && isFinite(v); }
@@ -49,6 +49,45 @@
     if ((isNum(L.min) && v < L.min) || (isNum(L.max) && v > L.max)) return { ok: false, value: v, code: "limits", text: "This value is outside what can be entered for this measurement (" + (isNum(L.min) ? fmt(L.min) : "…") + " to " + (isNum(L.max) ? fmt(L.max) : "…") + "). Check the reading. This is a data-entry check, not a clinical result." };
     if (isNum(i.maxDecimals)) { var d = String(raw).split(".")[1]; if (d && d.length > i.maxDecimals) return { ok: false, value: v, code: "decimals", text: "Too many decimal places (at most " + i.maxDecimals + ")." }; }
     return { ok: true, value: v, code: "", text: "" };
+  }
+
+
+  // ---------------------------------------------------------------- 2b. device result outside the measuring range (contract section 18, rules v29)
+  /* A device can report "below" or "above" its measuring range. That is a STATUS, not a number: it is stored as <measure>Status (below_device_range | above_device_range),
+     the unit is kept (<measure>Unit), and the device name is optional (<measure>Device, at most 100 characters). No number is stored, no reference range is looked at, no alert rule is run,
+     and NO interpretation is calculated: nothing is written to `interp` for it. Only glucose is enabled today (owner decision); another measurement is added to STATUS_MEASURES only after the owner
+     has established which instruments support it AND the contract names its fields. Nothing here is a limit or a threshold. */
+  var STATUS_VALUES = ["below_device_range", "above_device_range"];
+  var STATUS_MEASURES = { glucose: { label: "Blood glucose", units: ["mg/dL", "mmol/L"] } };
+  var STATUS_TEXT = { below_device_range: "below the measuring range of the device", above_device_range: "above the measuring range of the device" };
+  /* deviceStatus({ key, status, unit, device, raw }) -> { ok, errors, key, status, state: "device_range", label, unit, device, fields, valueText, statusLine, tone, saveable, requiresAck, alerts, reference, snapshot }
+     `fields` is exactly what is merged into the pc_triage document (glucoseStatus, glucoseUnit, glucoseDevice only when given). `glucose` is NOT among them: the number stays absent, never null, never made up.
+     `raw` is the number box: it must be blank, because the rules refuse a status and a number together. `snapshot` is null by design: there is no interpretation to keep. */
+  function deviceStatus(inp) {
+    inp = inp || {}; var key = str(inp.key), M = STATUS_MEASURES[key], e = [];
+    var out = { ok: false, errors: e, key: key, status: str(inp.status), state: "device_range", tone: TONE.device_range, label: M ? M.label : key, unit: "", device: "", fields: {}, valueText: "", statusLine: "", saveable: false, requiresAck: false, alerts: [], needs: [], reference: null, value: null, snapshot: null };
+    if (!M) { e.push("A device status is not available for this measurement."); return out; }
+    if (STATUS_VALUES.indexOf(out.status) < 0) e.push("Choose whether the result was below or above the measuring range of the device.");
+    if (!isBlank(inp.raw)) e.push("A device status and a number cannot be recorded together. Clear the number, or clear the status.");
+    var u = null; M.units.forEach(function (x) { if (PCR.normUnit(x) === PCR.normUnit(inp.unit) && str(inp.unit) !== "") u = x; });
+    if (u === null) e.push("Choose the unit the device reported in (" + M.units.join(" or ") + "). The unit is kept with the status.");
+    var dv = inp.device; if (dv !== undefined && dv !== null && typeof dv !== "string") e.push("The device name must be text."); else { dv = str(dv); if (dv.length > 100) e.push("The device name is too long (at most 100 characters)."); }
+    if (e.length) return out;
+    out.ok = true; out.saveable = true; out.unit = u; out.device = dv;
+    out.fields[key + "Status"] = out.status; out.fields[key + "Unit"] = u; if (dv) out.fields[key + "Device"] = dv;
+    out.valueText = out.label + ": " + STATUS_TEXT[out.status] + " (" + u + "), no number" + (dv ? ", device " + dv : "");
+    out.statusLine = "The device reported a result " + STATUS_TEXT[out.status] + ", so there is no number. No reference range or alert rule is applied and no interpretation is calculated. " + NOTE;
+    return out;
+  }
+
+  /* statusOfRecord(record, key) -> null, or { status, unit, device, text } for a STORED observation that carries a device status (contract section 18). For history and summary screens:
+     it never shows a number, never interprets, and ignores a record whose status or unit is not one the contract allows. An ordinary record gives null. */
+  function statusOfRecord(rec, key) {
+    var M = STATUS_MEASURES[str(key)]; if (!M || !rec || typeof rec !== "object") return null;
+    var st = rec[key + "Status"]; if (STATUS_VALUES.indexOf(st) < 0) return null;
+    var u = null; M.units.forEach(function (x) { if (x === rec[key + "Unit"]) u = x; }); if (u === null) return null;
+    var dv = typeof rec[key + "Device"] === "string" ? str(rec[key + "Device"]).slice(0, 100) : "";
+    return { status: st, unit: u, device: dv, text: M.label + ": " + STATUS_TEXT[st] + " (" + u + "), no number" + (dv ? ", device " + dv : "") };
   }
 
   // ---------------------------------------------------------------- 2. alert rules
@@ -104,6 +143,7 @@
               ranges: [pc_reference_ranges docs], alerts: [pc_alert_rules docs] }
      result: { key, label, state, tone, valueText, referenceLine, statusLine, details, value, unit, saveable, requiresAck, ackItems, alerts, needs, reference, boundary, note, snapshot } */
   function interpret(inp) {
+    if (inp && inp.status !== undefined && inp.status !== null && str(inp.status) !== "") return deviceStatus(inp);   // a status is never interpreted: same answer as deviceStatus, no snapshot
     inp = inp || {}; var c = inp.ctx || {}, key = str(inp.key), label = str(inp.label) || ((PCR.VITALS[key] || {}).label) || key;
     var unit = str(inp.expectedUnit) || str((PCR.VITALS[key] || {}).unit) || str(inp.unit);
     var subj = { subjectType: inp.subjectType || "vital", subjectId: str(inp.subjectId) || key, paramKey: str(inp.paramKey) };
@@ -201,6 +241,6 @@
   }
 
   var api = { STATES: STATES, TONE: TONE, TYPE_LEVEL: TYPE_LEVEL, OPS: OPS, NOTE: NOTE, isBlank: isBlank, validateEntry: validateEntry, triggered: triggered, opText: opText, ruleErrors: ruleErrors, alertId: alertId, levelOf: levelOf,
-    sourceView: sourceView, interpret: interpret, snapshotOf: snapshotOf, makeAck: makeAck, validAck: validAck, pendingAcks: pendingAcks, canSave: canSave };
+    deviceStatus: deviceStatus, statusOfRecord: statusOfRecord, STATUS_VALUES: STATUS_VALUES, STATUS_MEASURES: STATUS_MEASURES, sourceView: sourceView, interpret: interpret, snapshotOf: snapshotOf, makeAck: makeAck, validAck: validAck, pendingAcks: pendingAcks, canSave: canSave };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.PCO = api;
 })(typeof self !== "undefined" ? self : (typeof window !== "undefined" ? window : this));
