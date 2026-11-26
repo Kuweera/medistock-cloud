@@ -235,6 +235,9 @@
 
   let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
   let orders = new Map(), rxPartial = new Map(), rxDone = new Map(), rxPending = new Map(), rxCancelled = new Map(), stoppedOrders = new Map(), allergies = [], drugs = [];
+  // STAGE A (stale list): an ACTIVE order whose prescription is in none of the loaded lists (it moved from pending to completed, or it is old) is checked ONCE with a single read
+  // of prescriptions/<orderId>. Terminal answers (completed, cancelled) and "no prescription exists" are remembered for this page session, so nothing is read twice.
+  let rxChecked = new Map(), rxNone = new Set(), rxTry = new Map(), rxCheckBusy = false, rxFirst = { orders: false, partial: false, pending: false };   // rxFirst: nothing is checked before the three live lists have answered once, so there is no read for orders whose prescription is merely not here YET
   let regNos = {}, regAsked = {}, filter = "waiting", tab = "queue", D = null, queue = null, syncing = false, doneLoaded = false, stoppedLoaded = false;
   let hRecords = [], hMonthLoaded = "", unsubHist = null, creditAccounts = [], consItems = [], consBundles = [], consSel = {}, consCtx = { orderId: "", procedure: "" }, consMsg = null, consBusy = false, consReq = null;
   const can = k => role === "owner" || perms[k] === true;
@@ -255,7 +258,37 @@
   }
 
   // ---------------------------------------------------------------- rows for the queue
-  function rxOf(id) { return rxPartial.get(id) || rxDone.get(id) || rxPending.get(id) || rxCancelled.get(id) || null; }
+  function rxOf(id) { return rxPartial.get(id) || rxDone.get(id) || rxPending.get(id) || rxCancelled.get(id) || rxChecked.get(id) || null; }
+  // a live list always wins over what was remembered: when a prescription is live again (for example a return reopened it) the remembered answer is dropped
+  function forgetChecked() { [rxPartial, rxPending].forEach(mp => mp.forEach((x, id) => { rxChecked.delete(id); rxNone.delete(id); rxTry.delete(id); })); }
+  const RX_TERMINAL = st => st === "completed" || st === "cancelled";
+  async function readRx(id) {
+    const ref = doc(db, "prescriptions", id);
+    try { const c = await getDocFromCache(ref); if (c.exists() && RX_TERMINAL(c.data().status)) return c; } catch (e) {}   // a cached pending/partial answer may be stale: only a terminal one is trusted
+    return _getDoc(ref);
+  }
+  function refreshOpen() {
+    if (!D || D.result) return; const was = D.row && D.row.group;
+    D.order = orders.get(D.id) || D.order; D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row;
+    if (D.row && D.row.group !== was && (D.row.group === "done" || D.row.group === "stopped")) renderAct();   // an open form for a prescription that is now finished is replaced by the "fully dispensed" view: confirm cannot be pressed
+  }
+  async function checkMissingRx() {
+    if (rxCheckBusy || !(rxFirst.orders && rxFirst.partial && rxFirst.pending)) return; const now = Date.now(), ids = [];
+    orders.forEach(o => { if (ids.length < 120 && !rxOf(o.id) && !rxNone.has(o.id) && !(rxTry.get(o.id) > now - 30000)) ids.push(o.id); });
+    if (!ids.length) return; rxCheckBusy = true; let changed = false;
+    try {
+      for (let i = 0; i < ids.length; i += 8) await Promise.all(ids.slice(i, i + 8).map(async id => {
+        rxTry.set(id, Date.now());
+        try {
+          const s = await readRx(id);
+          if (!s.exists()) { rxNone.add(id); changed = true; }
+          else if (RX_TERMINAL(s.data().status)) { rxChecked.set(id, Object.assign({ id: id }, s.data())); changed = true; }
+          // pending / partially dispensed arrive through their own live lists
+        } catch (e) { /* server unreachable and nothing cached: say nothing and block nothing. The prescription stays dispensable; the server refuses safely when the dispensing syncs. Tried again later. */ }
+      }));
+    } finally { rxCheckBusy = false; }
+    if (changed) { renderList(); refreshOpen(); }
+  }
   function info(r) {
     const o = r.order || {}, x = r.rx || {};
     const pick = k => (o[k] != null && o[k] !== "") ? o[k] : x[k];
@@ -350,6 +383,7 @@
     return (i.patientName + " " + (regNos[i.patientId] || "") + " " + i.medicine + " " + i.formulation + " " + i.strength).toLowerCase().indexOf(q) >= 0;
   }
   function renderList() {
+    forgetChecked();
     const rows = allRows(), q = $("q").value.trim().toLowerCase();
     const cnt = g => rows.filter(r => r.group === g).length;
     document.querySelectorAll("#filters .pill-btn").forEach(b => {
@@ -368,6 +402,7 @@
     groups.sort((a, b) => firstSeen[a.key] - firstSeen[b.key]);
     $("list").innerHTML = groups.length ? groups.map(groupHtml).join("") : '<div class="empty">Nothing here.</div>';
     resolveRegNos(list.slice(0, 60));
+    checkMissingRx();
   }
 
   // ---------------------------------------------------------------- the dispensing panel
@@ -543,7 +578,7 @@
         const o = r.order || {}, replaced = o.status === "superseded", n = r.q.dispensed, left = r.q.outstanding, why = o.endReason || (r.rx && r.rx.endReason) || "";
         h += '<div class="alert-box">This prescription was ' + (replaced ? "replaced by a newer version" : (o.status === "stopped" ? "STOPPED" : "CANCELLED") + " by the prescriber (the treatment was stopped or completed)") + (o.endedByName ? " (" + esc(o.endedByName) + ")" : "") + (why ? ". Reason: " + esc(why) : "") + ". It cannot be dispensed." +
           (n > 0 ? " <b>" + esc(n) + "</b> " + esc((r.rx && r.rx.qtyUnit) || "") + " already dispensed stays on record." + (left > 0 ? " <b>Do not dispense the remaining " + esc(left) + ".</b>" : "") : " Nothing had been dispensed.") + "</div>";
-      } else h += '<div class="info-box">This prescription has been fully dispensed.</div>';
+      } else h += '<div class="info-box"><b>Fully dispensed.</b> This prescription has been fully dispensed, so nothing more can be dispensed on it.</div>';
       h += '<button type="button" class="btn-primary" data-act="close">Close</button>'; card.innerHTML = h; return;
     }
     if (!closed && D.rx && num(D.rx.qtyDispensed) > 0) h += revHtml();
@@ -882,10 +917,10 @@
     renderSync();
     const mark = s => { const b = $("netBadge"); b.textContent = s.metadata.fromCache ? "offline (cached)" : "online (synced)"; b.className = "badge " + (s.metadata.fromCache ? "offline" : "online"); };
     const denied = err => { $("list").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view prescriptions, or the Phase 5 security rules are not published yet." : "Could not load prescriptions. Check your internet connection.") + "</div>"; };
-    onSnapshot(query(collection(db, "pc_treatment_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("kind", "in", ["medicine", "consumable"]), where("status", "==", "active"), limit(500)), { includeMetadataChanges: true }, s => { orders = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); mark(s); renderList(); if (D && !D.result) { D.order = orders.get(D.id) || D.order; D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row; } }, denied);
-    onSnapshot(query(collection(db, "prescriptions"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "partially_dispensed"), limit(500)), s => { rxPartial = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); renderList(); if (D && !D.result) { D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row; renderAct(); } }, () => {});
+    onSnapshot(query(collection(db, "pc_treatment_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("kind", "in", ["medicine", "consumable"]), where("status", "==", "active"), limit(500)), { includeMetadataChanges: true }, s => { rxFirst.orders = true; orders = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); mark(s); renderList(); if (D && !D.result) { D.order = orders.get(D.id) || D.order; D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row; } }, denied);
+    onSnapshot(query(collection(db, "prescriptions"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "partially_dispensed"), limit(500)), s => { rxFirst.partial = true; rxPartial = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); renderList(); if (D && !D.result) { D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row; renderAct(); } }, () => {});
     // Stage 3: prescriptions the clinician created at prescribing (status pending, nothing dispensed yet): they tell the pharmacy whether the quantity or the medicine was left open
-    onSnapshot(query(collection(db, "prescriptions"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "pending"), limit(500)), s => { rxPending = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); renderList(); if (D && !D.result) { D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row; renderAct(); } }, () => {});
+    onSnapshot(query(collection(db, "prescriptions"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "pending"), limit(500)), s => { rxFirst.pending = true; rxPending = new Map(s.docs.map(x => [x.id, { id: x.id, ...x.data() }])); renderList(); if (D && !D.result) { D.rx = rxOf(D.id); D.row = allRows().find(r => r.id === D.id) || D.row; renderAct(); } }, () => {});
     onSnapshot(query(collection(db, "pc_allergies"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "active"), limit(1000)), s => { allergies = s.docs.map(x => ({ id: x.id, ...x.data() })); renderList(); }, () => {});
     onSnapshot(query(collection(db, "drugs"), where("businessId", "==", businessId), where("shopId", "==", facilityId)), s => { drugs = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.name && d.active !== false).sort((a, b) => String(a.name).localeCompare(String(b.name))); }, () => {});
     onSnapshot(query(collection(db, "credit_accounts"), where("businessId", "==", businessId), where("shopId", "==", facilityId)), s => { creditAccounts = s.docs.map(d => ({ id: d.id, ...d.data() })); }, () => {});

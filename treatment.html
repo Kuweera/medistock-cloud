@@ -350,7 +350,7 @@
     const flt = e => (!kf || e.kind === kf) && (!q || (String(e.patientName) + " " + e.label).toLowerCase().indexOf(q) >= 0);
     const tl = todayLocal();
     const due = evs.filter(e => { const s = stateOf(e); return s === "due" || s === "delayed" || s === "held"; });
-    document.querySelectorAll("#tabs .pill-btn").forEach(b => { const n = { due: due.length, today: 0, done: 0, prn: orders.filter(o => o.scheduleType === "prn" && o.administrationMode !== "take_home").length, plans: plans.length, appt: evs.filter(overdueAppt).length }[b.dataset.f]; const base = { due: "Due and late", today: "Today", done: "Given / not given", appt: "Appointments", prn: "As needed (PRN)", plans: "Active plans" }[b.dataset.f]; b.textContent = base + (n ? " (" + n + ")" : ""); });
+    document.querySelectorAll("#tabs .pill-btn").forEach(b => { const n = { due: due.length, today: 0, done: 0, prn: orders.filter(o => o.scheduleType === "prn" && o.administrationMode !== "take_home").length, plans: plans.filter(p => orders.some(o => o.planId === p.id && staffGives(o))).length, appt: evs.filter(overdueAppt).length }[b.dataset.f]; const base = { due: "Due and late", today: "Today", done: "Given / not given", appt: "Appointments", prn: "As needed (PRN)", plans: "Active plans" }[b.dataset.f]; b.textContent = base + (n ? " (" + n + ")" : ""); });
     $("extBox").classList.add("hidden");
     if (filter === "prn") return renderPrn();
     if (filter === "plans") return renderPlans();
@@ -369,14 +369,17 @@
     return '<div class="pt' + (selId === e.id ? " sel" : "") + '" data-ev="' + esc(e.id) + '"><div class="pt-name">' + esc(hhmm(e.plannedAt)) + (e.plannedDay !== todayLocal() ? " (" + esc(e.plannedDay) + ")" : "") + " · " + esc(e.patientName) + (e.attendance === "did_not_attend" ? "" : ' <span class="chip ' + (ST_CLASS[s] || "") + '">' + esc(ST[s] || s) + "</span>") + (attChip(e) ? ' <span class="chip ' + attChip(e)[1] + '">' + esc(attChip(e)[0]) + "</span>" : "") + (al.length ? ' <span class="chip bad">ALLERGY</span>' : "") + "</div>" +
       '<div class="pt-meta">' + esc(e.label) + (e.kind === "medicine" ? " — " + esc(e.plannedDoseValue) + " " + esc(e.doseUnit || "") + (e.route ? " · " + esc(e.route) : "") : "") + (e.instructions ? "<br>" + esc(e.instructions) : "") + "</div></div>";
   }
+  // STAGE A (MAR leftovers): this list is for treatment STAFF give. Take-home medicines (dispensed, taken at home) and consumables (supplied by the pharmacy) are not given here, so they are not counted or
+  // listed, and a plan with nothing for staff to give is not shown. The plan itself is not changed (it may continue over later visits).
+  const staffGives = o => (o.kind === "medicine" || o.kind === "procedure") && o.administrationMode !== "take_home";
   function renderPlans() {
-    $("info").textContent = "Active treatment plans in this facility.";
-    const tl = todayLocal();
-    $("list").innerHTML = plans.length ? plans.slice().sort((a, b) => ((a.reviewDate || "9") < (b.reviewDate || "9") ? -1 : 1)).map(p => {
-      const os = orders.filter(o => o.planId === p.id), rv = p.reviewDate && p.reviewDate <= tl;
+    $("info").textContent = "Active treatment plans that have treatment for staff to give. Take-home medicines and supplies are not listed here.";
+    const tl = todayLocal(), shown = plans.filter(p => orders.some(o => o.planId === p.id && staffGives(o)));
+    $("list").innerHTML = shown.length ? shown.slice().sort((a, b) => ((a.reviewDate || "9") < (b.reviewDate || "9") ? -1 : 1)).map(p => {
+      const os = orders.filter(o => o.planId === p.id && staffGives(o)), rv = p.reviewDate && p.reviewDate <= tl;
       return '<div class="pt" data-pat="' + esc(p.patientId) + '"><div class="pt-name">' + esc(p.patientName) + " · " + esc(p.title) + (rv ? ' <span class="chip bad">Review due</span>' : "") + (p.priority === "urgent" ? ' <span class="chip warn">Urgent</span>' : "") + "</div>" +
         '<div class="pt-meta">' + os.length + " active order" + (os.length === 1 ? "" : "s") + (os.length ? ": " + os.map(o => esc(o.kind === "procedure" ? o.procedureName : o.medicineName)).join(", ") : "") + (p.reviewDate ? "<br>Review " + esc(PCF.toTyped(p.reviewDate)) : "") + "</div></div>";
-    }).join("") : '<div class="empty">No active plans.</div>';
+    }).join("") : '<div class="empty">No active plans with treatment for staff to give.</div>';
   }
   function renderPrn() {
     $("info").textContent = "Medicines ordered to be given only when needed. Tap one to record a dose.";
