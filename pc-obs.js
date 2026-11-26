@@ -59,7 +59,7 @@
      has established which instruments support it AND the contract names its fields. Nothing here is a limit or a threshold. */
   var STATUS_VALUES = ["below_device_range", "above_device_range"];
   var STATUS_MEASURES = { glucose: { label: "Blood glucose", units: ["mg/dL", "mmol/L"] } };
-  var STATUS_TEXT = { below_device_range: "below the measuring range of the device", above_device_range: "above the measuring range of the device" };
+  var STATUS_TEXT = { below_device_range: "below the device's measuring range", above_device_range: "above the device's measuring range" };   // the Lead's wording (2026-11-26)
   /* deviceStatus({ key, status, unit, device, raw }) -> { ok, errors, key, status, state: "device_range", label, unit, device, fields, valueText, statusLine, tone, saveable, requiresAck, alerts, reference, snapshot }
      `fields` is exactly what is merged into the pc_triage document (glucoseStatus, glucoseUnit, glucoseDevice only when given). `glucose` is NOT among them: the number stays absent, never null, never made up.
      `raw` is the number box: it must be blank, because the rules refuse a status and a number together. `snapshot` is null by design: there is no interpretation to keep. */
@@ -67,7 +67,7 @@
     inp = inp || {}; var key = str(inp.key), M = STATUS_MEASURES[key], e = [];
     var out = { ok: false, errors: e, key: key, status: str(inp.status), state: "device_range", tone: TONE.device_range, label: M ? M.label : key, unit: "", device: "", fields: {}, valueText: "", statusLine: "", saveable: false, requiresAck: false, alerts: [], needs: [], reference: null, value: null, snapshot: null };
     if (!M) { e.push("A device status is not available for this measurement."); return out; }
-    if (STATUS_VALUES.indexOf(out.status) < 0) e.push("Choose whether the result was below or above the measuring range of the device.");
+    if (STATUS_VALUES.indexOf(out.status) < 0) e.push("Choose whether the result was below or above the device's measuring range.");
     if (!isBlank(inp.raw)) e.push("A device status and a number cannot be recorded together. Clear the number, or clear the status.");
     var u = null; M.units.forEach(function (x) { if (PCR.normUnit(x) === PCR.normUnit(inp.unit) && str(inp.unit) !== "") u = x; });
     if (u === null) e.push("Choose the unit the device reported in (" + M.units.join(" or ") + "). The unit is kept with the status.");
@@ -80,14 +80,14 @@
     return out;
   }
 
-  /* statusOfRecord(record, key) -> null, or { status, unit, device, text } for a STORED observation that carries a device status (contract section 18). For history and summary screens:
+  /* statusOfRecord(record, key) -> null, or { status, unit, device, text, line } for a STORED observation that carries a device status (contract section 18). For history and summary screens:
      it never shows a number, never interprets, and ignores a record whose status or unit is not one the contract allows. An ordinary record gives null. */
   function statusOfRecord(rec, key) {
     var M = STATUS_MEASURES[str(key)]; if (!M || !rec || typeof rec !== "object") return null;
     var st = rec[key + "Status"]; if (STATUS_VALUES.indexOf(st) < 0) return null;
     var u = null; M.units.forEach(function (x) { if (x === rec[key + "Unit"]) u = x; }); if (u === null) return null;
     var dv = typeof rec[key + "Device"] === "string" ? str(rec[key + "Device"]).slice(0, 100) : "";
-    return { status: st, unit: u, device: dv, text: M.label + ": " + STATUS_TEXT[st] + " (" + u + "), no number" + (dv ? ", device " + dv : "") };
+    return { status: st, unit: u, device: dv, text: M.label + ": " + STATUS_TEXT[st] + " (" + u + "), no number" + (dv ? ", device " + dv : ""), line: "Glucose " + STATUS_TEXT[st] + ", " + u + (dv ? ", device " + dv : "") };
   }
 
   // ---------------------------------------------------------------- 2. alert rules
