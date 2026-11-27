@@ -245,7 +245,9 @@ These fields set up drafts. Nothing is used until a reviewer approves it, and th
 
 | Field | Required or optional | What it means |
 |---|---|---|
-| Flag | Not marked | Whether the result is inside the expected range for this test. |
+| Flag | Not marked | Whether the result is inside the expected range for this test. For a number it is worked out from the approved reference range that applies to this patient, and left as "not stated" when no range applies. You can change it. |
+| Pregnancy status (for the reference range) | Not marked | Shown only when an approved reference range for this test depends on pregnancy and the patient is not known to be male. "Not stated" is the default and never matches a range that depends on it. It is kept with this result only, not on the patient. |
+| Breastfeeding (for the reference range) | Not marked | Shown only when an approved reference range for this test depends on breastfeeding. Works like pregnancy status: kept with this result only. |
 | Comments | Not marked | Any comment on the result. |
 | Sample number (optional) | Optional | The number written on the sample container, if your laboratory numbers samples. |
 | Result (box built by the page) | Required | The result boxes are built from the test's own setup: a number box, a list of allowed results, a graded scale, a titer, one box per parameter for a panel, or organisms with an antibiotic list. Only allowed values can be saved. |
