@@ -272,6 +272,7 @@
 
 <script src="pc-ux.js"></script>
 <script src="pc-fields.js"></script>
+<script src="pc-ranges.js"></script>
 <script src="pc-lab.js"></script>
 <script type="module">
   const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, writeBatch, getDocFromCache } = window.top.MC.api(window);
@@ -316,7 +317,7 @@
 
   const params = new URLSearchParams(location.search);
   let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
-  let byStatus = { requested: [], collected: [], received: [], accepted: [], processing: [], resulted: [] }, alerts = [], billDoc = null, unsubAl = null, unsubBill = null, todayList = [], orders = {}, filter = "requested", selId = null, results = [], unsubRes = null;
+  let byStatus = { requested: [], collected: [], received: [], accepted: [], processing: [], resulted: [] }, alerts = [], billDoc = null, unsubAl = null, unsubBill = null, todayList = [], orders = {}, filter = "requested", selId = null, results = [], unsubRes = null, rangeDocs = [], patientCache = {}, rangesNote = "";
   const can = k => role === "owner" || perms[k] === true;
   const canCancel = () => can("investigation.request") || can("lab.collect");
 
@@ -369,17 +370,20 @@
     renderAct(); renderList(); $("actCard").scrollIntoView({ behavior: "smooth", block: "start" });
   }
   function closeAct() { selId = null; [unsubRes, unsubAl, unsubBill].forEach(u => { if (u) { try { u(); } catch (e) {} } }); unsubRes = unsubAl = unsubBill = null; renderAct(); renderList(); }
-  function resultBlock(r, current) {
-    const vals = r.values && r.valueType !== "organism" && r.values.organisms == null ? Object.keys(r.values).map(k => r.values[k]).filter(x => x && x.value != null) : null;
+  function resultBlock(r, current, o) {
+    const vals = r.values && r.valueType !== "organism" && r.values.organisms == null ? Object.keys(r.values).filter(k => r.values[k] && r.values[k].value != null).map(k => Object.assign({ _k: k }, r.values[k])) : null;
     let body;
-    if (vals && vals.length) body = '<table class="rt">' + vals.map(x => "<tr><td>" + esc(x.label) + "</td><td><b>" + esc(String(x.value)) + (x.unit ? " " + esc(x.unit) : "") + "</b></td><td>" + (x.flag && FLAG_LABEL[x.flag] && x.flag !== "none" ? esc(FLAG_LABEL[x.flag]) : "") + "</td></tr>").join("") + "</table>";
+    // the range that was applied when the result was entered (Stage 3c). Older results have none and keep their old reference line.
+    const refEl = k => (Array.isArray(r.refApplied) ? r.refApplied.find(e => e && e.param === k) : null), refHint = k => { const el = refEl(k); return el ? '<div class="hint2">' + esc(PCR.describe(el)) + "</div>" : ""; };
+    const stale = current && o && r.status === "unverified" && Array.isArray(r.refApplied) ? PCL.staleFor(o, r, { ranges: rangeDocs, patient: patientCache[o.patientId] || null, labName: facility ? facility.name : "", date: isoDate(new Date()) }) : "";
+    if (vals && vals.length) body = '<table class="rt">' + vals.map(x => "<tr><td>" + esc(x.label) + "</td><td><b>" + esc(String(x.value)) + (x.unit ? " " + esc(x.unit) : "") + "</b></td><td>" + (x.flag && FLAG_LABEL[x.flag] && x.flag !== "none" ? esc(FLAG_LABEL[x.flag]) : "") + refHint(x._k) + "</td></tr>").join("") + "</table>";
     else if (r.values && r.values.organisms) body = r.values.noGrowth ? '<div class="pt-name">No growth</div>' : r.values.organisms.map(g => '<div class="pt-name">' + esc(g.name) + (g.quantity ? " — " + esc(g.quantity) : "") + '</div><div class="pt-meta">' + (Object.keys(g.susceptibility || {}).map(a => esc(a) + ": <b>" + esc(g.susceptibility[a]) + "</b>").join(" · ") || "No antibiotics recorded") + (g.comment ? "<br>" + esc(g.comment) : "") + "</div>").join("");
     else body = '<div class="pt-name">' + esc(String(r.value)) + (r.unit ? " " + esc(r.unit) : "") + "</div>";
     return '<div class="cand" style="' + (current ? "" : "opacity:.65;") + '">' + body + '<div style="margin:4px 0;">' +
       (r.flag && FLAG_LABEL[r.flag] && r.flag !== "none" ? '<span class="chip ' + (r.flag === "normal" ? "ok" : "warn") + '">' + esc(FLAG_LABEL[r.flag]) + "</span> " : "") +
       (r.critical ? '<span class="chip bad">CRITICAL (by this facility\'s limits)</span> ' : "") +
       '<span class="chip ' + (r.status === "verified" ? "ok" : r.status === "entered_in_error" ? "bad" : "warn") + '">' + (r.status === "verified" ? "Verified" : r.status === "entered_in_error" ? "Entered in error" : "Not verified") + "</span>" + (current ? "" : ' <span class="chip">Earlier result</span>') + "</div>" +
-      '<div class="pt-meta">' + (rangeText(r) ? "Reference: " + esc(rangeText(r)) + (r.refSource ? " (" + esc(r.refSource) + ")" : "") + "<br>" : "") + (r.comments ? esc(r.comments) + "<br>" : "") + (r.correctionReason ? "Correction reason: " + esc(r.correctionReason) + "<br>" : "") +
+      '<div class="pt-meta">' + (refEl("") ? esc(PCR.describe(refEl(""))) + "<br>" : (rangeText(r) ? "Reference: " + esc(rangeText(r)) + (r.refSource ? " (" + esc(r.refSource) + ")" : "") + "<br>" : "")) + (stale ? esc(stale) + "<br>" : "") + (r.comments ? esc(r.comments) + "<br>" : "") + (r.correctionReason ? "Correction reason: " + esc(r.correctionReason) + "<br>" : "") +
       "Entered by " + esc(r.enteredByName || "") + " at " + esc(hhmm(r.resultAt)) + (r.status === "verified" ? " · verified by " + esc(r.verifiedByName || "") : "") + (r.errorReason ? "<br>Error: " + esc(r.errorReason) : "") + "</div></div>";
   }
 
@@ -400,13 +404,16 @@
     else if (t === "qualitative" || t === "categorical") field = oneField(t, "rVal", { choices: (prof.choices && prof.choices.length) ? prof.choices : o.choices });
     else if (t === "text") field = oneField("text", "rVal", { rows: 4 });
     else if (t === "titer") field = prof.titerMode === "categorical" ? oneField("categorical", "rVal", { choices: prof.choices }) : '<input type="text" id="rVal" placeholder="For example 1:80" autocomplete="off">';
-    else if (t === "multi") field = (prof.params || []).map(p => "<label>" + esc(p.label) + (p.unit ? " (" + esc(p.unit) + ")" : "") + "</label>" + oneField(p.type, "rp_" + p.key, p) + ((p.refMin != null || p.refMax != null || p.refText) ? '<div class="hint2">Reference: ' + esc(rangeText({ resultType: "number", refMin: p.refMin, refMax: p.refMax, units: p.unit, refText: p.refText })) + (p.refSource ? " (" + esc(p.refSource) + ")" : "") + "</div>" : "")).join("");
+    else if (t === "multi") field = (prof.params || []).map(p => "<label>" + esc(p.label) + (p.unit ? " (" + esc(p.unit) + ")" : "") + "</label>" + oneField(p.type, "rp_" + p.key, p) + (p.type === "number" ? '<div class="hint2" id="rrh_' + esc(p.key) + '"></div>' : (p.refText ? '<div class="hint2">Reference: ' + esc(p.refText) + (p.refSource ? " (" + esc(p.refSource) + ")" : "") + "</div>" : ""))).join("");
     else if (t === "organism") field = '<label class="chk"><input type="checkbox" id="rNoGrowth"> No growth</label><div id="orgHost"></div><button type="button" class="btn-small btn-secondary" id="addOrgBtn" style="width:100%; margin-top:6px;">Add an organism</button>';
     return '<h3 class="sub">' + (amend ? "Enter a corrected result" : "Enter the result") + "</h3>" +
       (prof.method || prof.equipment ? '<div class="pt-meta">' + (prof.method ? "Method: " + esc(prof.method) : "") + (prof.method && prof.equipment ? " · " : "") + (prof.equipment ? "Equipment: " + esc(prof.equipment) : "") + "</div>" : "") +
       (prof.processing ? '<div class="pt-meta">Processing: ' + esc(prof.processing) + "</div>" : "") +
-      (t === "number" && rangeText(o) ? '<div class="pt-meta">Reference: ' + esc(rangeText(o)) + (o.refSource ? " (" + esc(o.refSource) + ")" : "") + "</div>" : "") +
+      (t === "number" ? '<div class="pt-meta" id="rRefBox">Looking up the reference range…</div>' : "") +
       (t === "multi" || t === "organism" ? "" : "<label>Result" + unit + " *</label>") + field +
+      '<div id="rCtxBox" class="hidden"><div id="rPregWrap" class="hidden"><label>Pregnancy status (for the reference range)</label><select id="rPreg"><option value="unknown">Not stated</option><option value="pregnant">Pregnant</option><option value="not_pregnant">Not pregnant</option></select></div>' +
+        '<div id="rLactWrap" class="hidden"><label>Breastfeeding (for the reference range)</label><select id="rLact"><option value="unknown">Not stated</option><option value="lactating">Breastfeeding</option><option value="not_lactating">Not breastfeeding</option></select></div>' +
+        '<div class="hint2">Asked only because a reference range for this test depends on it. It is kept with this result only, not on the patient.</div></div>' +
       '<label>Flag</label><select id="rFlag"><option value="none">Not stated</option><option value="normal">Within reference range</option><option value="low">Below reference range</option><option value="high">Above reference range</option><option value="abnormal">Abnormal</option></select><div class="hint2" id="fhelp-rFlag">Whether the result is inside the expected (reference) range for this test.</div>' +
       '<div class="hint2" id="rFlagHint"></div>' +
       (amend ? '<label>Reason for the correction *</label><input type="text" id="rReason" autocomplete="off" placeholder="For example: wrong value typed"><div class="hint2">The earlier result stays on record. A correction is saved as a new version.</div>' : "") +
@@ -488,6 +495,7 @@
     card.classList.remove("hidden");
     const step = STEPS.indexOf(o.status);
     const cur = results.find(r => r.id === o.currentResultId);
+    if (cur && Array.isArray(cur.refApplied) && patientCache[o.patientId] === undefined) loadPatient(o.patientId).then(() => { if (selId === o.id) renderAct(); });
     // keep what the person is typing if the screen refreshes because of a background update
     const typing = card.querySelector("#rVal, #rCom, [id^=rp_], #bPaid, #bName, #bWaive, #sampleId, #specCond, #rejText") && document.activeElement && card.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
     if (typing && card.dataset.sel === selId + ":" + o.status + ":" + (o.currentResultId || "")) return;
@@ -495,7 +503,7 @@
     const labels = { requested: "Requested", collected: "Sample", received: "Received", accepted: "Accepted", processing: "Processing", resulted: "Result", verified: "Verified", reviewed: "Reviewed" };
     let h = '<h2>' + esc(o.name) + "</h2><div class=\"pt-meta\">" + esc(o.patientName) + " · " + esc(o.encounterNo || "") + (o.specimen ? " · " + esc(o.specimen) : "") + " · requested by " + esc(o.requestedByName || "") + " at " + esc(hhmm(o.requestedAt)) + (o.clinicalNote ? "<br>Reason: " + esc(o.clinicalNote) : "") + "</div>" +
       '<div class="pt-meta" style="margin-top:6px;">' + (o.status === "cancelled" ? '<span class="chip bad">Cancelled' + (o.cancelReason ? ": " + esc(o.cancelReason) : "") + "</span>" : o.status === "rejected" ? '<span class="chip bad">Specimen rejected</span>' : STEPS.map((s, i) => '<span class="chip ' + (i === step ? "ok" : "") + '" style="' + (i > step ? "opacity:.5;" : "") + '">' + esc(labels[s]) + "</span>").join(" ")) + "</div>";
-    if (cur) h += '<h3 class="sub">Current result</h3>' + resultBlock(cur, true);
+    if (cur) h += '<h3 class="sub">Current result</h3>' + resultBlock(cur, true, o);
     const older = results.filter(r => r.id !== o.currentResultId).sort((a, b) => (b.resultAt || 0) - (a.resultAt || 0));
     if (older.length) h += '<h3 class="sub">Earlier results (kept on record)</h3>' + older.map(r => resultBlock(r, false)).join("");
     h += alertPanel() + actionPanels(o, cur) + billPanel(o);
@@ -518,10 +526,48 @@
     if (g("reverseBillBtn")) g("reverseBillBtn").onclick = () => reverseBill(o);
     if (o.status === "processing" && can("lab.result")) wireResultForm(o);
   }
+  // ----- reference ranges at result entry (Stage 3c): the logic is in pc-lab.js / pc-ranges.js; this only reads the screen and draws the answer
+  const card = () => $("actCard");
+  async function loadPatient(pid) {
+    if (patientCache[pid] !== undefined) return patientCache[pid];
+    try { const sn = await getDocServerFirst(doc(db, "pc_patients", pid)); patientCache[pid] = sn.exists() ? (({ dob, dobPrecision, dobApprox, sex }) => ({ dob, dobPrecision, dobApprox, sex }))(sn.data()) : false; }
+    catch (e) { patientCache[pid] = false; }
+    return patientCache[pid];
+  }
+  function rangeCtx(o) {
+    const pg = $("rPreg"), lc = $("rLact");
+    return { ranges: rangeDocs, patient: patientCache[o.patientId] || null, pregnancy: pg ? pg.value : "unknown", lactation: lc ? lc.value : "unknown", labName: facility ? facility.name : "", date: isoDate(new Date()) };
+  }
+  const FLAG_SHORT = { low: "below the reference range", high: "above the reference range", normal: "within the reference range" };
+  function refreshRefs(o) {
+    if (!o || selId !== o.id || !$("rSaveBtn") || !window.PCL || !window.PCL.rangeViews) return;
+    const prof = PCL.profileFromOrder(o); if (prof.type !== "number" && prof.type !== "multi") return;
+    const values = {};
+    if (prof.type === "number") { const raw = ($("rVal") || {}).value; if (raw !== "" && raw != null && isFinite(Number(raw))) values[""] = Number(raw); }
+    else (prof.params || []).forEach(p => { const e = $("rp_" + p.key); if (p.type === "number" && e && e.value !== "" && isFinite(Number(e.value))) values[p.key] = Number(e.value); });
+    const ctx = rangeCtx(o), views = PCL.rangeViews(o, values, ctx), cc = PCL.contextControls(o, ctx);
+    $("rPregWrap").classList.toggle("hidden", !cc.pregnancy); $("rLactWrap").classList.toggle("hidden", !cc.lactation); $("rCtxBox").classList.toggle("hidden", !(cc.pregnancy || cc.lactation));
+    const notes = v => {
+      let n = ""; const need = (v.res.contextMissing || []).filter(x => !(x === "pregnancy" && cc.pregnancy === false));
+      if (need.length) n += " A more specific range exists that needs: " + need.join(", ") + ", which is not stated.";
+      return n;
+    };
+    const warn = (patientCache[o.patientId] === false ? " The patient's age and sex could not be read here, so ranges that depend on them are not used." : "") + (rangesNote ? " " + rangesNote : "");
+    views.forEach(v => {
+      const fl = v.flag !== "none" ? " — " + FLAG_SHORT[v.flag] : "", box = prof.type === "number" ? $("rRefBox") : $("rrh_" + v.param);
+      if (box) box.innerHTML = esc(v.line + fl + notes(v)) + (warn && v.res.state === "unavailable" ? '<div class="hint2">' + esc(warn.trim()) + "</div>" : "");
+    });
+    if (prof.type === "number" && views[0]) { const f = views[0].flag; $("rFlag").value = f; $("rFlagHint").textContent = f === "none" ? "" : "Worked out from the reference range shown above. You can change it."; }
+  }
   function wireResultForm(o) {
     const prof = PCL.profileFromOrder(o), fl = $("rFlag");
     const v = $("rVal");
-    if (v && prof.type === "number") v.addEventListener("input", () => { const f = autoFlag(v.value, o); fl.value = f; $("rFlagHint").textContent = f === "none" ? "" : "Worked out from the reference range this laboratory entered. You can change it."; });
+    if (prof.type === "number" || prof.type === "multi") card().addEventListener("input", e => { if (e.target && (e.target.id === "rVal" || (e.target.id || "").indexOf("rp_") === 0)) refreshRefs(o); });
+    ["rPreg", "rLact"].forEach(id => { const el = $(id); if (el) el.addEventListener("change", () => refreshRefs(o)); });
+    if (prof.type === "number" || prof.type === "multi") {
+      const sb = $("rSaveBtn"); sb.disabled = true; sb.textContent = "Loading patient details…";
+      loadPatient(o.patientId).then(() => { if (selId !== o.id) return; const b = $("rSaveBtn"); if (!b) return; b.disabled = false; b.textContent = b.dataset.amend === "1" ? "Save corrected result" : "Save result"; refreshRefs(o); });
+    }
     if (prof.type === "organism") {
       let n = 0; const host = $("orgHost");
       const add = () => { host.insertAdjacentHTML("beforeend", orgBlock(prof, n++)); };
@@ -572,20 +618,22 @@
     if (!br.ok) { m.textContent = br.error; return; }
     const reason = amend ? ($("rReason").value || "").trim() : "";
     if (amend && reason.length < 3) { m.textContent = "Give the reason for the correction."; return; }
-    const picked = $("rFlag").value, flag = picked !== "none" ? picked : br.flag;
+    const ar = PCL.applyRanges(o, br, rangeCtx(o)), rb = ar.built;   // flags come only from the range that applies; no range = no flag
+    const picked = $("rFlag").value, flag = picked !== "none" ? picked : rb.flag;
     if (br.critical && !window.confirm("This result is CRITICAL by the limits your facility set:\n\n" + br.criticalWhy.join("\n") + "\n\nSave it, then inform the doctor and record who was told. Continue?")) return;
     const rid = amend ? doc(collection(db, "pc_inv_results")).id : o.id;
     const prev = amend ? o.currentResultId : null;
-    const rdoc = Object.assign(stamp(), { orderId: o.id, encounterId: o.encounterId, patientId: o.patientId, testName: o.name, value: br.value, valueType: br.valueType, unit: o.units || "", refMin: o.refMin != null ? o.refMin : null, refMax: o.refMax != null ? o.refMax : null,
-      refText: o.refText || "", refSource: o.refSource || "", flag: flag, critical: br.critical === true, comments: $("rCom").value.trim(), resultAt: Date.now(), enteredBy: me.id, enteredByName: myName, status: "unverified", amends: prev });
-    if (br.values) rdoc.values = br.values;
+    const rdoc = Object.assign(stamp(), { orderId: o.id, encounterId: o.encounterId, patientId: o.patientId, testName: o.name, value: br.value, valueType: br.valueType, unit: o.units || "", refMin: ar.applied ? ar.applied.refMin : (o.refMin != null ? o.refMin : null), refMax: ar.applied ? ar.applied.refMax : (o.refMax != null ? o.refMax : null),
+      refText: ar.applied ? ar.applied.refText : (o.refText || ""), refSource: ar.applied ? ar.applied.refSource : (o.refSource || ""), flag: flag, critical: br.critical === true, comments: $("rCom").value.trim(), resultAt: Date.now(), enteredBy: me.id, enteredByName: myName, status: "unverified", amends: prev });
+    if (rb.values) rdoc.values = rb.values;
+    if (ar.refApplied) rdoc.refApplied = ar.refApplied;   // written once, with the result; never rewritten
     if (br.critical) rdoc.criticalWhy = br.criticalWhy;
     if (amend) rdoc.correctionReason = reason;
     const b = writeBatch(db);
     b.set(doc(db, "pc_inv_results", rid), rdoc);
     b.update(doc(db, "pc_inv_orders", o.id), { status: "resulted", resultedAt: serverTimestamp(), resultedBy: me.id, resultedByName: myName, currentResultId: rid, updatedAt: serverTimestamp(), updatedBy: me.id });
     if (br.critical) b.set(doc(db, "pc_lab_alerts", rid), Object.assign(stamp(), { orderId: o.id, encounterId: o.encounterId, patientId: o.patientId, patientName: o.patientName || "", testName: o.name, resultId: rid, resultSummary: String(br.value).slice(0, 200), why: br.criticalWhy, status: "open" }));
-    b.set(doc(collection(db, "pc_audit_logs")), audit(o, amend ? "lab.result_amend" : "lab.result", { resultId: rid, amends: prev, reason: reason || null, critical: br.critical === true }));
+    b.set(doc(collection(db, "pc_audit_logs")), audit(o, amend ? "lab.result_amend" : "lab.result", { resultId: rid, amends: prev, reason: reason || null, critical: br.critical === true, refStates: ar.refApplied ? ar.refApplied.map(e => e.param + ":" + e.basis + "/" + e.state).join(",") : null, flagPicked: picked !== "none" && picked !== rb.flag }));
     b.commit().catch(saveFailed); ok((amend ? "Corrected result" : "Result") + " saved on this phone. It still needs to be verified." + (br.critical ? " CRITICAL: now inform the doctor and record who was told." : ""));
   }
   function informClinician(o, alertId) {
@@ -691,6 +739,9 @@
     onSnapshot(query(collection(db, "pc_inv_orders"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("requestedDay", "==", isoDate(new Date())), limit(500)), s => {
       todayList = s.docs.map(d => ({ id: d.id, ...d.data() })); rebuild();
     }, () => {});
+    // approved reference ranges of this facility (Stage 3c). If they cannot be read, no range is applied and the screen says so; nothing is guessed.
+    onSnapshot(query(collection(db, "pc_reference_ranges"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), limit(1000)), s => { rangeDocs = s.docs.map(d => ({ id: d.id, ...d.data() })); rangesNote = ""; refreshRefs(selId ? orders[selId] : null); },
+      err => { rangeDocs = []; rangesNote = "The reference ranges could not be loaded, so none is applied. Check your connection."; refreshRefs(selId ? orders[selId] : null); });
     const open = params.get("order"); if (open) setTimeout(() => selectOrder(open), 600);
   }
 

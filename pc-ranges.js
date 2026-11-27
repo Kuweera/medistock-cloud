@@ -169,8 +169,9 @@
   /* describe(resolved) -> the line shown beside a result or a vital: the range with unit and source, or why there is none */
   function describe(res) {
     if (!res) return "Reference range not configured";
-    if (res.state === "unavailable") return res.reasonText && res.reason !== "no_range" ? "Reference range not configured. " + res.reasonText : "Reference range not configured";
-    if (res.state === "conflict") return res.reasonText;
+    var why = res.reasonText || WHY[res.reason] || "";   // a STORED refApplied element has the reason code but not the text
+    if (res.state === "unavailable") return why && res.reason !== "no_range" ? "Reference range not configured. " + why : "Reference range not configured";
+    if (res.state === "conflict") return why || WHY.conflict;
     var v = res.min !== null && res.max !== null ? fmt(res.min) + " to " + fmt(res.max) : res.min !== null ? "at least " + fmt(res.min) : res.max !== null ? "up to " + fmt(res.max) : res.text;
     if ((res.min !== null || res.max !== null) && res.text) v += " (" + res.text + ")";
     var tail = res.basis === "context_range" ? [res.source, "version " + res.rangeVersion].filter(Boolean).join(", ") : "facility setting" + (res.source ? ", " + res.source : "");

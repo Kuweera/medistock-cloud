@@ -222,6 +222,80 @@
     return String(r.value) + (r.unit ? " " + r.unit : "");
   }
 
+  // ---------------------------------------------------------------- reference ranges at result entry (Stage 3c)
+  /* The range that applies to a result is chosen by pc-ranges.js from the APPROVED ranges of this facility (age, sex, pregnancy, lactation, unit, specimen, method, laboratory),
+     with the test's own catalogue range as a labelled fallback. Nothing here knows a clinical value. No range = "Reference range not configured" and NO flag.
+     The choice is written once, with the result, as `refApplied` (one element per number or numeric part). It is never rewritten. */
+  function rangesLib() { return root.PCR || (typeof require !== "undefined" ? require("./pc-ranges.js") : null); }
+  function legacyOf(o) { return { refMin: o.refMin, refMax: o.refMax, refText: o.refText, refSource: o.refSource }; }
+  function numericSubjects(order) {
+    var prof = profileFromOrder(order), type = prof.type, list = [];
+    if (type === "number") list.push({ param: "", subjectType: "lab_test", label: order.name || "Result", unit: str(order.units), legacy: legacyOf(order) });
+    if (type === "multi") (prof.params || []).forEach(function (p) { if (p.type === "number") list.push({ param: p.key, subjectType: "lab_param", label: p.label, unit: str(p.unit), legacy: legacyOf(p) }); });
+    return list;
+  }
+  /* rangeViews(order, values, ctx) -> [{ param, label, unit, res, flag, line, el }]   values: { "" : number } for a single number, { <paramKey>: number } for a multi test (missing = no value yet).
+     ctx: { ranges: [pc_reference_ranges docs], patient: { dob, dobPrecision, dobApprox, sex } | null, pregnancy, lactation, labName, date: "YYYY-MM-DD" } */
+  function rangeViews(order, values, ctx) {
+    var R = rangesLib(); ctx = ctx || {}; values = values || {}; if (!R) return [];
+    var prof = profileFromOrder(order);
+    return numericSubjects(order).map(function (sj) {
+      var res = R.resolve({ subjectType: sj.subjectType, subjectId: order.investigationId, paramKey: sj.param, unit: sj.unit, legacy: sj.legacy, patient: ctx.patient || null, pregnancy: ctx.pregnancy, lactation: ctx.lactation,
+        specimen: order.specimen, method: prof.method, labName: ctx.labName, date: ctx.date, ranges: ctx.ranges || [] });
+      var v = values[sj.param], flag = v === undefined || v === null || str(v) === "" ? "none" : R.flag(v, res);
+      return { param: sj.param, label: sj.label, unit: sj.unit, res: res, flag: flag, line: R.describe(res), el: R.refAppliedOf(sj.param, res) };
+    });
+  }
+  /* the range fields stored beside a result (older screens still read these): they always show the range that was actually applied; none when none applied */
+  function mirrorOf(res) {
+    if (res.state === "range" || res.state === "legacy") return { refMin: res.min, refMax: res.max, refText: res.text || "", refSource: res.source || "" };
+    return { refMin: null, refMax: null, refText: "", refSource: "" };
+  }
+  function worstOf(flags) { var w = "none"; flags.forEach(function (f) { if (f === "low" || f === "high") w = "abnormal"; else if (f === "normal" && w === "none") w = "normal"; }); return w; }
+  /* applyRanges(order, built, ctx) -> { built, refApplied, applied, views }
+     built = the result of buildResult() (not changed). The returned `built` has its flags worked out from the applied range; `refApplied` is the array to store (null for a test with no numeric part);
+     `applied` = the range fields for a single number test (see mirrorOf). A flag is given ONLY when a numeric range applies. */
+  function applyRanges(order, built, ctx) {
+    var out = { built: built, refApplied: null, applied: null, views: [] };
+    if (!built || !built.ok) return out;
+    var b = JSON.parse(JSON.stringify(built)), prof = profileFromOrder(order), values = {};
+    if (prof.type === "number") values[""] = b.value;
+    if (prof.type === "multi") Object.keys(b.values || {}).forEach(function (k) { var r = b.values[k]; if (r && typeof r.value === "number") values[k] = r.value; });
+    var views = rangeViews(order, values, ctx); out.views = views; if (!views.length) return out;
+    out.refApplied = views.filter(function (v) { return prof.type === "number" || values[v.param] !== undefined; }).map(function (v) { return v.el; });
+    if (prof.type === "number") { b.flag = views[0].flag; out.applied = mirrorOf(views[0].res); }
+    else {
+      var flags = [];
+      views.forEach(function (v) { var r = b.values[v.param]; if (!r || typeof r.value !== "number") return; var m = mirrorOf(v.res); r.flag = v.flag; flags.push(v.flag); r.refMin = m.refMin; r.refMax = m.refMax; r.refText = m.refText; if (m.refSource) r.refSource = m.refSource; else delete r.refSource; });
+      b.flag = worstOf(flags);
+    }
+    if (!out.refApplied.length) out.refApplied = null;
+    out.built = b; return out;
+  }
+  /* which context questions are worth asking at entry: only when an approved range of this test depends on it, and the patient is not known to be male */
+  function contextControls(order, ctx) {
+    ctx = ctx || {}; var R = rangesLib(), out = { pregnancy: false, lactation: false }; if (!R) return out;
+    if (R.sexOf(ctx.patient) === "male") return out;
+    var subs = numericSubjects(order);
+    (ctx.ranges || []).forEach(function (r) {
+      if (r.approvalStatus !== "approved" || r.subjectId !== order.investigationId) return;
+      if (!subs.some(function (sj) { return sj.subjectType === r.subjectType && sj.param === str(r.paramKey); })) return;
+      if (r.pregnancy === "pregnant" || r.pregnancy === "not_pregnant") out.pregnancy = true; if (r.lactation === "lactating" || r.lactation === "not_lactating") out.lactation = true;
+    });
+    return out;
+  }
+  /* staleFor(order, result, ctx) -> "" or a short notice for the verify screen (display only; the stored range and flag are never changed) */
+  function staleFor(order, result, ctx) {
+    var R = rangesLib(); if (!R || !result || !Array.isArray(result.refApplied)) return "";
+    var prof = profileFromOrder(order), subs = numericSubjects(order), note = "";
+    result.refApplied.forEach(function (el) {
+      if (note || !el) return; var sj = subs.filter(function (x) { return x.param === str(el.param); })[0]; if (!sj) return;
+      var res = R.resolve({ subjectType: sj.subjectType, subjectId: order.investigationId, paramKey: sj.param, unit: sj.unit, legacy: sj.legacy, patient: ctx && ctx.patient || null, pregnancy: el.pregnancy, lactation: el.lactation, specimen: order.specimen, method: prof.method, labName: ctx && ctx.labName, date: ctx && ctx.date, ranges: ctx && ctx.ranges || [] });
+      note = R.staleNotice(el, res);
+    });
+    return note;
+  }
+
   // ---------------------------------------------------------------- specimen and result workflow
   /* requested -> collected -> received -> accepted | rejected -> processing -> resulted -> verified -> reviewed.
      "collected -> processing" is kept for older orders and small facilities that do not log receipt (the rules still allow it). */
@@ -323,7 +397,7 @@
     { id: "t_stool", name: "Stool microscopy", category: "stool", specimen: "Stool", resultType: "text" }
   ];
 
-  var api = { TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PARAM_TYPES: PARAM_TYPES, normType: normType, parseList: parseList, scaleTerms: scaleTerms, validateTest: validateTest, validateParam: validateParam, validateCritical: validateCritical,
+  var api = { rangeViews: rangeViews, applyRanges: applyRanges, contextControls: contextControls, staleFor: staleFor, TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PARAM_TYPES: PARAM_TYPES, normType: normType, parseList: parseList, scaleTerms: scaleTerms, validateTest: validateTest, validateParam: validateParam, validateCritical: validateCritical,
     profileOf: profileOf, orderFields: orderFields, profileFromOrder: profileFromOrder, buildResult: buildResult, describeResult: describeResult, flagNumber: flagNumber,
     STATUS_LABEL: STATUS_LABEL, STEPS: STEPS, NEXT: NEXT, canMove: canMove, REJECT_REASONS: REJECT_REASONS, OPEN_STATES: OPEN_STATES, PAY_LABEL: PAY_LABEL, bill: bill, ledgerRows: ledgerRows, reversalRows: reversalRows, report: report, dayOf: dayOf, TEMPLATES: TEMPLATES };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.PCL = api;
