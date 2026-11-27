@@ -1,6 +1,7 @@
 rules_version = '2';
 
 // MediStock Cloud — multi-shop roles & security (v19 verified in CI run #68; v20 journey field proposed)
+// v30 (Lead, PROPOSED): treatment reminders (Developer 4 request R3): pc_reminder_settings (one per facility, settings.manage) and pc_reminder_acks (create-only, 'I have seen this'; records no dose). No existing collection changes.
 // v29 (Lead, PROPOSED): owner-approved data-entry limits applied on the server: glucose above 0 with a unit-dependent maximum (mg/dL 1000, mmol/L 55.5, unit required); diastolic below systolic when both are given; device glucose status (glucoseStatus below_device_range | above_device_range, then no numeric glucose; glucoseDevice optional). Technical validation only, never clinical interpretation.
 // v28 (Lead, PROPOSED): lactation is its OWN field on ranges and alert rules (lactation any | lactating | not_lactating), independent of pregnancy, as Developer 4's engine reads it. The v26 'reproductive' field is no longer accepted with any value but 'any' (no data exists), so a value the engine would ignore can never be saved. Flag lists and notes are bounded.
 // v27 (Lead, PROPOSED): reviewed proposals: 'rejected' status, approval needs reviewerCredential, original proposal/origin immutable, alert ruleType screening|alert|emergency.
@@ -1990,6 +1991,40 @@ service cloud.firestore {
         && request.resource.data.level in ['moderate', 'critical']
         && request.resource.data.ruleId is string && request.resource.data.ruleVersion is int
         && request.resource.data.ackBy == request.auth.uid
+        && request.resource.data.get('note', '') is string && request.resource.data.get('note', '').size() <= 300;
+      allow update, delete: if false;
+    }
+    // =====================================================================================
+    // v30 — TREATMENT REMINDERS (Developer 4 request R3, adapted by the Lead). Alerts are DERIVED on each device from data that already syncs;
+    // these two collections hold only the timings and the "I have seen this" marks. An acknowledgement records no dose and changes no event.
+    // =====================================================================================
+    function rsOk(d) {
+      return d.get('graceMin', 30) is int && d.get('graceMin', 30) >= 5 && d.get('graceMin', 30) <= 240
+        && d.get('soonMin', 30) is int && d.get('soonMin', 30) >= 5 && d.get('soonMin', 30) <= 240
+        && d.get('escalateAfterMin', 0) is int && d.get('escalateAfterMin', 0) >= 0 && d.get('escalateAfterMin', 0) <= 720
+        && d.get('appointmentAdvanceMin', 0) is int && d.get('appointmentAdvanceMin', 0) >= 0 && d.get('appointmentAdvanceMin', 0) <= 1440;
+    }
+    match /pc_reminder_settings/{facId} {
+      allow read: if canAccessShop(resource.data.businessId, resource.data.facilityId)
+        && (hasPerm(resource.data.businessId, 'treatment.administer') || hasPerm(resource.data.businessId, 'treatment.prescribe') || hasPerm(resource.data.businessId, 'settings.manage'));
+      allow create: if pcCreateOk(request.resource.data) && hasPerm(request.resource.data.businessId, 'settings.manage')
+        && facId == request.resource.data.facilityId && rsOk(request.resource.data);
+      allow update: if canAccessShop(resource.data.businessId, resource.data.facilityId) && hasPerm(resource.data.businessId, 'settings.manage') && pcUpdateStamped()
+        && request.resource.data.diff(resource.data).unchangedKeys().hasAll(['businessId', 'facilityId', 'createdBy', 'createdAt']) && rsOk(request.resource.data);
+      allow delete: if false;
+    }
+    match /pc_reminder_acks/{ackId} {
+      allow read: if childReadOk(resource.data);
+      allow create: if pcCreateOk(request.resource.data)
+        && (hasPerm(request.resource.data.businessId, 'treatment.administer') || hasPerm(request.resource.data.businessId, 'treatment.prescribe'))
+        && request.resource.data.eventId is string
+        && request.resource.data.level in ['dose_due', 'dose_overdue', 'dose_escalated', 'appointment_soon', 'appointment_overdue', 'missed_recorded', 'did_not_attend']
+        && ackId == 'rack_' + request.resource.data.eventId + '_' + request.resource.data.level
+        && exists(/databases/$(database)/documents/pc_treatment_events/$(request.resource.data.eventId))
+        && get(/databases/$(database)/documents/pc_treatment_events/$(request.resource.data.eventId)).data.facilityId == request.resource.data.facilityId
+        && get(/databases/$(database)/documents/pc_treatment_events/$(request.resource.data.eventId)).data.patientId == request.resource.data.patientId
+        && get(/databases/$(database)/documents/pc_treatment_events/$(request.resource.data.eventId)).data.orderId == request.resource.data.orderId
+        && request.resource.data.ackBy == request.auth.uid && request.resource.data.ackByName is string
         && request.resource.data.get('note', '') is string && request.resource.data.get('note', '').size() <= 300;
       allow update, delete: if false;
     }
