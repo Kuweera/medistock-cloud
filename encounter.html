@@ -273,6 +273,7 @@
     <button type="button" class="btn-small btn-secondary" id="profileBtn" style="margin-top:10px;">Open patient profile</button>
   </div>
 
+  <div id="linkMsg" class="msg err hidden" role="status"></div>
   <div class="pill-row" id="tabs">
     <button type="button" class="pill-btn selected" data-t="triage">Triage</button>
     <button type="button" class="pill-btn" data-t="consult">Consultation</button>
@@ -1673,6 +1674,16 @@
     document.querySelectorAll("#tabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b));
     ["triage", "consult", "notes", "tests", "dx", "treat", "close"].forEach(t => { $("tab-" + t).classList.toggle("hidden", t !== b.dataset.t); });
   }));
+  // Address link: encounter.html?id=<visit>&tab=triage|consultation|notes|tests|diagnosis|treatment|close opens that tab once the visit has loaded. It uses the normal tab button.
+  // Without a permission that works in that tab the visit opens normally on its first tab and says so. An unknown value is ignored.
+  const LINK_TABS = { triage: ["triage", "Triage", ["triage.record"]], consultation: ["consult", "Consultation", ["consult.record"]], notes: ["notes", "Notes", ["consult.record", "consult.sign"]], tests: ["tests", "Tests", ["investigation.request", "investigation.review"]],
+    diagnosis: ["dx", "Diagnosis", ["diagnosis.record"]], treatment: ["treat", "Treatment", ["treatment.prescribe"]], close: ["close", "Close visit", ["encounter.close"]] };
+  function openTabFromAddress() {
+    const want = (params.get("tab") || "").trim().toLowerCase(); if (!want || !Object.prototype.hasOwnProperty.call(LINK_TABS, want)) return;
+    const t = LINK_TABS[want];
+    if (!t[2].some(k => can(k))) { $("linkMsg").textContent = "You do not have permission to use the " + t[1] + " tab, so the visit was opened on the first tab."; $("linkMsg").classList.remove("hidden"); return; }
+    const b = document.querySelector('#tabs [data-t="' + t[0] + '"]'); if (b) b.click();
+  }
   $("tSaveBtn").onclick = saveTriage; $("cSaveBtn").onclick = addComplaint; $("mSaveBtn").onclick = addMed;
   $("nDraftBtn").onclick = () => saveNote(false); $("nSignBtn").onclick = () => saveNote(true); $("nCancelBtn").onclick = resetNoteForm;
   $("nType").addEventListener("change", syncNoteForm);
@@ -1803,7 +1814,7 @@
       const first = !enc; enc = { id: s.docs[0].id, ...s.docs[0].data() };
       if (first) {
         got = true; $("shopIndicator").textContent = "Patient Care · " + facility.name; $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
-        $("nSignBtn").classList.toggle("hidden", !can("consult.sign")); startData();
+        $("nSignBtn").classList.toggle("hidden", !can("consult.sign")); startData(); openTabFromAddress();
         if (!loggedView) { loggedView = true; setDoc(doc(collection(db, "pc_access_logs")), Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, patientId: enc.patientId, encounterId: encId, purpose: "Viewed visit " + enc.encounterNo, at: serverTimestamp() })).catch(() => {}); }
       }
       mark(s); rAll();

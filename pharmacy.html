@@ -177,6 +177,7 @@
           <button type="button" class="pill-btn" data-f="stopped">Cancelled or stopped</button>
         </div>
         <input type="search" id="q" placeholder="Search patient, registration number or medicine" autocomplete="off">
+        <div class="hint2 hidden" id="pfNote"></div>
         <div class="hint2" id="info"></div>
         <div id="list"></div>
       </div>
@@ -382,15 +383,23 @@
     if (!q) return true; const i = info(r);
     return (i.patientName + " " + (regNos[i.patientId] || "") + " " + i.medicine + " " + i.formulation + " " + i.strength).toLowerCase().indexOf(q) >= 0;
   }
+  // Address link: pharmacy.html?patient=<patient id or name> shows only that patient's prescriptions (the patient id exactly, or part of the name). "Show everyone" clears it. Nothing else changes.
+  let patientFilter = (new URLSearchParams(location.search).get("patient") || "").trim();
+  function matchesPatient(r) {
+    if (!patientFilter) return true; const i = info(r);
+    return String(i.patientId || "") === patientFilter || String(i.patientName || "").toLowerCase().indexOf(patientFilter.toLowerCase()) >= 0;
+  }
   function renderList() {
     forgetChecked();
+    $("pfNote").classList.toggle("hidden", !patientFilter);
+    if (patientFilter) { $("pfNote").innerHTML = "Showing prescriptions for: <b>" + esc(patientFilter) + "</b> <button type=\"button\" class=\"btn-small btn-secondary\" id=\"pfClear\">Show everyone</button>"; $("pfClear").onclick = () => { patientFilter = ""; renderList(); }; }
     const rows = allRows(), q = $("q").value.trim().toLowerCase();
     const cnt = g => rows.filter(r => r.group === g).length;
     document.querySelectorAll("#filters .pill-btn").forEach(b => {
       const base = { waiting: "Waiting to be dispensed", partial: "Partially dispensed", done: "Fully dispensed", stopped: "Cancelled or stopped" }[b.dataset.f];
       const n = cnt(b.dataset.f); b.textContent = base + (n && (b.dataset.f !== "done" || doneLoaded) && (b.dataset.f !== "stopped" || stoppedLoaded) ? " (" + n + ")" : (n && b.dataset.f === "waiting" ? " (" + n + ")" : ""));
     });
-    const list = rows.filter(r => r.group === filter && matches(r, q)).sort((a, b) => filter === "done" ? tsMs((b.rx || {}).lastDispensedAt) - tsMs((a.rx || {}).lastDispensedAt) : num(info(a).prescribedAt) - num(info(b).prescribedAt));
+    const list = rows.filter(r => r.group === filter && matches(r, q) && matchesPatient(r)).sort((a, b) => filter === "done" ? tsMs((b.rx || {}).lastDispensedAt) - tsMs((a.rx || {}).lastDispensedAt) : num(info(a).prescribedAt) - num(info(b).prescribedAt));
     $("info").textContent = { waiting: "Prescriptions that have not been dispensed yet, oldest first.", partial: "Some of the medicine has been given out. The outstanding quantity is still to be dispensed.",
       done: "Recently completed prescriptions.", stopped: "Prescriptions that were stopped or replaced by the prescriber. These cannot be dispensed." }[filter];
     // Group by prescription (patient + visit). A prescription is listed here when at least one of its medicines belongs to this tab;
