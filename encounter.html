@@ -436,9 +436,9 @@
       <div class="row"><div><label>Care setting</label><select id="pSetting"><option value="outpatient">Outpatient</option><option value="home">At home</option><option value="inpatient">Inpatient</option><option value="procedure_room">Procedure room</option></select><div class="hint2" id="fhelp-pSetting">Where the treatment will be given.</div></div>
         <div><label>Priority</label><select id="pPriority"><option value="routine">Routine</option><option value="urgent">Urgent</option></select></div></div>
       <label>Expected end</label>
-      <div class="dateField"><input type="text" id="pEnd"><div class="hint2" id="fhelp-pEnd">The date the treatment is expected to finish. Optional.</div><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div>
+      <div class="dateField" data-future="from-today"><input type="text" id="pEnd"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div><div class="hint2" id="fhelp-pEnd">The date the treatment is expected to finish. Optional.</div>
       <label>Review date</label>
-      <div class="dateField"><input type="text" id="pReview"><div class="hint2" id="fhelp-pReview">The date the plan should be checked again. Optional.</div><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div>
+      <div class="dateField" data-future="from-today"><input type="text" id="pReview"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div><div class="hint2" id="fhelp-pReview">The date the plan should be checked again. Optional.</div>
       <label>Diagnoses this plan treats</label><div id="pDx"></div>
       <label>Clinical notes</label><textarea id="pNotes" rows="2"></textarea>
       <button class="btn-primary" id="pSaveBtn">Start plan</button>
@@ -469,7 +469,7 @@
         <datalist id="abbrList"></datalist><div id="obAbbrHelp" class="fhelp" style="font-size:12.5px;margin:4px 0 8px;line-height:1.4"></div></div>
       <label>When should it be given? *</label><div class="fhelp" style="font-size:12px;color:#5b6b7a;margin:2px 0 8px;line-height:1.35">Choose the pattern. A short explanation and an example appear below.</div>
       <select id="obType"></select>
-      <div class="row"><div><label>First dose on</label><div class="dateField"><input type="text" id="obStartDate"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div></div>
+      <div class="row"><div><label>First dose on</label><div class="dateField" data-future="open"><input type="text" id="obStartDate"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div></div>
         <div><label>At what time?</label><input type="time" id="obStartTime"></div></div>
       <div id="obSchedHelp" class="fhelp" style="font-size:12.5px;color:#34495e;background:#f3f7fb;border-radius:8px;padding:8px 10px;margin:6px 0 8px;line-height:1.4"></div>
       <div id="obSched"></div>
@@ -1265,6 +1265,8 @@
     if (title.length < 2) { m.textContent = "Give the plan a title."; return; }
     const end = PCF.dateInfo("pEnd"), rev = PCF.dateInfo("pReview");
     if (end.state === "bad" || rev.state === "bad") { m.textContent = "Type the dates as DD/MM/YYYY or tap the calendar."; return; }
+    if (end.state === "ok" && end.iso < PCF.todayISO()) { m.textContent = "The expected end date cannot be in the past."; return; }
+    if (rev.state === "ok" && rev.iso < PCF.todayISO()) { m.textContent = "The review date cannot be in the past."; return; }
     const ids = [], names = []; document.querySelectorAll("[data-pdx]").forEach(c => { if (c.checked) { ids.push(c.dataset.pdx); names.push(c.dataset.pname); } });
     const ref = doc(collection(db, "pc_treatment_plans"));
     commitOps([["s", ref, Object.assign(stamp(), { encounterId: encId, patientId: enc.patientId, patientName: enc.patientName, encounterNo: enc.encounterNo, title: title, careSetting: $("pSetting").value, priority: $("pPriority").value, startAt: Date.now(),
@@ -1297,7 +1299,7 @@
     return "";
   }
   function stageRow(d, t, x) { return '<div class="cand stg"><div class="row"><div><label>Days</label><input type="number" inputmode="numeric" class="stg-days" value="' + esc(d || "") + '"></div><div><label>Dose</label><input type="number" inputmode="decimal" step="any" class="stg-dose" value="' + esc(x || "") + '"></div></div><label>Times of day</label><input type="text" class="stg-times" placeholder="08:00" value="' + esc(t || "") + '"><button type="button" class="btn-small btn-secondary stg-rm" style="margin-top:6px;">Remove stage</button></div>'; }
-  function itemRow(d, t, x) { return '<div class="cand itm"><label>Date</label><div class="dateField"><input type="text" class="itm-date" value="' + esc(d ? PCF.toTyped(d) : "") + '"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div><div class="row"><div><label>Time</label><input type="time" class="itm-time" value="' + esc(t || "") + '"></div><div><label>Dose (optional)</label><input type="number" inputmode="decimal" step="any" class="itm-dose" value="' + esc(x || "") + '"></div></div><button type="button" class="btn-small btn-secondary itm-rm" style="margin-top:6px;">Remove</button></div>'; }
+  function itemRow(d, t, x) { return '<div class="cand itm"><label>Date</label><div class="dateField" data-future="open"><input type="text" class="itm-date" value="' + esc(d ? PCF.toTyped(d) : "") + '"><button type="button" class="cal-btn" aria-label="Pick from calendar">&#128197;</button><input type="date" class="cal-native" tabindex="-1" aria-hidden="true"></div><div class="row"><div><label>Time</label><input type="time" class="itm-time" value="' + esc(t || "") + '"></div><div><label>Dose (optional)</label><input type="number" inputmode="decimal" step="any" class="itm-dose" value="' + esc(x || "") + '"></div></div><button type="button" class="btn-small btn-secondary itm-rm" style="margin-top:6px;">Remove</button></div>'; }
   function renderSchedFields() {
     const t = $("obType").value; let h = "";
     if (t === "interval" || t === "daily" || t === "fixed" || t === "elapsed") h = patternHtml(t);
@@ -1306,7 +1308,7 @@
     else if (t === "taper") h = '<label>Stages (each stage has its own dose)</label><div id="obStages">' + stageRow("", "", "") + '</div><button type="button" class="btn-small btn-secondary" id="obAddStage" style="width:100%; margin-top:6px;">Add a stage</button>';
     else if (t === "custom") h = '<label>Dates and times</label><div id="obItems">' + itemRow("", "", "") + '</div><button type="button" class="btn-small btn-secondary" id="obAddItem" style="width:100%; margin-top:6px;">Add another time</button>';
     const sh = SCHED_HELP[t]; $("obSchedHelp").innerHTML = sh ? esc(sh[0]) + "<br><b>" + esc(sh[1]) + "</b>" : ""; $("obSchedHelp").style.display = sh ? "" : "none";
-    $("obSched").innerHTML = h; PCF.initDates();
+    $("obSched").innerHTML = h; initDates();
     $("obWeightBox").classList.toggle("hidden", t !== "weight"); if (t === "weight") buildWeightBox();
     const dose = $("obDose"); dose.readOnly = t === "weight"; if (t !== "weight") dose.placeholder = "";
     schedulePreview();
@@ -1355,7 +1357,7 @@
     if (pat === "elapsed") set("obHours", (s.hours || []).join(", "));
     if (b.scheduleType === "prn") { set("obInd", s.indication); set("obMinInt", s.minIntervalHours); set("obMaxDay", s.maxPerDay); set("obMaxDaily", s.maxDailyDose); set("obPrnDays", s.periodDays); }
     if (b.scheduleType === "taper") $("obStages").innerHTML = (s.stages || []).map(x => stageRow(x.days, (x.times || []).join(", "), x.doseValue)).join("") || stageRow("", "", "");
-    if (b.scheduleType === "custom") { $("obItems").innerHTML = (s.items || []).map(x => itemRow(x.date, x.time, x.doseValue)).join("") || itemRow("", "", ""); PCF.initDates(); }
+    if (b.scheduleType === "custom") { $("obItems").innerHTML = (s.items || []).map(x => itemRow(x.date, x.time, x.doseValue)).join("") || itemRow("", "", ""); initDates(); }
   }
   function schedulePreview() { clearTimeout(draftTimer); draftTimer = setTimeout(updateSafety, 120); }
   function updateSafety() {
@@ -1674,6 +1676,16 @@
     document.querySelectorAll("#tabs .pill-btn").forEach(x => x.classList.toggle("selected", x === b));
     ["triage", "consult", "notes", "tests", "dx", "treat", "close"].forEach(t => { $("tab-" + t).classList.toggle("hidden", t !== b.dataset.t); });
   }));
+  // Dates that belong to the FUTURE (a plan's expected end and review date, the first dose, planned dose dates): the shared PCF.initDates() stops every calendar at today, so it is lifted here.
+  // data-future="from-today" also stops the calendar before today; "open" only lifts the cap. A date typed by hand is checked where it is saved.
+  function initDates() {
+    PCF.initDates();
+    document.querySelectorAll(".dateField[data-future]").forEach(w => {
+      const n = w.querySelector('input[type="date"]'), b = w.querySelector(".cal-btn"); if (!n || !b) return;
+      const fix = () => { n.removeAttribute("max"); if (w.dataset.future === "from-today") n.min = PCF.todayISO(); };
+      fix(); if (!w.dataset.futureReady) { w.dataset.futureReady = "1"; b.addEventListener("click", fix, true); }   // refreshed on each tap, so a page left open overnight stays right
+    });
+  }
   // Address link: encounter.html?id=<visit>&tab=triage|consultation|notes|tests|diagnosis|treatment|close opens that tab once the visit has loaded. It uses the normal tab button.
   // Without a permission that works in that tab the visit opens normally on its first tab and says so. An unknown value is ignored.
   const LINK_TABS = { triage: ["triage", "Triage", ["triage.record"]], consultation: ["consult", "Consultation", ["consult.record"]], notes: ["notes", "Notes", ["consult.record", "consult.sign"]], tests: ["tests", "Tests", ["investigation.request", "investigation.review"]],
@@ -1726,7 +1738,7 @@
   $("abbrList").innerHTML = PCAB.all().filter(a => a.kind === "frequency" || a.kind === "timing").map(a => '<option value="' + esc(a.abbr) + '">' + esc(a.meaning) + "</option>").join("");
   $("obCard").addEventListener("input", schedulePreview); $("obCard").addEventListener("change", e => {
     if (e.target.id === "obFreq") { const t = { 1: "08:00", 2: "08:00, 20:00", 3: "08:00, 14:00, 20:00", 4: "06:00, 12:00, 18:00, 22:00" }[e.target.value]; if (t && $("obTimes")) $("obTimes").value = t; }
-    if (e.target.id === "obPattern") { $("obPatFields").innerHTML = patternHtml(e.target.value); PCF.initDates(); }
+    if (e.target.id === "obPattern") { $("obPatFields").innerHTML = patternHtml(e.target.value); initDates(); }
     if (e.target.id === "obMed") { const d = drugByName(e.target.value.trim()); if (d) { if (!$("obForm").value && d.dosageForm) $("obForm").value = d.dosageForm; if (!$("obUnit").value && d.baseUnit) $("obUnit").value = String(d.baseUnit).toLowerCase(); } }
     schedulePreview();
   });
@@ -1734,7 +1746,7 @@
     if (e.target.id === "obAbbrGo") { applyAbbrev(); return; }
     if (e.target.id === "wManual") { const pat = $("obPattern") ? $("obPattern").value : "interval"; $("obType").value = pat; $("obDose").value = ""; renderSchedFields(); return; }
     if (e.target.id === "obAddStage") { $("obStages").insertAdjacentHTML("beforeend", stageRow("", "", "")); return; }
-    if (e.target.id === "obAddItem") { $("obItems").insertAdjacentHTML("beforeend", itemRow("", "", "")); PCF.initDates(); return; }
+    if (e.target.id === "obAddItem") { $("obItems").insertAdjacentHTML("beforeend", itemRow("", "", "")); initDates(); return; }
     if (e.target.classList.contains("stg-rm")) { const r = e.target.closest(".stg"); if (document.querySelectorAll("#obStages .stg").length > 1) r.remove(); schedulePreview(); return; }
     if (e.target.classList.contains("itm-rm")) { const r = e.target.closest(".itm"); if (document.querySelectorAll("#obItems .itm").length > 1) r.remove(); schedulePreview(); }
   });
@@ -1765,7 +1777,7 @@
     const er = e.target.closest("[data-nerr]"); if (er) markError("pc_clinical_notes", er.dataset.nerr, "consult.sign", "note.error");
   });
   for (let i = 0; i <= 10; i++) { const o = document.createElement("option"); o.value = String(i); o.textContent = String(i); $("tPain").appendChild(o); }
-  buildExamForm(); buildFollowForm(); syncNoteForm(); PCF.initDates();
+  buildExamForm(); buildFollowForm(); syncNoteForm(); initDates();
   { const nd = $("nFuDate").closest(".dateField").querySelector('input[type="date"]'); if (nd) { nd.removeAttribute("max"); nd.min = PCF.todayISO(); } } // a review date is in the future
 
   function mark(s) {
