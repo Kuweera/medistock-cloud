@@ -79,6 +79,72 @@ const day = (() => { const d = new Date(); return d.getFullYear() + "-" + String
   {
     const { page, f } = await open(390, 844); await f.locator('#qList .pt', { hasText: "TEST Consult Then Rx" }).click(); assert.match(await page.evaluate(() => window.__went), /encounter\.html\?id=e2/); ok("Tapping a visit still opens it");
   }
+  // ---- Lead 2026-11-27: "Open [step]" actions, prescription-based pharmacy, "Saved" wording ----
+  const rowOf = (f, n) => f.locator("#qList .pt", { hasText: n });
+  const went = page => page.evaluate(() => window.__went);
+  {
+    const { page, f } = await open(390, 844);
+    const expect = { "TEST Triage Wait": ["Open Triage", "encounter.html?id=e1&tab=triage"], "TEST Triaged Only": ["Open Consultation", "encounter.html?id=e4&tab=consultation"], "TEST Consult Then Rx": ["Open Pharmacy", "pharmacy.html?patient=p_2"],
+      "TEST Lab Patient": ["Open Tests", "encounter.html?id=e3&tab=tests"], "TEST Dressing Pat": ["Open Treatment", "encounter.html?id=e5&tab=treatment"] };
+    for (const n of Object.keys(expect)) {
+      const r = rowOf(f, n), b = r.locator("[data-open]"); assert.equal(await b.innerText(), expect[n][0], n); assert.equal(await r.locator("[data-route]").innerText(), "Change next step");
+      assert.equal(await r.locator("[data-open]").evaluate(el => el.classList.contains("btn-primary")), true); assert.equal(await r.locator("[data-route]").evaluate(el => el.classList.contains("btn-secondary")), true);
+      await b.click(); assert.equal(await went(page), expect[n][1], n); await page.evaluate(() => { window.__went = null; });
+    }
+    ok("Each visit shows its main 'Open [step]' action (primary) with 'Change next step' as the secondary; each opens the address Developer 3 reported");
+    await rowOf(f, "TEST Triage Wait").locator("[data-route]").click(); assert.equal(await f.locator("#routeCard").isVisible(), true); assert.equal(await went(page), null); await f.locator("#rCancelBtn").click();
+    ok("Change next step still opens the routing form and does not navigate");
+    await page.screenshot({ path: OUT + "/queue-open-actions-390.png" });
+  }
+  for (const [as, label, want] of [["pharm", "Pharmacist (dispense.view only)", { "TEST Consult Then Rx": "Open Pharmacy" }], ["recep", "Reception (encounter.open only)", {}], ["view", "View-only", {}], ["all", "Operator with all permissions", { "TEST Triage Wait": "Open Triage", "TEST Consult Then Rx": "Open Pharmacy", "TEST Lab Patient": "Open Tests", "TEST Dressing Pat": "Open Treatment", "TEST Triaged Only": "Open Consultation" }]]) {
+    const { f } = await open(390, 844, "?as=" + as);
+    for (const n of ["TEST Triage Wait", "TEST Triaged Only", "TEST Consult Then Rx", "TEST Lab Patient", "TEST Dressing Pat"]) {
+      const b = rowOf(f, n).locator("[data-open]"); if (want[n]) assert.equal(await b.innerText(), want[n], label + " " + n); else assert.equal(await b.count(), 0, label + " must not be offered an action for " + n);
+    }
+    const routes = await f.locator("[data-route]").count(); assert.equal(routes > 0, as === "recep" || as === "all", label + " change-step button");
+    ok(label + ": actions shown only with the permission the target needs (" + (await f.locator("[data-open]").count()) + " shown)");
+  }
+  {
+    const { page, f } = await open(390, 844);
+    await add(page, "pc_encounters", "e7", { patientId: "p_7", patientName: "TEST Rx Only", patientSex: "male", encounterNo: "E-7", type: "outpatient", status: "open", stage: "in_consultation", arrivalAt: NOW - 1000, arrivalDay: day, reason: "Fever", businessId: B, facilityId: F });
+    await add(page, "pc_treatment_orders", "m7", Object.assign({ encounterId: "e7", patientId: "p_7", kind: "medicine", medicineName: "TESTmed", status: "active" }, sc));
+    await add(page, "pc_encounters", "e8", { patientId: "p_8", patientName: "TEST Rx Done", patientSex: "male", encounterNo: "E-8", type: "outpatient", status: "open", stage: "in_consultation", arrivalAt: NOW - 900, arrivalDay: day, reason: "Fever", businessId: B, facilityId: F });
+    await add(page, "pc_treatment_orders", "m8", Object.assign({ encounterId: "e8", patientId: "p_8", kind: "medicine", medicineName: "TESTmed", status: "active" }, sc));
+    await add(page, "prescriptions", "m8", Object.assign({ orderId: "m8", encounterId: "e8", patientId: "p_8", status: "completed" }, sc));
+    await page.waitForTimeout(300);
+    let t = await rowOf(f, "TEST Rx Only").innerText(); assert.match(t, /Next: No further step/); assert.match(t, /Medicine ordered/); // an order alone is not a pharmacy prescription
+    await add(page, "prescriptions", "m7", Object.assign({ orderId: "m7", encounterId: "e7", patientId: "p_7", status: "pending" }, sc)); await page.waitForTimeout(300);
+    t = await rowOf(f, "TEST Rx Only").innerText(); assert.match(t, /Next: Pharmacy/); assert.match(t, /1 prescription waiting at the pharmacy/); assert.equal(await rowOf(f, "TEST Rx Only").locator("[data-open]").innerText(), "Open Pharmacy");
+    t = await rowOf(f, "TEST Rx Done").innerText(); assert.match(t, /Next: No further step/); assert.match(t, /Medicine ordered/); assert.equal(await rowOf(f, "TEST Rx Done").locator("[data-open]").count(), 0);
+    await tab(f, "pharmacy").click(); assert.deepEqual((await names(f)).sort(), ["TEST Consult Then Rx", "TEST Rx Only"]);
+    ok("Pending pharmacy prescription (no hint) now shows 'Next: Pharmacy', a chip and the Pharmacy tab; a medicine order alone or a completed prescription does not");
+    await tab(f, "all").click(); await rowOf(f, "TEST Rx Only").locator("[data-open]").click(); assert.equal(await went(page), "pharmacy.html?patient=p_7"); ok("Open Pharmacy goes to that patient's prescriptions only");
+  }
+  {
+    const { page, f } = await open(390, 844);
+    const route = async (n, next) => { await rowOf(f, n).locator("[data-route]").click(); await f.locator("#rNext").selectOption(next); await f.locator("#rSaveBtn").click(); };
+    await route("TEST Triaged Only", "pharmacy"); await page.waitForTimeout(300);
+    let m = await f.locator("#doneMsg").innerText(); assert.match(m, /next step is Pharmacy\. Saved\./); assert.doesNotMatch(m, /on this device/);
+    await f.locator("#doneMsg [data-open-now]").click(); assert.equal(await went(page), "pharmacy.html?patient=p_4"); assert.match(m, /Open Pharmacy now/);
+    ok("After routing: 'Saved.' once the write is confirmed, with an 'Open Pharmacy now' button that goes to the right address");
+    await page.evaluate(() => { window.__went = null; }); await route("TEST Triage Wait", "none"); await page.waitForTimeout(300); assert.equal(await f.locator("#doneMsg [data-open-now]").count(), 0); ok("No 'Open now' button when the chosen step needs no page (No further step)");
+  }
+  {
+    const { page, f } = await open(390, 844, "?hold=1");
+    await rowOf(f, "TEST Triaged Only").locator("[data-route]").click(); await f.locator("#rNext").selectOption("consultation"); await f.locator("#rSaveBtn").click();
+    assert.equal(await f.locator("#doneMsg").innerText(), "Saving…"); await page.waitForTimeout(1900);
+    let m = await f.locator("#doneMsg").innerText(); assert.match(m, /Saved on this device; it syncs when you are online\./); assert.doesNotMatch(m, /next step is Consultation\. Saved\./); assert.equal(await f.locator("#doneMsg [data-open-now]").innerText(), "Open Consultation now");
+    await page.evaluate(() => window.__release()); await page.waitForTimeout(300); m = await f.locator("#doneMsg").innerText(); assert.match(m, /next step is Consultation\. Saved\./); assert.doesNotMatch(m, /on this device/);
+    ok("While the write is still pending the message says 'Saved on this device; it syncs when you are online', and changes to 'Saved.' once it is confirmed");
+  }
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } }), page = await ctx.newPage(); page.on("pageerror", e => errors.push(String(e)));
+    await page.goto(BASE + "?hold=1"); await page.evaluate(() => { window.MC.go = function (u) { window.__went = u; }; });
+    await page.evaluate(() => window.__db.add("pc_encounters", "e1", { businessId: "biz1", facilityId: "shop1", patientId: "p_1", patientName: "TEST Off", patientSex: "male", encounterNo: "E-1", type: "outpatient", status: "open", stage: "registered", arrivalAt: Date.now(), arrivalDay: new Date().toLocaleDateString("en-CA"), reason: "x" }));
+    const f = page.frameLocator("#f"); await f.locator("#qList .pt").first().waitFor(); await ctx.setOffline(true);
+    await f.locator("[data-route]").click(); await f.locator("#rNext").selectOption("consultation"); await f.locator("#rSaveBtn").click(); await page.waitForTimeout(150);
+    assert.match(await f.locator("#doneMsg").innerText(), /Saved on this device; it syncs when you are online\./); ok("Offline (browser reports no connection): the pending wording shows at once");
+  }
   for (const [w, h, n] of [[360, 640, "small-phone"], [768, 1024, "tablet"], [1280, 900, "desktop"]]) {
     const { page, f } = await open(w, h); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, n);
     await f.locator('#qList .pt', { hasText: "TEST Lab Patient" }).locator("[data-route]").click(); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, n + " with route form");

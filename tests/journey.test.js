@@ -2,7 +2,7 @@
    The hint (pc_encounters.journey) is only a cache: records win, nothing is forced. */
 const test = require("node:test"), assert = require("node:assert"), fs = require("node:fs"), path = require("node:path");
 const src = fs.readFileSync(path.join(__dirname, "..", "encounters.html"), "utf8");
-const J = new Function(src.slice(src.indexOf("/*PURE-START*/"), src.indexOf("/*PURE-END*/")) + "; return { journeyView, journeyHint, J_NEXT_LABEL, J_WAIT_LABEL };")();
+const J = new Function(src.slice(src.indexOf("/*PURE-START*/"), src.indexOf("/*PURE-END*/")) + "; return { journeyView, journeyHint, J_NEXT_LABEL, J_WAIT_LABEL, stepAction, STEP_OPEN, LINK };")();
 const enc = (stage, journey) => ({ stage, journey, status: "open" });
 const lab = s => ({ status: s });
 
@@ -50,4 +50,55 @@ test("the choices match the rules v20 enum exactly", () => {
   const nxt = rules.match(/j\.get\('next', ''\) in \[([^\]]*)\]/)[1].match(/'([a-z_]+)'/g).map(x => x.replace(/'/g, ""));
   const wt = rules.match(/hasOnly\(\['laboratory'[^\]]*\]/)[0].match(/'([a-z]+)'/g).map(x => x.replace(/'/g, ""));
   assert.deepEqual(Object.keys(J.J_NEXT_LABEL).sort(), nxt.slice().sort()); assert.deepEqual(Object.keys(J.J_WAIT_LABEL).sort(), wt.slice().sort());
+});
+
+// ---- Lead 2026-11-27: prescription-based pharmacy step, "Open [step]" actions, one place for links ----
+const rx = s => ({ status: s });
+test("a pending prescription puts the patient in the pharmacy queue with no hint (was 'No further step')", () => {
+  const v = J.journeyView(enc("in_consultation"), [], [{ kind: "medicine" }], [rx("pending")]);
+  assert.equal(v.next, "pharmacy"); assert.equal(v.rxOpen, 1); assert.deepEqual(v.depts.slice().sort(), ["consultation", "pharmacy"]);
+  assert.equal(J.journeyView(enc("in_consultation"), [], [], [rx("partially_dispensed")]).next, "pharmacy");
+});
+test("dispensed, cancelled or superseded prescriptions never put anyone in the pharmacy; a medicine order alone does not either", () => {
+  for (const st of ["completed", "cancelled", "superseded", "held"]) assert.equal(J.journeyView(enc("in_consultation"), [], [], [rx(st)]).next, "none");
+  assert.equal(J.journeyView(enc("in_consultation"), [], [{ kind: "medicine" }], []).next, "none");
+  assert.equal(J.journeyView(enc("registered"), [], [], [rx("pending")]).next, "triage"); // the earlier real step still comes first
+});
+test("tests still come before the pharmacy; a saved hint still wins when it is not stale", () => {
+  assert.equal(J.journeyView(enc("in_consultation"), [lab("requested")], [], [rx("pending")]).next, "investigation");
+  assert.equal(J.journeyView(enc("in_consultation"), [lab("verified")], [], [rx("pending")]).next, "results_review");
+  assert.equal(J.journeyView(enc("in_consultation", { v: 1, next: "discharge", waiting: [], note: "" }), [], [], [rx("pending")]).next, "discharge");
+});
+const may = (...keys) => k => keys.indexOf(k) >= 0;
+const E = { id: "e 1", patientId: "p1", patientName: "Ann Mary" };
+test("link formats are built in ONE place and match what Developer 3 reported", () => {
+  assert.equal(J.LINK.visitTab(E, "triage"), "encounter.html?id=e%201&tab=triage");
+  assert.equal(J.LINK.pharmacy(E), "pharmacy.html?patient=p1");
+  assert.equal(J.LINK.pharmacy({ patientName: "Ann Mary" }), "pharmacy.html?patient=Ann%20Mary");
+  const body = src.slice(src.indexOf("/*PURE-START*/"), src.indexOf("/*PURE-END*/")).split("\n").filter(l => !/^\s*\/\//.test(l)).join("\n");
+  assert.equal((body.match(/encounter\.html\?id=/g) || []).length, 1); assert.equal((body.match(/pharmacy\.html\?patient=/g) || []).length, 1);
+  const rest = src.slice(src.indexOf("/*PURE-END*/")); assert.equal((rest.match(/pharmacy\.html\?patient=/g) || []).length, 0, "no pharmacy address outside LINK");
+});
+test("every visit-tab link uses a tab Developer 3 accepts, with the same permissions as that tab", () => {
+  const enc3 = fs.readFileSync(path.join(__dirname, "..", "encounter.html"), "utf8");
+  const tabs = {}; enc3.match(/LINK_TABS = \{[\s\S]*?\};/)[0].replace(/(\w+): \["\w+", "[^"]*", \[([^\]]*)\]\]/g, (m, k, p) => { tabs[k] = p.match(/[a-z.]+/g); });
+  assert.deepEqual(Object.keys(tabs).sort(), ["close", "consultation", "diagnosis", "notes", "tests", "treatment", "triage"]);
+  Object.keys(J.STEP_OPEN).forEach(step => J.STEP_OPEN[step].forEach(o => {
+    const m = /tab=(\w+)/.exec(o.url({ id: "x" })); if (!m) return;
+    assert.ok(tabs[m[1]], step + " -> unknown tab " + m[1]);
+    tabs[m[1]].forEach(k => assert.ok(o.perms.indexOf(k) >= 0, step + ": " + m[1] + " tab accepts " + k + " but the action does not"));
+    o.perms.forEach(k => assert.ok(tabs[m[1]].indexOf(k) >= 0, step + ": action allows " + k + " but the tab does not"));
+  }));
+});
+test("an action is offered only with the permission the target needs", () => {
+  const A = (n, ...k) => J.stepAction(n, E, may(...k));
+  assert.equal(A("triage", "consult.record"), null); assert.equal(A("triage", "triage.record").url, "encounter.html?id=e%201&tab=triage");
+  assert.equal(A("consultation", "consult.record").label, "Open Consultation");
+  assert.equal(A("results_review", "investigation.review").url, "encounter.html?id=e%201&tab=tests"); assert.equal(A("results_review", "lab.result"), null);
+  assert.equal(A("investigation", "lab.process").url, "laboratory.html"); assert.equal(A("investigation", "investigation.request").label, "Open Tests");
+  assert.equal(A("pharmacy", "treatment.prescribe"), null); assert.equal(A("pharmacy", "dispense.view").url, "pharmacy.html?patient=p1");
+  assert.equal(A("treatment", "treatment.prescribe").url, "encounter.html?id=e%201&tab=treatment");
+  assert.equal(A("discharge", "encounter.close").label, "Open Close visit"); assert.equal(A("follow_up", "encounter.close").url, "encounter.html?id=e%201&tab=close");
+  assert.equal(A("none", "encounter.close", "triage.record"), null); assert.equal(J.stepAction("bogus", E, () => true), null);
+  assert.equal(J.stepAction("triage", E, () => false), null);
 });
