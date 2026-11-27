@@ -926,6 +926,41 @@ test("v26 observations: a triage record may carry interp, ctx and repeatOf (boun
   await assertFails(setDoc(doc(db("labMgr"), "pc_obs_acks", "ack_t2_spo2"), Object.assign(stamp("labMgr"), { encounterId: "e1", patientId: "p1", recordedBy: "labMgr", status: "active", triageId: "t2", measure: "spo2", level: "critical", ruleId: "r", ruleVersion: 1, ackBy: "labMgr" })));
 });
 
+test("v29-review (Developer 4 stage 3C): a lab result may carry refApplied, and it can never be rewritten afterwards", async () => {
+  await seedLab("processing");
+  const ref = [{ rangeId: "rr_test_v1", version: 1, min: 3.5, max: 5.5, unit: "mmol/L", source: "TEST" }];
+  const r = Object.assign(stamp("labTech"), { orderId: "L1", patientId: "p1", value: 4, status: "unverified", enteredBy: "labTech", refApplied: ref });
+  const b1 = writeBatch(db("labTech")); b1.set(doc(db("labTech"), "pc_inv_results", "L1"), r);
+  b1.update(doc(db("labTech"), "pc_inv_orders", "L1"), upd("labTech", { status: "resulted", resultedAt: serverTimestamp(), resultedBy: "labTech", resultedByName: "x", currentResultId: "L1" }));
+  await assertSucceeds(b1.commit());
+  await assertFails(updateDoc(doc(db("labTech"), "pc_inv_results", "L1"), upd("labTech", { refApplied: [] })));
+  await assertFails(updateDoc(doc(db("owner"), "pc_inv_results", "L1"), upd("owner", { refApplied: ref.concat(ref) })));
+});
+
+test("v30 reminders: settings need settings.manage and sane timings; an acknowledgement is create-only, one per event and level, for a real event of the same facility and patient", async () => {
+  await seedV19();
+  await env.withSecurityRulesDisabled(async c => { await setDoc(doc(c.firestore(), "pc_treatment_events", "ev9"), { businessId: B, facilityId: A, patientId: "p1", orderId: "o9", status: "pending" }); });
+  const set = (who, id, extra) => setDoc(doc(db(who), "pc_reminder_settings", id), Object.assign(stamp(who), { facilityId: A, graceMin: 30, soonMin: 30 }, extra || {}));
+  await assertSucceeds(set("owner", A));
+  await assertFails(set("nurse", A));                                                    // no settings.manage
+  await assertFails(set("owner", "other1"));                                             // id must equal facilityId
+  await assertFails(set("owner", A, { graceMin: 4 }));
+  await assertFails(set("owner", A, { graceMin: 241 }));
+  await assertFails(set("owner", A, { escalateAfterMin: 721 }));
+  await assertFails(set("owner", A, { soonMin: 30.5 }));
+  const ack = (who, extra) => setDoc(doc(db(who), "pc_reminder_acks", (extra && extra.id) || "rack_ev9_dose_overdue"), Object.assign(stamp(who), { eventId: "ev9", orderId: "o9", patientId: "p1", level: "dose_overdue", ackBy: who, ackByName: "x" }, extra || {}));
+  await assertSucceeds(ack("nurse"));
+  await assertFails(ack("nurse"));                                                       // the same id cannot be created twice
+  await assertFails(ack("nurse", { id: "rack_ev9_bogus", level: "bogus" }));
+  await assertFails(ack("nurse", { id: "rack_ev9_dose_due", level: "dose_overdue" }));   // id must match the level
+  await assertFails(ack("nurse", { id: "rack_ev9_dose_due", level: "dose_due", ackBy: "owner" }));
+  await assertFails(ack("nurse", { id: "rack_ev9_dose_due", level: "dose_due", patientId: "p2" }));
+  await assertFails(ack("nurse", { id: "rack_ev9_dose_due", level: "dose_due", note: "x".repeat(301) }));
+  await assertFails(ack("nurse", { id: "rack_nope_dose_due", eventId: "nope", level: "dose_due" }));   // the event must exist
+  await assertFails(updateDoc(doc(db("nurse"), "pc_reminder_acks", "rack_ev9_dose_overdue"), { note: "x" }));
+  await assertFails(deleteDoc(doc(db("owner"), "pc_reminder_acks", "rack_ev9_dose_overdue")));
+});
+
 test("v29 triage: glucose limits depend on the unit, zero is refused, a device status stores no number, and diastolic must be below systolic", async () => {
   await seedV19();
   const f = db("triager"), tri = (id, extra) => setDoc(doc(f, "pc_triage", id), Object.assign(stamp("triager"), { encounterId: "e1", patientId: "p1", recordedBy: "triager", status: "active" }, extra || {}));
