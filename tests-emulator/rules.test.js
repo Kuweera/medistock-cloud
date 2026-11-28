@@ -41,6 +41,8 @@ const users = {
   labMgr: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "ranges.manage": true } },
   labLead: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "ranges.approve": true } },
   labBoth: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "ranges.manage": true, "ranges.approve": true } },
+  closer: { role: "operator", businessId: B, shopId: A, active: true, perms: { "patient.view": true, "encounter.close": true } },
+  closerB: { role: "operator", businessId: B, shopId: S, active: true, perms: { "patient.view": true, "encounter.close": true } },
   rules0: { role: "operator", businessId: B, shopId: A, active: true, perms: { "treatment.prescribe": true } }
 };
 // one Firestore object per user for the whole run: building a new one on every call made the SDK refuse to mix documents ("different Firestore instance")
@@ -984,6 +986,58 @@ test("v29 triage: glucose limits depend on the unit, zero is refused, a device s
   await assertFails(tri("b3", { bpSys: 80, bpDia: 80 }));
   await assertFails(tri("b4", { bpSys: 80, bpDia: 120 }));
   await assertSucceeds(tri("n1", { glucose: null, glucoseUnit: null, glucoseStatus: null, bpSys: null, bpDia: null }));   // the shape the page writes when no glucose is entered
+});
+
+// ======================= v31 (Lead): tests for Developer 3 Stage D and Developer 4 Stage 4 (written against the real client helpers; run by GitHub CI only) =======================
+// the exact commit the pharmacy and the visit page build: the six allowed encounter fields plus an audit record (PCD.closeVisitWrites)
+function closeBatch(uid, encId, o) {
+  o = o || {};
+  const f = db(uid), req = PCD.closeVisitWrites({ stamp: () => stamp(uid), ts: serverTimestamp(), encId, patientId: "p1", by: { id: uid, name: "Test user" }, note: o.note == null ? "take-home supplied" : o.note });
+  const b = writeBatch(f);
+  b.update(doc(f, "pc_encounters", encId), Object.assign({}, req.update, o.extra || {}));
+  b.set(doc(collection(f, "pc_audit_logs")), req.audit);
+  return b;
+}
+test("v31 Stage D close: a NON-owner with encounter.close closes an open visit together with its audit record; it is then closed and cannot be closed again", async () => {
+  await seedV19();
+  await assertSucceeds(closeBatch("closer", "e1").commit());
+  let e, audits;
+  await env.withSecurityRulesDisabled(async c => {
+    const f = c.firestore();
+    e = (await getDoc(doc(f, "pc_encounters", "e1"))).data();
+    audits = (await getDocs(query(collection(f, "pc_audit_logs"), where("action", "==", "encounter.close")))).docs.map(d => d.data());
+  });
+  assert.equal(e.status, "closed"); assert.equal(e.closedBy, "closer");
+  assert.equal(audits.length, 1); assert.equal(audits[0].actorUid, "closer"); assert.equal(audits[0].recordPath, "pc_encounters/e1");
+  await assertFails(closeBatch("closer", "e1").commit());                                  // a closed visit cannot be closed (or reopened) again
+});
+test("v31 Stage D close: refused without encounter.close, in another facility, with closedBy of another person, with a key outside the six allowed, and as 'cancelled' without a reason", async () => {
+  await seedV19();
+  await assertFails(closeBatch("nurse", "e1").commit());                                   // treatment.administer is not encounter.close
+  await assertFails(closeBatch("pharm", "e1").commit());                                   // the pharmacist alone cannot close a visit either
+  await assertFails(closeBatch("closerB", "e1").commit());                                 // another facility
+  await assertFails(closeBatch("closer", "e1", { extra: { closedBy: "owner" } }).commit());
+  await assertFails(closeBatch("closer", "e1", { extra: { stage: "registered" } }).commit());   // not one of the allowed keys
+  await assertFails(closeBatch("closer", "e1", { extra: { status: "cancelled" } }).commit());   // cancelling needs a reason of 3+ characters
+  await assertSucceeds(closeBatch("owner", "e1").commit());                                // the owner holds every permission
+});
+test("v31 Stage 7: a triage record with no glucose keys at all (nothing entered) is accepted, with or without other readings", async () => {
+  await seedV19();
+  const f = db("triager"), tri = (id, extra) => setDoc(doc(f, "pc_triage", id), Object.assign(stamp("triager"), { encounterId: "e1", patientId: "p1", recordedBy: "triager", status: "active" }, extra || {}));
+  await assertSucceeds(tri("ng1", { pulse: 80, temperatureC: 36.8 }));
+  await assertSucceeds(tri("ng2", {}));
+});
+test("v31 Stage 4 acknowledgement: only a user with treatment.administer or treatment.prescribe may acknowledge; the order must match the event; another facility is refused", async () => {
+  await seedV19();
+  await env.withSecurityRulesDisabled(async c => { await setDoc(doc(c.firestore(), "pc_treatment_events", "ev8"), { businessId: B, facilityId: A, patientId: "p1", orderId: "o8", status: "pending" }); });
+  const ack = (who, extra) => setDoc(doc(db(who), "pc_reminder_acks", (extra && extra.id) || "rack_ev8_dose_due"), Object.assign(stamp(who), { eventId: "ev8", orderId: "o8", patientId: "p1", level: "dose_due", ackBy: who, ackByName: "x" }, extra || {}));
+  await assertFails(ack("receptionist"));                                                  // patient.view only
+  await assertFails(ack("viewer"));                                                        // dispense.view only
+  await assertFails(ack("prescriberB"));                                                   // right permission, other facility
+  await assertFails(ack("nurse", { orderId: "o1" }));                                      // not this event's order
+  await assertSucceeds(ack("prescriber"));
+  await assertSucceeds(ack("nurse", { id: "rack_ev8_dose_overdue", level: "dose_overdue" }));   // another level of the same event is a separate record
+  await assertSucceeds(getDoc(doc(db("nurse"), "pc_reminder_acks", "rack_ev8_dose_due")));     // a nurse reads it (patient.view)
 });
 
 // ======================= v27 (Lead): reviewed proposals (all values are fake test values) =======================
