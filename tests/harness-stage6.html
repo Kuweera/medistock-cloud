@@ -9,11 +9,21 @@
   var B = "biz1", F = "shop1";
   put("shops", F, { businessId: B, name: "Test Clinic Pharmacy", enabledServices: ["patient_care"], timezone: "Africa/Kampala", facilityType: "clinic" });
   put("users", "owner1", { businessId: B, role: "owner", name: "Owner One", active: true });
+  var AS_USER = new URLSearchParams(location.search).get("as");
+  if (AS_USER === "pharm") put("users", "owner1", { businessId: B, role: "staff", shopId: F, name: "Pharmacist Pam", active: true, perms: { "dispense.view": true, "dispense.perform": true, "patient.view": true } });
+  if (AS_USER === "pharmclose") put("users", "owner1", { businessId: B, role: "staff", shopId: F, name: "Pharmacist Cleo", active: true, perms: { "dispense.view": true, "dispense.perform": true, "patient.view": true, "encounter.close": true } });
+  if (AS_USER === "pharmrx") put("users", "owner1", { businessId: B, role: "staff", shopId: F, name: "Pharmacist Rex", active: true, perms: { "dispense.view": true, "dispense.perform": true, "patient.view": true, "treatment.prescribe": true } });
   put("drugs", "d1", { businessId: B, shopId: F, name: "Paracetamol 500mg", dosageForm: "Tablet", baseUnit: "Tablet", stockUnit: "Packet", intermediateUnit: "Strip", hasIntermediate: true, basePerIntermediate: 10, baseUnitsPerStock: 100, currentStockBase: 42, wholesale: 2000, retailBase: 30, retailIntermediate: 300, retailStock: 3000 });
   put("drugs", "d2", { businessId: B, shopId: F, name: "Amoxicillin 250mg", dosageForm: "Capsule", baseUnit: "Capsule", currentStockBase: 30 });
   put("drugs", "d3", { businessId: B, shopId: F, name: "Amoxicillin 500mg", dosageForm: "Capsule", baseUnit: "Capsule", currentStockBase: 30 });
   put("drugs", "d4", { businessId: B, shopId: F, name: "Ceftriaxone 1g injection", dosageForm: "Injection", baseUnit: "Vial", stockUnit: "Box", baseUnitsPerStock: 10, currentStockBase: 10, wholesale: 5000, retailBase: 1000 });
   put("batches", "b5", { businessId: B, shopId: F, drugId: "d4", batchNumber: "C1", expiryDate: iso(300), quantity: 10, purchasePricePerStockUnit: 5000 });
+  put("drugs", "d5", { businessId: B, shopId: F, name: "10ml syringe", dosageForm: "Consumable", baseUnit: "piece", drugClass: "Consumable", currentStockBase: 40, retailBase: 300, active: true });
+  put("drugs", "d6", { businessId: B, shopId: F, name: "Examination gloves (pair)", dosageForm: "Consumable", baseUnit: "pair", drugClass: "First aid", currentStockBase: 0, retailBase: 500, active: true });
+  put("drugs", "d7", { businessId: B, shopId: F, name: "Cetirizine 10mg", dosageForm: "Tablet", baseUnit: "Tablet", drugClass: "Antihistamine", currentStockBase: 60, retailBase: 100, active: true });
+  [["e9", "p9", "Test Patient Nine", "V-9", "open"], ["e10", "p10", "Test Patient Ten", "V-10", "open"], ["e11", "p11", "Test Patient Eleven", "V-11", "closed"], ["e12", "p12", "Test Patient Twelve", "V-12", "open"]].forEach(function (r, n) {
+    put("pc_encounters", r[0], { businessId: B, facilityId: F, encId: r[0], patientId: r[1], patientName: r[2], encounterNo: r[3], type: "outpatient", status: r[4], arrivalAt: Date.now() - (n + 1) * 600000 }); });
+  [["pl9", "p9", "Malaria treatment"], ["pl9b", "p9", "Wound care"], ["pl10", "p10", "Chest infection"], ["pl11", "p11", "Take-home course"]].forEach(function (r) { put("pc_treatment_plans", r[0], { businessId: B, facilityId: F, patientId: r[1], title: r[2], status: "active", version: 1 }); });
   put("consumable_items", "con_syr", { businessId: B, facilityId: F, name: "Syringe 5ml", unit: "piece", qtyOnHand: 20, reorderLevel: 5, active: true });
   put("consumable_items", "con_glv", { businessId: B, facilityId: F, name: "Gloves", unit: "pair", qtyOnHand: 2, reorderLevel: 6, active: true });
   put("consumable_bundles", "bun_im", { businessId: B, facilityId: F, name: "IM injection set", active: true, items: [{ itemId: "con_syr", qty: 1 }, { itemId: "con_glv", qty: 1 }] });
@@ -32,6 +42,21 @@
   put("pc_treatment_orders", "m9", Object.assign({}, base, { patientId: "p9", patientName: "Test Patient Nine", encounterId: "e9", encounterNo: "V-9", planId: "pl9", medicineId: "d1", medicineName: "Paracetamol 500mg", formulation: "Tablet", doseValue: 1, doseUnit: "tablet", quantityPrescribed: 6 }));
   put("pc_treatment_orders", "c9", Object.assign({}, base, { kind: "consumable", scheduleType: "once", patientId: "p9", patientName: "Test Patient Nine", encounterId: "e9", encounterNo: "V-9", planId: "pl9", medicineId: "d9", medicineName: "IV cannula 20G", quantityPrescribed: 5, quantityUnit: "Piece", instructions: "For the drip", prescribedAt: Date.now() - 600000 }));
   put("prescriptions", "c9", { id: "c9", orderId: "c9", businessId: B, facilityId: F, patientId: "p9", patientName: "Test Patient Nine", encounterId: "e9", planId: "pl9", status: "pending", qtyPrescribed: 5, qtyDispensed: 0, qtyOutstanding: 5, qtyUnknown: false, qtySetBy: "prescriber", qtyReturned: 0, lastRequestId: null, qtyUnit: "Piece", drugId: "d9", drugName: "IV cannula 20G", prescribedName: "IV cannula 20G" });
+  // Stage D: take-home visits. Orders use the same shape the visit page writes; mode take_home means nothing is given by staff.
+  var th = function (id, enc, no, pid, pname, name, mode, rxState, out) {
+    put("pc_treatment_orders", id, Object.assign({}, base, { patientId: pid, patientName: pname, encounterId: enc, encounterNo: no, planId: "pl" + enc, medicineId: "d7", medicineName: name, administrationMode: mode, quantityPrescribed: 10, quantityUnit: "Tablet", scheduleType: "daily" }));
+    put("prescriptions", id, { id: id, orderId: id, businessId: B, facilityId: F, patientId: pid, patientName: pname, encounterId: enc, planId: "pl" + enc, status: rxState, qtyPrescribed: 10, qtyDispensed: 10 - out, qtyOutstanding: out, qtyUnknown: false, qtySetBy: "prescriber", qtyReturned: 0, lastRequestId: null, qtyUnit: "Tablet", drugId: "d7", drugName: name, prescribedName: name, prescriberId: "doc1", prescribedAt: Date.now() - 3600000, orderVersion: 1 });
+  };
+  var visit = function (enc, no, pid, pname, status, type) { put("pc_encounters", enc, { businessId: B, facilityId: F, encId: enc, patientId: pid, patientName: pname, encounterNo: no, type: type || "pharmacy", status: status || "open", stage: "in_consultation", arrivalAt: Date.now() - 7200000 }); put("pc_treatment_plans", "pl" + enc, { businessId: B, facilityId: F, patientId: pid, title: "Plan " + no, status: "active", version: 1 }); };
+  visit("e30", "V-30", "p30", "Test Patient Thirty"); th("t30a", "e30", "V-30", "p30", "Test Patient Thirty", "Amoxicillin 500mg", "take_home", "completed", 0); th("t30b", "e30", "V-30", "p30", "Test Patient Thirty", "Cetirizine 10mg", "take_home", "completed", 0);   // all supplied
+  visit("e31", "V-31", "p31", "Test Patient Thirty One"); th("t31a", "e31", "V-31", "p31", "Test Patient Thirty One", "Amoxicillin 500mg", "take_home", "partially_dispensed", 4); th("t31b", "e31", "V-31", "p31", "Test Patient Thirty One", "Cetirizine 10mg", "take_home", "pending", 10);   // outstanding + a draft note + a test
+  put("pc_clinical_notes", "n31", { businessId: B, facilityId: F, encounterId: "e31", patientId: "p31", status: "draft" }); put("pc_inv_orders", "i31", { businessId: B, facilityId: F, encounterId: "e31", patientId: "p31", status: "requested" }); put("pc_inv_orders", "i31v", { businessId: B, facilityId: F, encounterId: "e31", patientId: "p31", status: "verified" });
+  visit("e32", "V-32", "p32", "Test Patient Thirty Two"); th("t32a", "e32", "V-32", "p32", "Test Patient Thirty Two", "Amoxicillin 500mg", "take_home", "completed", 0);   // plus a PROCEDURE the pharmacy does not load
+  put("pc_treatment_orders", "proc32", Object.assign({}, base, { kind: "procedure", patientId: "p32", patientName: "Test Patient Thirty Two", encounterId: "e32", encounterNo: "V-32", planId: "ple32", medicineId: null, medicineName: null, procedureName: "Wound dressing", scheduleType: "once" }));
+  visit("e33", "V-33", "p33", "Test Patient Thirty Three"); th("t33a", "e33", "V-33", "p33", "Test Patient Thirty Three", "Amoxicillin 500mg", "take_home", "completed", 0); th("t33b", "e33", "V-33", "p33", "Test Patient Thirty Three", "Ceftriaxone 1g injection", "facility_administered", "completed", 0);   // a medicine staff give
+  visit("e34", "V-34", "p34", "Test Patient Thirty Four"); th("t34a", "e34", "V-34", "p34", "Test Patient Thirty Four", "Old order", undefined, "completed", 0);   // an older order with NO care mode
+  visit("e35", "V-35", "p35", "Test Patient Thirty Five", "closed"); th("t35a", "e35", "V-35", "p35", "Test Patient Thirty Five", "Amoxicillin 500mg", "take_home", "completed", 0);   // already closed
+  visit("e36", "V-36", "p36", "Test Patient Thirty Six"); th("t36a", "e36", "V-36", "p36", "Test Patient Thirty Six", "Amoxicillin 500mg", "take_home", "completed", 0);   // a second ordinary one (for refusals)
   // offline safety: two more requests for the SAME stock item d9 (30 pieces in stock) from other patients
   [["c10", "p10", "Test Patient Ten", "e10", 28], ["c11", "p11", "Test Patient Eleven", "e11", 3]].forEach(function (r) {
     put("pc_treatment_orders", r[0], Object.assign({}, base, { kind: "consumable", scheduleType: "once", patientId: r[1], patientName: r[2], encounterId: r[3], encounterNo: "V-" + r[3], planId: "pl" + r[3], medicineId: "d9", medicineName: "IV cannula 20G", quantityPrescribed: r[4], quantityUnit: "Piece", prescribedAt: Date.now() - 300000 }));
@@ -59,16 +84,71 @@
   }
   function notifyAll() { listeners.forEach(function (l) { setTimeout(function () { l.next(snapOf(l.q)); }, 0); }); }
   window.__db.notify = notifyAll;
+  var seq = 0, held = [];
+  function hasPerm(k) { var u = store.get("users/owner1") || {}; return u.role === "owner" || !!(u.perms && u.perms[k] === true); }
+  function stampOk(d) { return d.businessId === B && d.facilityId === F && d.createdBy === "owner1" && !!d.createdAt && d.createdAt.__ts === 1 && Number.isInteger(d.schemaVersion); }
+  function createWhy(path, d, inBatch) {   // returns the reason a create is refused, or null (a mirror of rules v23 for orders, prescriptions and audit records)
+    var i = path.indexOf("/"), c = path.slice(0, i), id = path.slice(i + 1);
+    if (inBatch && inBatch.__upd && inBatch.__upd[path]) c = "UPDATE:" + c;
+    if (c.indexOf("UPDATE:") !== 0 && !stampOk(d)) return c + ": stamp (businessId, facilityId, createdBy, createdAt = server time, schemaVersion)";
+    if (c === "pc_audit_logs") return null;
+    if (c === "UPDATE:pc_encounters") {   // the close (rules v29: encounter.close, only while open, only these keys)
+      var cur = store.get("pc_encounters/" + id), keys = Object.keys(d), allowed = ["status", "closedAt", "closedBy", "closeNote", "cancelReason", "journey", "updatedAt", "updatedBy"];
+      if (!hasPerm("encounter.close")) return "encounter: encounter.close is required";
+      if (!cur || cur.status !== "open") return "encounter: the visit must be open";
+      if (["closed", "cancelled"].indexOf(d.status) < 0 || d.closedBy !== "owner1") return "encounter: status / closedBy";
+      if (keys.some(function (k) { return allowed.indexOf(k) < 0; })) return "encounter: a key that is not allowed in a close";
+      if (d.status === "cancelled" && !(typeof d.cancelReason === "string" && d.cancelReason.length >= 3)) return "encounter: a cancel needs a reason";
+      return null;
+    }
+    if (!hasPerm("treatment.prescribe")) return c + ": treatment.prescribe is required";
+    if (c === "pc_treatment_orders") {
+      var enc = store.get("pc_encounters/" + d.encounterId), plan = store.get("pc_treatment_plans/" + d.planId);
+      if (!enc || enc.status !== "open" || enc.patientId !== d.patientId || enc.facilityId !== d.facilityId || enc.businessId !== d.businessId) return "order: the visit must exist and be OPEN for this patient";
+      if (!plan || plan.status !== "active" || plan.patientId !== d.patientId || plan.facilityId !== d.facilityId) return "order: the plan must exist and be ACTIVE for this patient";
+      if (d.status !== "active" || d.prescriberId !== "owner1" || ["medicine", "procedure", "consumable"].indexOf(d.kind) < 0 || !Number.isInteger(d.version)) return "order: status / prescriber / kind / version";
+      if (["once", "interval", "daily", "fixed", "weight", "prn", "taper", "elapsed", "custom"].indexOf(d.scheduleType) < 0) return "order: scheduleType";
+      if (d.kind === "consumable" && !(d.scheduleType === "once" && typeof d.medicineId === "string" && d.medicineId && typeof d.medicineName === "string" && d.medicineName && typeof d.quantityPrescribed === "number" && d.quantityPrescribed > 0)) return "order: a consumable needs scheduleType once, medicineId, medicineName and quantityPrescribed > 0";
+      return null;
+    }
+    if (c === "prescriptions") {
+      var o = inBatch["pc_treatment_orders/" + id] || store.get("pc_treatment_orders/" + id);
+      if (d.id !== id || d.orderId !== id || typeof d.patientId !== "string" || d.status !== "pending" || d.qtyDispensed !== 0 || typeof d.qtyPrescribed !== "number" || d.qtyPrescribed < 0 || Math.abs(d.qtyOutstanding - d.qtyPrescribed) > 1e-6) return "prescription: shape";
+      if (!(d.qtyPrescribed > 0 || d.qtyUnknown === true) || !(d.drugId == null || typeof d.drugId === "string")) return "prescription: quantity / drug";
+      if (!o || o.status !== "active" || ["medicine", "consumable"].indexOf(o.kind) < 0 || o.businessId !== d.businessId || o.facilityId !== d.facilityId || o.patientId !== d.patientId || o.prescriberId !== "owner1") return "prescription: its order must be in the same batch, active, same patient and prescriber";
+      return null;
+    }
+    return c + ": writes to this collection are not allowed in this stand-in";
+  }
+  function applyOps(ops) { ops.forEach(function (o) { var v = JSON.parse(JSON.stringify(o[1], function (k, x) { return x && x.__ts ? ++clock : x; })); o.prev = store.has(o[0].path) ? JSON.parse(JSON.stringify(store.get(o[0].path))) : null; store.set(o[0].path, o[2] === "update" ? Object.assign({}, o.prev || {}, v) : v); ver.set(o[0].path, (ver.get(o[0].path) || 0) + 1); }); notifyAll(); }
+  function commitBatch(ops) {
+    var inBatch = { __upd: {} }; ops.forEach(function (o) { inBatch[o[0].path] = o[1]; if (o[2] === "update") inBatch.__upd[o[0].path] = 1; });
+    var check = function () { for (var i = 0; i < ops.length; i++) { var w = createWhy(ops[i][0].path, ops[i][1], inBatch); if (w) return w; } return null; };
+    var refuse = function (why) { var e = new Error("permission-denied (stand-in rules): " + why); e.code = "permission-denied"; return e; };
+    (window.__batches = window.__batches || []).push(ops.map(function (o) { return o[0].path; }));
+    if (window.__db.hold) { applyOps(ops); return new Promise(function (res, rej) { held.push({ ops: ops, check: check, res: res, rej: rej, refuse: refuse }); }); }   // offline: written on this phone at once, the server answers later
+    var why = window.__db.refuse ? "forced refusal (test)" : check(); if (why) return Promise.reject(refuse(why));
+    applyOps(ops); return Promise.resolve();
+  }
+  window.__db.releaseBatches = function (ok) {   // the SERVER answers: rules are checked against the state without this phone's pending writes
+    var h = held; held = [];
+    h.forEach(function (x) {
+      x.ops.forEach(function (o) { if (o.prev) store.set(o[0].path, o.prev); else store.delete(o[0].path); });
+      var why = ok ? x.check() : "refused when the connection returned (test)";
+      if (why) { notifyAll(); x.rej(x.refuse(why)); } else { applyOps(x.ops); x.res(); }
+    });
+  };
   var api = {
+    writeBatch: function () { var ops = []; return { set: function (r, d) { ops.push([r, d, "set"]); return this; }, update: function (r, d) { ops.push([r, d, "update"]); return this; }, commit: function () { return commitBatch(ops); } }; },
     initializeApp: function () { return {}; }, getAuth: function () { return { currentUser: { uid: "owner1" }, signOut: function () { return Promise.resolve(); } }; },
     onAuthStateChanged: function (a, cb) { setTimeout(function () { cb({ uid: "owner1" }); }, 0); return function () {}; },
     getFirestore: function () { return { __db: 1 }; },
-    doc: function (d, c, id) { return { type: "document", coll: c, id: id, path: c + "/" + id }; },
+    doc: function (d, c, id) { if (d && d.type === "collection") { var nid = "auto" + (++seq); return { type: "document", coll: d.coll, id: nid, path: d.coll + "/" + nid }; } return { type: "document", coll: c, id: id, path: c + "/" + id }; },
     collection: function (d, c) { return { type: "collection", coll: c, wheres: [] }; },
     where: function (f, op, v) { return { f: f, op: op, v: v }; }, limit: function (n) { return { limit: n }; },
     query: function (c) { var ws = Array.prototype.slice.call(arguments, 1).filter(function (x) { return x.f; }); return { type: "query", coll: c.coll, wheres: ws }; },
     serverTimestamp: function () { return { __ts: 1 }; },
-    getDocs: function (q) { return Promise.resolve(snapOf(q)); },
+    getDocs: function (q) { if (window.__denyReads && (q.coll === "pc_encounters" || q.coll === "pc_treatment_plans" || q.coll === "pc_treatment_orders" || q.coll === "pc_clinical_notes" || q.coll === "pc_inv_orders")) return Promise.reject(Object.assign(new Error("Missing or insufficient permissions (test)"), { code: "permission-denied" })); if (window.__failQueries) return Promise.reject(Object.assign(new Error("unavailable (test: server unreachable, nothing cached)"), { code: "unavailable" })); return Promise.resolve(snapOf(q)); },
     getDocFromCache: function (r) { (window.__cacheReads = window.__cacheReads || []).push(r.path); if (window.__failReads) return Promise.reject(Object.assign(new Error("unavailable (test: server unreachable, nothing cached)"), { code: "unavailable" })); return api.getDoc(r, true).then(function (s) { if (!s.exists()) throw new Error("not in cache"); return s; }); },
     getDoc: function (r, fromCache) { if (window.__failReads) return Promise.reject(Object.assign(new Error("unavailable (test: server unreachable, nothing cached)"), { code: "unavailable" })); if (!fromCache) (window.__reads = window.__reads || []).push(r.path); var has = store.has(r.path), v = has ? JSON.parse(JSON.stringify(store.get(r.path))) : null; return Promise.resolve({ id: r.id, exists: function () { return has; }, data: function () { return v; } }); },
     setDoc: function (r, d) { store.set(r.path, JSON.parse(JSON.stringify(d, function (k, v) { return v && v.__ts ? ++clock : v; }))); ver.set(r.path, (ver.get(r.path) || 0) + 1); notifyAll(); return Promise.resolve(); },
