@@ -539,6 +539,7 @@
 <script src="pc-guidelines.js"></script>
 <script src="pc-abbrev.js"></script>
 <script src="pc-guidance-ui.js"></script>
+<script src="pc-dispense.js"></script>
 <script src="pc-ranges.js"></script>
 <script src="pc-obs.js"></script>
 <script type="module">
@@ -1131,9 +1132,7 @@
   }
   // ---------- Stage 6: consumables are ordinary stock items (drugs/batches). The clinician requests; the pharmacy/stores person supplies through the same dispensing engine. ----------
   let cnPlan = null, cnPick = null;
-  const CONS_CLASS = /consumable|first aid|suppl|dressing|disposable/i;
-  const isConsItem = d => CONS_CLASS.test(String(d.drugClass || ""));
-  const stockLine = d => { const n = Number(d.currentStockBase) || 0; return n > 0 ? "In stock: " + n + " " + (d.baseUnit || "") : "None in stock now"; };
+  const isConsItem = PCD.isConsumableItem, stockLine = PCD.stockLine;   // shared with the pharmacy (pc-dispense.js)
   function openConsumable(planId) {
     const plan = plans.find(p => p.id === planId); if (!plan) return; cnPlan = planId; cnPick = null; closeOrder();
     $("cnCard").classList.remove("hidden"); $("cnPlanLine").textContent = "Plan: " + plan.title; $("cnSearch").value = ""; $("cnQty").value = ""; $("cnNote").value = ""; $("cnMsg").textContent = ""; $("cnPicked").classList.add("hidden");
@@ -1152,14 +1151,11 @@
     const plan = plans.find(p => p.id === cnPlan); if (!plan || plan.status !== "active" || !isOpen()) { m.className = "msg err"; m.textContent = "This plan is not open for new orders."; return; }
     if (!cnPick) { m.className = "msg err"; m.textContent = "Pick an item from your stock."; return; }
     const qty = Number($("cnQty").value); if (!(qty > 0)) { m.className = "msg err"; m.textContent = "Enter how many are needed (more than 0)."; return; }
-    const d = cnPick, oref = doc(collection(db, "pc_treatment_orders")), now = Date.now(), note = $("cnNote").value.trim();
-    const order = Object.assign(stamp(), { planId: plan.id, encounterId: encId, patientId: enc.patientId, patientName: enc.patientName, encounterNo: enc.encounterNo, kind: "consumable", version: 1, supersedes: null, status: "active",
-      prescriberId: me.id, prescriberName: myName, prescribedAt: now, scheduleType: "once", sched: {}, startAt: now, tz: (facility && facility.timezone) || "Africa/Kampala", totalEvents: 0,
-      medicineId: d.id, medicineName: d.name, generic: d.generic || "", quantityPrescribed: qty, quantityUnit: d.baseUnit || "", instructions: note, warnings: [] });
-    const rx = Object.assign(stamp(), { id: oref.id, orderId: oref.id, patientId: enc.patientId, patientName: enc.patientName, encounterId: encId, encounterNo: enc.encounterNo, planId: plan.id,
-      status: "pending", qtyPrescribed: qty, qtyDispensed: 0, qtyOutstanding: qty, qtyUnknown: false, qtySetBy: "prescriber", qtyReturned: 0, lastRequestId: null, qtyUnit: d.baseUnit || "",
-      drugId: d.id, drugName: d.name, prescribedName: d.name, medicineName: d.name, instructions: note, prescriberId: me.id, prescriberName: myName, prescribedAt: now, orderVersion: 1, supersedes: null });
-    commitOps([["s", oref, order], ["s", doc(db, "prescriptions", oref.id), rx, "keep"], auditOp("order.add", "pc_treatment_orders/" + oref.id, { name: d.name, kind: "consumable", qty: qty })]);
+    // ONE builder for the order, its pending prescription and the audit record, shared with the pharmacy (PCD.consumableRequest in pc-dispense.js)
+    const d = cnPick, oref = doc(collection(db, "pc_treatment_orders")); let req;
+    try { req = PCD.consumableRequest({ stamp: stamp, at: serverTimestamp(), orderId: oref.id, enc: { id: encId, patientId: enc.patientId, patientName: enc.patientName, encounterNo: enc.encounterNo }, planId: plan.id, drug: d, qty: qty, note: $("cnNote").value, by: { id: me.id, name: myName }, tz: (facility && facility.timezone) || "Africa/Kampala" }); }
+    catch (e) { m.className = "msg err"; m.textContent = e.message; return; }
+    commitOps([["s", oref, req.order], ["s", doc(db, "prescriptions", oref.id), req.rx, "keep"], ["s", doc(collection(db, "pc_audit_logs")), req.audit]]);
     closeConsumable();
     ok("Consumable requested: " + qty + " " + (d.baseUnit || "") + " of " + d.name + ". Next step: it is now in the pharmacy / stores queue as a pending request. Nothing has been supplied yet.");
   }
@@ -1573,9 +1569,10 @@
     if (drafts && !window.confirm(drafts + " note(s) are still drafts. Close the visit anyway?")) return;
     const pending = orders.filter(o => ["requested", "collected", "processing", "resulted"].indexOf(o.status) >= 0).length;
     if (pending && !window.confirm(pending + " test(s) have no verified result yet. Close the visit anyway? The laboratory can still finish them.")) return;
-    const note = $("xNote").value.trim();
-    updateDoc(doc(db, "pc_encounters", encId), { status: "closed", closedAt: serverTimestamp(), closedBy: me.id, closeNote: note, updatedAt: serverTimestamp(), updatedBy: me.id }).catch(saveFailed);
-    logAudit("encounter.close", "pc_encounters/" + encId);
+    // the normal close is built by ONE shared function (PCD.closeVisitWrites in pc-dispense.js), the same one the pharmacy uses for a take-home visit
+    let req; try { req = PCD.closeVisitWrites({ stamp: stamp, ts: serverTimestamp(), encId: encId, patientId: enc.patientId, by: { id: me.id, name: myName }, note: $("xNote").value }); } catch (e) { alert(e.message); return; }
+    updateDoc(doc(db, "pc_encounters", encId), req.update).catch(saveFailed);
+    setDoc(doc(collection(db, "pc_audit_logs")), req.audit).catch(saveFailed);
     ok("Visit closed on this phone.");
   }
   function cancelVisit() {

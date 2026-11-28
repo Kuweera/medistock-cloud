@@ -458,9 +458,62 @@
     };
   }
 
+  /* ---- Stage C: a REQUEST for a consumable (rules v23, Option B: a consumable is an ordinary stock item, supplied through a pending prescription and this engine).
+     ONE builder, used by the visit page (encounter.html) and by the pharmacy, so the two can never write different documents. It writes nothing: it returns the order, its pending prescription
+     (id = order id) and the audit record. The caller supplies the order id, the stamp (businessId, facilityId, createdBy, createdAt = server time) and the server-time marker, and writes the three in ONE batch. */
+  var CONS_CLASS = /consumable|first aid|suppl|dressing|disposable/i;
+  function isConsumableItem(d) { return CONS_CLASS.test(String((d && d.drugClass) || "")); }
+  function stockLine(d) { var n = num(d && d.currentStockBase); return n > 0 ? "In stock: " + n + " " + ((d && d.baseUnit) || "") : "None in stock now"; }
+  function merge(a, b) { var r = {}, k; for (k in a) r[k] = a[k]; for (k in b) r[k] = b[k]; return r; }
+  function consumableRequest(p) {
+    p = p || {}; var enc = p.enc || {}, d = p.drug || {}, by = p.by || {}, qty = Number(p.qty);
+    if (typeof p.stamp !== "function" || !p.orderId || !enc.id || !enc.patientId || !p.planId || !by.id) throw new PCDError("bad_request", "This request is incomplete: the visit, the treatment plan, the patient and the person asking are all needed.");
+    if (!d.id || !d.name) throw new PCDError("bad_request", "Pick an item from your stock.");
+    if (!(qty > 0) || !isFinite(qty)) throw new PCDError("bad_request", "Enter how many are needed (more than 0).");
+    var now = p.now || Date.now(), note = String(p.note || "").trim(), unit = d.baseUnit || "";
+    var order = merge(p.stamp(), { planId: p.planId, encounterId: enc.id, patientId: enc.patientId, patientName: enc.patientName, encounterNo: enc.encounterNo, kind: "consumable", version: 1, supersedes: null, status: "active",
+      prescriberId: by.id, prescriberName: by.name, prescribedAt: now, scheduleType: "once", sched: {}, startAt: now, tz: p.tz || "Africa/Kampala", totalEvents: 0,
+      medicineId: d.id, medicineName: d.name, generic: d.generic || "", quantityPrescribed: qty, quantityUnit: unit, instructions: note, warnings: [] });
+    var rx = merge(p.stamp(), { id: p.orderId, orderId: p.orderId, patientId: enc.patientId, patientName: enc.patientName, encounterId: enc.id, encounterNo: enc.encounterNo, planId: p.planId,
+      status: "pending", qtyPrescribed: qty, qtyDispensed: 0, qtyOutstanding: qty, qtyUnknown: false, qtySetBy: "prescriber", qtyReturned: 0, lastRequestId: null, qtyUnit: unit,
+      drugId: d.id, drugName: d.name, prescribedName: d.name, medicineName: d.name, instructions: note, prescriberId: by.id, prescriberName: by.name, prescribedAt: now, orderVersion: 1, supersedes: null });
+    var audit = merge(p.stamp(), { actorUid: by.id, actorName: by.name, action: "order.add", recordPath: "pc_treatment_orders/" + p.orderId, patientId: enc.patientId, encounterId: enc.id, at: p.at, name: d.name, kind: "consumable", qty: qty });
+    return { order: order, rx: rx, audit: audit, qty: qty, unit: unit, name: d.name };
+  }
+
+  /* ---- Stage D: closing a visit. ONE builder of the normal close (the six fields the rules allow with encounter.close while a visit is open, and its audit record), used by the visit page and the pharmacy.
+     It writes nothing; the caller sends the update and the audit record. */
+  function closeVisitWrites(p) {
+    p = p || {}; var by = p.by || {};
+    if (typeof p.stamp !== "function" || !p.encId || !p.patientId || !by.id) throw new PCDError("bad_request", "This visit cannot be closed: the visit, the patient and the person closing it are all needed.");
+    var note = String(p.note == null ? "" : p.note).trim();
+    return {
+      update: { status: "closed", closedAt: p.ts, closedBy: by.id, closeNote: note, updatedAt: p.ts, updatedBy: by.id },
+      audit: merge(p.stamp(), { actorUid: by.id, actorName: by.name, action: "encounter.close", recordPath: "pc_encounters/" + p.encId, patientId: p.patientId, encounterId: p.encId, at: p.ts })
+    };
+  }
+
+  /* Stage D: is a visit a TAKE-HOME-ONLY visit, so that the pharmacy may close it? Pure: it is given the visit's orders (all kinds) and the prescriptions by order id.
+     Only ACTIVE orders count. Take-home = a medicine that is explicitly take_home, or a consumable (supplied, never given on a schedule). Anything else (a procedure, a medicine given at the facility or on the ward,
+     and an older order with no care mode, which means today's behaviour = given by staff) needs staff, so the visit is closed from the visit page. At least one take-home item is needed. */
+  function takeHomeVisit(orders, rxById) {
+    var items = [], staff = [];
+    (orders || []).forEach(function (o) {
+      if (!o || o.status !== "active") return;
+      var name = o.medicineName || o.procedureName || o.name || "an order";
+      if (!(o.kind === "consumable" || (o.kind === "medicine" && o.administrationMode === "take_home"))) { staff.push(name); return; }
+      var x = rxById && rxById[o.id], state = "waiting", prescribed = num(o.quantityPrescribed), outstanding = prescribed;
+      if (x) { prescribed = num(x.qtyPrescribed); outstanding = num(x.qtyOutstanding); state = x.status === "completed" ? "done" : (x.status === "partially_dispensed" ? "partial" : (x.qtyUnknown ? "unknown" : "waiting")); }
+      items.push({ id: o.id, name: name, kind: o.kind, state: state, prescribed: prescribed, outstanding: outstanding, unit: (x && x.qtyUnit) || o.quantityUnit || "" });
+    });
+    return { ok: staff.length === 0 && items.length > 0, staff: staff, items: items, notDone: items.filter(function (i) { return i.state !== "done"; }).length };
+  }
+
   var api = { SCHEMA: SCHEMA, PCDError: PCDError, FRIENDLY: FRIENDLY, friendlyError: friendlyError, technicalDetail: technicalDetail, stepRef: stepRef, diagnose: diagnose, isOfflineError: isOfflineError,
     daysUntil: daysUntil, expiryMs: expiryMs, isExpired: isExpired, sellable: sellable, fefoSort: fefoSort, summarise: summarise, planFefo: planFefo, planManual: planManual,
     statusFor: statusFor, doseText: doseText, qtyState: qtyState, queueGroup: queueGroup, newRequestId: newRequestId, lineId: lineId, localDay: localDay, r4: r4,
-    runDispense: runDispense, Queue: Queue, syncQueue: syncQueue, buildReport: buildReport, deviceQueued: deviceQueued, reservedByDrug: reservedByDrug, reservedByOrder: reservedByOrder };
+    runDispense: runDispense, Queue: Queue, syncQueue: syncQueue, buildReport: buildReport, deviceQueued: deviceQueued, reservedByDrug: reservedByDrug, reservedByOrder: reservedByOrder,
+    consumableRequest: consumableRequest, isConsumableItem: isConsumableItem, stockLine: stockLine,
+    closeVisitWrites: closeVisitWrites, takeHomeVisit: takeHomeVisit };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.PCD = api;
 })(typeof window !== "undefined" ? window : this);

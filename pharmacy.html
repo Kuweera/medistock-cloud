@@ -170,6 +170,29 @@
     <div>
       <div class="card">
         <h2>Prescriptions to dispense</h2>
+        <div class="hidden" id="cnBar" style="margin:6px 0 10px"><button type="button" class="btn-small btn-secondary" id="cnOpenBtn">Add consumable</button> <span class="hint2">Request a syringe, dressing or other supply for a patient's open visit.</span></div>
+        <div class="msg hidden" id="cnDone" role="status"></div>
+        <div class="msg hidden" id="clDone" role="status"></div>
+        <div class="hidden" id="clCard" style="border:1px solid #cfe3dc;border-radius:10px;padding:12px;margin:0 0 12px;background:#fff">
+          <h3 style="margin:0 0 4px">Close visit</h3>
+          <div id="clBody"></div>
+        </div>
+        <div class="hidden" id="cnCard" style="border:1px solid #cfe3dc;border-radius:10px;padding:12px;margin:0 0 12px;background:#fff">
+          <h3 style="margin:0 0 4px">Request a consumable</h3>
+          <div class="hint2">Picked from your stock like any other item. It joins this queue as a pending request. Nothing is supplied until it is dispensed.</div>
+          <div id="cnVisitBox"><label>Visit</label><input type="search" id="cnVisitQ" placeholder="Search patient or visit number" autocomplete="off"><div id="cnVisitList"></div></div>
+          <div class="hidden" id="cnVisitPicked"></div>
+          <div class="hidden" id="cnPlanBox"><label>Treatment plan</label><select id="cnPlan"></select><div class="hint2" id="cnPlanNote"></div></div>
+          <div class="hidden" id="cnItemBox">
+            <label>Item from stock</label><input type="search" id="cnSearch" placeholder="Search by name" autocomplete="off">
+            <label class="chk" style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="cnOnly" style="width:auto"> <span>Only first aid / consumable items</span></label>
+            <div id="cnResults"></div><div class="hidden" id="cnPicked"></div>
+            <label>How many</label><input type="number" id="cnQty" inputmode="decimal" step="any" placeholder="Quantity">
+            <label>Note (optional)</label><input type="text" id="cnNote" maxlength="200" autocomplete="off">
+          </div>
+          <div class="msg" id="cnMsg" role="status"></div>
+          <div style="display:flex;gap:8px;margin-top:8px"><button type="button" class="btn-primary hidden" id="cnSaveBtn">Request consumable</button><button type="button" class="btn-small btn-secondary" id="cnCancelBtn">Cancel</button></div>
+        </div>
         <div class="pill-row" id="filters">
           <button type="button" class="pill-btn selected" data-f="waiting">Waiting to be dispensed</button>
           <button type="button" class="pill-btn" data-f="partial">Partially dispensed</button>
@@ -220,7 +243,7 @@
 <script src="pc-dispense.js"></script>
 <script src="pc-dispense-ext.js"></script>
 <script type="module">
-  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, getDocs, setDoc, collection, onSnapshot, serverTimestamp, query, where, limit, runTransaction, getDocFromCache } = window.top.MC.api(window);
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, getDocs, setDoc, collection, onSnapshot, serverTimestamp, query, where, limit, runTransaction, getDocFromCache, writeBatch } = window.top.MC.api(window);
 
   async function getDoc(ref) {
     try { const c = await getDocFromCache(ref); if (c.exists()) return c; } catch (e) {}
@@ -358,8 +381,16 @@
     });
     return out;
   }
+  // Stage D: a quick look from what this page already knows. The real check (every active order of the visit, the visit's state) is made when the button is pressed.
+  const closeMeta = {}, closedHere = new Set();   // closedHere: visits closed from this page (this session), so their button goes at once and comes back if the server refuses
+  function closeCandidate(g) {
+    if (!can("encounter.close")) return null;
+    const rs = g.rows.filter(r => r.group !== "stopped" && r.order), eid = rs.length && rs[0].order.encounterId;
+    if (!eid || closedHere.has(eid) || !rs.every(r => r.order.encounterId === eid && (r.order.kind === "consumable" || r.order.administrationMode === "take_home"))) return null;
+    const i = g.first; return closeMeta[eid] = { encounterId: eid, patientId: i.patientId, patientName: i.patientName, encounterNo: (rs[0].order.encounterNo || i.encounterNo || "") };
+  }
   function groupHtml(g) {
-    const i = g.first, reg = regNos[i.patientId];
+    const i = g.first, reg = regNos[i.patientId], cm = closeCandidate(g);
     const cnt = k => g.rows.filter(r => r.group === k).length;
     const parts = []; [["waiting", "waiting"], ["partial", "partly dispensed"], ["done", "fully dispensed"], ["stopped", "stopped"]].forEach(p => { const n = cnt(p[0]); if (n) parts.push(n + " " + p[1]); });
     const prescribers = Array.from(new Set(g.rows.map(r => info(r).prescriber).filter(Boolean))).join(", ");
@@ -371,7 +402,7 @@
     } else body = shown.map(cardHtml).join("");
     return '<div class="rxgroup" data-g="' + esc(g.key) + '"><div class="rxhead"><div class="pt-name">' + esc(i.patientName) + (reg ? " · " + esc(reg) : "") + "</div>" +
       '<div class="pt-meta">Prescription from ' + (i.encounterNo ? "Visit " + esc(i.encounterNo) : "a visit with no number") + " · " + esc((facility && facility.name) || "") + (prescribers ? " · Prescriber: " + esc(prescribers) : "") + (i.prescribedAt ? " · " + esc(fmtWhen(i.prescribedAt)) : "") +
-      "<br>" + g.rows.length + (g.rows.some(r => r.order && r.order.kind === "consumable") ? " item" : " medicine") + (g.rows.length === 1 ? " in this visit" : "s in this visit") + (parts.length ? ": " + esc(parts.join(", ")) : "") + (shown.length < g.rows.length ? ". Listed here: " + shown.length : "") + "</div></div>" + body + "</div>";
+      "<br>" + g.rows.length + (g.rows.some(r => r.order && r.order.kind === "consumable") ? " item" : " medicine") + (g.rows.length === 1 ? " in this visit" : "s in this visit") + (parts.length ? ": " + esc(parts.join(", ")) : "") + (shown.length < g.rows.length ? ". Listed here: " + shown.length : "") + "</div>" + (cm ? '<div style="margin-top:6px"><button type="button" class="btn-small btn-secondary" data-closevisit="' + esc(cm.encounterId) + '">Close visit…</button></div>' : "") + "</div>" + body + "</div>";
   }
   function resolveRegNos(rows) {
     rows.forEach(r => {
@@ -413,6 +444,151 @@
     resolveRegNos(list.slice(0, 60));
     checkMissingRx();
   }
+
+  // ---------------------------------------------------------------- Stage C: request a consumable from the pharmacy (needs treatment.prescribe)
+  // The order, its pending prescription and the audit record come from the SAME builder the visit page uses (PCD.consumableRequest) and are written in ONE batch. The rules need an OPEN visit and an ACTIVE plan of that patient.
+  const stampDoc = () => ({ businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now() });
+  let cnVisits = [], cnVisit = null, cnPlans = [], cnPick = null;
+  const cnSay = (t, kind) => { $("cnMsg").className = "msg" + (kind ? " " + kind : ""); $("cnMsg").textContent = t || ""; };
+  const cnShow = (id, on) => $(id).classList.toggle("hidden", !on);
+  function cnClose() { cnVisit = null; cnPlans = []; cnPick = null; cnShow("cnCard", false); }
+  async function openConsumable(pre) {
+    if (!can("treatment.prescribe")) return;
+    $("cnDone").className = "msg hidden"; $("cnDone").textContent = "";
+    cnVisit = null; cnPlans = []; cnPick = null; cnVisits = []; $("cnVisitQ").value = ""; $("cnSearch").value = ""; $("cnQty").value = ""; $("cnNote").value = ""; cnSay("");
+    cnShow("cnCard", true); $("cnCard").scrollIntoView({ block: "start" }); $("cnOnly").checked = drugs.some(PCD.isConsumableItem); cnRender();
+    if (pre) {   // from an open prescription: the visit and plan are known; the visit must still be open
+      try { const v = await getDoc(doc(db, "pc_encounters", pre.encounterId)); if (!v.exists() || v.data().status !== "open") { cnVisit = null; cnShow("cnVisitBox", false); cnSay("This visit is closed, so nothing can be added to it. Consumables can only be requested on an open visit.", "err"); return; }
+        await cnPickVisit({ id: pre.encounterId, patientId: pre.patientId, patientName: pre.patientName, encounterNo: pre.encounterNo }, pre.planId); }
+      catch (e) { cnSay("This visit could not be checked (no connection and nothing saved on this phone). Connect and try again.", "err"); }
+      return;
+    }
+    await cnLoadVisits();
+  }
+  async function cnLoadVisits() {
+    $("cnVisitList").innerHTML = '<div class="hint2">Loading open visits...</div>';
+    try { const s = await getDocs(query(collection(db, "pc_encounters"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("status", "==", "open"), limit(200))); cnVisits = s.docs.map(x => ({ id: x.id, ...x.data() })); }
+    catch (e) { cnVisits = e && e.code === "permission-denied" ? "denied" : null; }
+    cnRender();
+  }
+  async function cnPickVisit(v, planId) {
+    cnVisit = { id: v.id, patientId: v.patientId, patientName: v.patientName, encounterNo: v.encounterNo }; cnPlans = []; cnSay("");
+    try { const s = await getDocs(query(collection(db, "pc_treatment_plans"), where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("patientId", "==", v.patientId), where("status", "==", "active"), limit(20))); cnPlans = s.docs.map(x => ({ id: x.id, ...x.data() })); }
+    catch (e) { cnPlans = e && e.code === "permission-denied" ? "denied" : null; }
+    cnRender(planId);
+  }
+  function cnRender(planId) {
+    const q = $("cnVisitQ").value.trim().toLowerCase();
+    cnShow("cnVisitBox", !cnVisit); cnShow("cnVisitPicked", !!cnVisit); cnShow("cnPlanBox", !!cnVisit && Array.isArray(cnPlans) && cnPlans.length > 0); cnShow("cnItemBox", !!cnVisit && Array.isArray(cnPlans) && cnPlans.length > 0); cnShow("cnSaveBtn", !!cnVisit && Array.isArray(cnPlans) && cnPlans.length > 0);
+    if (!cnVisit) {
+      if (cnVisits === "denied") $("cnVisitList").innerHTML = '<div class="warn-box">You need patient access to see the open visits. Ask the owner to give you the Patient view permission in Users.</div>';
+      else if (cnVisits === null) $("cnVisitList").innerHTML = '<div class="warn-box">The open visits could not be loaded (no connection and nothing saved on this phone). Connect and try again.</div><button type="button" class="btn-small btn-secondary" id="cnRetry">Try again</button>';
+      else { const list = cnVisits.filter(v => !q || (String(v.patientName || "") + " " + String(v.encounterNo || "")).toLowerCase().indexOf(q) >= 0).sort((a, b) => (b.arrivalAt || 0) - (a.arrivalAt || 0)).slice(0, 12);
+        $("cnVisitList").innerHTML = list.length ? list.map(v => '<button type="button" class="cand" style="width:100%;text-align:left" data-cnvisit="' + esc(v.id) + '"><div class="pt-name">' + esc(v.patientName || "(no name)") + '</div><div class="pt-meta">' + esc(v.encounterNo || "") + (v.type ? " · " + esc(v.type) : "") + '</div></button>').join("") : '<div class="empty">No open visit found. A consumable is requested on a patient\'s open visit.</div>'; }
+      return;
+    }
+    let h = '<div class="pt-name">' + esc(cnVisit.patientName || "(no name)") + '</div><div class="pt-meta">' + esc(cnVisit.encounterNo || "") + ' · <button type="button" class="btn-small btn-secondary" id="cnChange">Change visit</button></div>';
+    if (cnPlans === "denied") h += '<div class="warn-box" style="margin-top:8px">You need patient access to see this patient\'s treatment plans. Ask the owner to give you the Patient view permission in Users.</div>';
+    else if (cnPlans === null) h += '<div class="warn-box" style="margin-top:8px">The treatment plans could not be loaded (no connection and nothing saved on this phone). Connect and try again.</div>';
+    else if (!cnPlans.length) h += '<div class="warn-box" style="margin-top:8px">This patient has no active treatment plan. A consumable belongs to a treatment plan. Start a plan in the visit first. <button type="button" class="btn-small btn-primary" data-cnopenvisit="' + esc(cnVisit.id) + '">Open the visit</button></div>';
+    $("cnVisitPicked").innerHTML = h;
+    if (Array.isArray(cnPlans) && cnPlans.length) {
+      const cur = planId || $("cnPlan").value; $("cnPlan").innerHTML = cnPlans.map(p => '<option value="' + esc(p.id) + '">' + esc(p.title || "Treatment plan") + '</option>').join(""); if (cur && cnPlans.some(p => p.id === cur)) $("cnPlan").value = cur;
+      $("cnPlanNote").textContent = cnPlans.length > 1 ? "This patient has more than one active plan. Choose the one this supply belongs to." : "";
+      const sq = $("cnSearch").value.trim().toLowerCase(), only = $("cnOnly").checked;
+      const items = drugs.filter(d => (!only || PCD.isConsumableItem(d)) && (!sq || [d.name, d.generic, d.drugClass].some(x => String(x || "").toLowerCase().indexOf(sq) >= 0))).slice(0, 12);
+      $("cnResults").innerHTML = items.length ? items.map(d => '<button type="button" class="cand" style="width:100%;text-align:left" data-cnpick="' + esc(d.id) + '"><div class="pt-name">' + esc(d.name) + '</div><div class="pt-meta">' + esc(d.drugClass || "No class") + " · " + esc(PCD.stockLine(d)) + '</div></button>').join("") : '<div class="empty">No matching item in stock. Add it in Inventory first.</div>';
+      cnShow("cnPicked", !!cnPick); if (cnPick) $("cnPicked").innerHTML = '<div class="pt-name">Selected: ' + esc(cnPick.name) + '</div><div class="pt-meta">' + esc(PCD.stockLine(cnPick)) + (Number(cnPick.currentStockBase) > 0 ? "" : ". You can still send the request; the supplier will see there is none.") + "<br>Quantity is counted in: " + esc(cnPick.baseUnit || "units") + '</div>';
+    }
+  }
+  function cnSave() {
+    if (!can("treatment.prescribe")) { cnSay("You do not have permission to request consumables.", "err"); return; }
+    if (!cnVisit) { cnSay("Choose the visit.", "err"); return; } if (!cnPlans || !cnPlans.length) { cnSay("This patient has no active treatment plan.", "err"); return; }
+    if (!cnPick) { cnSay("Pick an item from your stock.", "err"); return; }
+    const planId = $("cnPlan").value, oref = doc(collection(db, "pc_treatment_orders")); let req;
+    try { req = PCD.consumableRequest({ stamp: stampDoc, at: serverTimestamp(), orderId: oref.id, enc: cnVisit, planId: planId, drug: cnPick, qty: $("cnQty").value, note: $("cnNote").value, by: { id: me.id, name: myName }, tz: (facility && facility.timezone) || "Africa/Kampala" }); }
+    catch (e) { cnSay(e.message, "err"); return; }
+    const b = writeBatch(db); b.set(oref, req.order); b.set(doc(db, "prescriptions", oref.id), req.rx); b.set(doc(collection(db, "pc_audit_logs")), req.audit);
+    $("cnSaveBtn").disabled = true;
+    // like the visit page: saved on this phone at once; if the server later refuses it, say so clearly (the request then does not exist)
+    b.commit().catch(err => { $("cnSaveBtn").disabled = false; const denied = err && err.code === "permission-denied"; const t = "NOT SAVED. " + (denied ? "You do not have permission to request this, or the visit has been closed or the plan has ended." : PCD.friendlyError(err)); $("cnDone").className = "msg err"; $("cnDone").textContent = t;
+      // the form was already closed (the save is optimistic): start again from a clean visit chooser, with the reason on top, so the screen never shows old inputs that are no longer in use
+      cnVisit = null; cnPlans = []; cnPick = null; $("cnQty").value = ""; $("cnNote").value = ""; $("cnSearch").value = ""; $("cnVisitQ").value = ""; cnShow("cnCard", true); cnLoadVisits(); cnSay(t, "err"); alert(t); });
+    const done = "Consumable requested: " + req.qty + " " + req.unit + " of " + req.name + " for " + (cnVisit.patientName || "the patient") + ". It is now in the queue as a pending request. Nothing has been supplied yet." + (navigator.onLine === false ? " Saved on this phone; it is sent when the connection returns." : "");
+    cnClose(); $("cnSaveBtn").disabled = false; $("cnDone").className = "msg ok"; $("cnDone").textContent = done; $("cnDone").scrollIntoView({ block: "nearest" });   // its own line: the list re-draws the info line
+  }
+  document.addEventListener("click", e => {
+    const t = e.target.closest("button"); if (!t) return;
+    if (t.id === "cnOpenBtn") openConsumable(); else if (t.id === "cnCancelBtn") cnClose(); else if (t.id === "cnSaveBtn") cnSave(); else if (t.id === "cnRetry") { if (cnVisit) cnPickVisit(cnVisit); else cnLoadVisits(); }
+    else if (t.id === "cnChange") { cnVisit = null; cnPlans = []; cnLoadVisits(); }
+    else if (t.dataset.cnvisit) { const v = (cnVisits || []).find(x => x.id === t.dataset.cnvisit); if (v) cnPickVisit(v); }
+    else if (t.dataset.cnpick) { cnPick = drugs.find(d => d.id === t.dataset.cnpick) || null; cnRender(); }
+    else if (t.dataset.cnopenvisit) { try { window.top.location.hash = "encounter.html?id=" + encodeURIComponent(t.dataset.cnopenvisit) + "&tab=treatment"; } catch (x) { location.href = "encounter.html?id=" + encodeURIComponent(t.dataset.cnopenvisit) + "&tab=treatment"; } }
+  });
+  $("cnVisitQ").addEventListener("input", () => cnRender()); $("cnSearch").addEventListener("input", () => cnRender()); $("cnOnly").addEventListener("change", () => cnRender());
+
+  // ---------------------------------------------------------------- Stage D: close a TAKE-HOME-ONLY visit from the pharmacy (needs encounter.close)
+  // The close is the normal one (PCD.closeVisitWrites: the six fields the rules allow, plus its audit record), written in ONE batch. The decision is PCD.takeHomeVisit over EVERY active order of the visit.
+  let clCtx = null;
+  const clSay = (t, kind) => { const e = $("clMsg"); if (!e) return; e.className = "msg" + (kind ? " " + kind : ""); e.textContent = t || ""; };
+  function clClose() { clCtx = null; $("clCard").classList.add("hidden"); $("clBody").innerHTML = ""; }
+  function clBlocked(html) { $("clBody").innerHTML = html + '<div style="margin-top:8px"><button type="button" class="btn-small btn-secondary" id="clCancel">Close this</button></div>'; }
+  const openVisitLink = (id, tab) => '<button type="button" class="btn-small btn-primary" data-clopenvisit="' + esc(id) + '" data-cltab="' + tab + '">Open the visit</button>';
+  async function openClose(meta) {
+    if (!can("encounter.close")) return;
+    $("clDone").className = "msg hidden"; $("clDone").textContent = ""; $("cnCard").classList.add("hidden"); clCtx = null;
+    $("clCard").classList.remove("hidden"); $("clBody").innerHTML = '<div class="pt-name">' + esc(meta.patientName || "") + '</div><div class="pt-meta">' + esc(meta.encounterNo || "") + '</div><div class="hint2" style="margin-top:6px">Checking the visit...</div>'; $("clCard").scrollIntoView({ block: "start" });
+    const base = [where("businessId", "==", businessId), where("facilityId", "==", facilityId), where("encounterId", "==", meta.encounterId)];
+    let enc, orders, drafts, tests;
+    try {
+      const ev = await getDoc(doc(db, "pc_encounters", meta.encounterId)); if (!ev.exists()) { clBlocked('<div class="warn-box">This visit could not be found.</div>'); return; } enc = ev.data();
+      if (enc.status !== "open") { clBlocked('<div class="warn-box">This visit is already ' + (enc.status === "cancelled" ? "cancelled" : "closed") + ".</div>"); return; }
+      const [os, ns, ts] = await Promise.all([
+        getDocs(query(collection(db, "pc_treatment_orders"), ...base, where("status", "==", "active"), limit(300))),
+        getDocs(query(collection(db, "pc_clinical_notes"), ...base, where("status", "==", "draft"), limit(300))),
+        getDocs(query(collection(db, "pc_inv_orders"), ...base, where("status", "in", ["requested", "collected", "processing", "resulted"]), limit(300)))]);
+      orders = os.docs.map(x => ({ id: x.id, ...x.data() })); drafts = ns.size; tests = ts.size;
+    } catch (e) {
+      clBlocked(e && e.code === "permission-denied" ? '<div class="warn-box">You need patient access to check this visit. Ask the owner to give you the Patient view permission in Users.</div>' : '<div class="warn-box">This visit could not be checked (no connection and nothing saved on this phone). Connect and try again.</div><div style="margin-top:8px"><button type="button" class="btn-small btn-secondary" data-closevisit="' + esc(meta.encounterId) + '">Try again</button></div>'); return;
+    }
+    const rxById = {}; for (const o of orders) { let x = rxOf(o.id); if (!x) { try { const sn = await readRx(o.id); if (sn.exists()) x = { id: o.id, ...sn.data() }; } catch (e) {} } if (x) rxById[o.id] = x; }
+    const th = PCD.takeHomeVisit(orders, rxById);
+    const head = '<div class="pt-name">' + esc(meta.patientName || "") + '</div><div class="pt-meta">' + esc(meta.encounterNo || "") + "</div>";
+    if (!th.ok) {
+      clBlocked(head + '<div class="warn-box" style="margin-top:8px">' + (th.staff.length ? "This visit still has treatment that staff give: " + esc(th.staff.join(", ")) + ". It cannot be closed from the pharmacy. It is closed from the visit." : "This visit has no take-home medicines or supplies, so it is not closed from the pharmacy. It is closed from the visit.") + "</div>" + '<div style="margin-top:8px">' + openVisitLink(meta.encounterId, "close") + "</div>"); return;
+    }
+    clCtx = { meta: meta, th: th, drafts: drafts, tests: tests };
+    const STATE = { done: "Fully supplied", partial: "Partly supplied", waiting: "Not supplied yet", unknown: "Quantity not stated" };
+    let h = head + '<div class="hint2" style="margin-top:6px">This visit has take-home medicines and supplies only, and nothing for staff to give, so the pharmacy can close it.</div>';
+    h += '<div style="margin:8px 0">' + th.items.map(i => '<div class="pt-meta"><b>' + esc(i.name) + "</b> · " + STATE[i.state] + (i.state === "partial" || (i.state === "waiting" && i.outstanding > 0) ? ": " + i.outstanding + " " + esc(i.unit) + " not supplied" : "") + "</div>").join("") + "</div>";
+    const warn = []; if (th.notDone) warn.push(th.notDone + " item(s) are not fully supplied. They stay in the pharmacy queue."); if (drafts) warn.push(drafts + " note(s) are still drafts."); if (tests) warn.push(tests + " test(s) have no verified result yet. The laboratory can still finish them.");
+    if (warn.length) h += '<div class="warn-box">' + warn.map(esc).join("<br>") + "</div>";
+    h += '<label>Closing note (optional)</label><input type="text" id="clNote" maxlength="300" autocomplete="off" placeholder="e.g. Medicines collected"><div class="msg" id="clMsg" role="status"></div>'
+      + '<div style="display:flex;gap:8px;margin-top:8px"><button type="button" class="btn-primary" id="clGo">Close visit</button><button type="button" class="btn-small btn-secondary" id="clCancel">Cancel</button></div>';
+    $("clBody").innerHTML = h;
+  }
+  function clGo() {
+    if (!clCtx || !can("encounter.close")) return;
+    const c = clCtx, m = c.meta;
+    // the same questions the visit page asks before closing
+    if (c.drafts && !window.confirm(c.drafts + " note(s) are still drafts. Close the visit anyway?")) return;
+    if (c.tests && !window.confirm(c.tests + " test(s) have no verified result yet. Close the visit anyway? The laboratory can still finish them.")) return;
+    if (c.th.notDone && !window.confirm(c.th.notDone + " item(s) are not fully supplied. Close the visit anyway? They stay in the pharmacy queue.")) return;
+    let req; try { req = PCD.closeVisitWrites({ stamp: stampDoc, ts: serverTimestamp(), encId: m.encounterId, patientId: m.patientId, by: { id: me.id, name: myName }, note: $("clNote").value }); } catch (e) { clSay(e.message, "err"); return; }
+    const b = writeBatch(db); b.update(doc(db, "pc_encounters", m.encounterId), req.update); b.set(doc(collection(db, "pc_audit_logs")), req.audit);
+    $("clGo").disabled = true;
+    // like the visit page: closed on this phone at once; if the server later refuses (already closed, no permission), say so clearly
+    closedHere.add(m.encounterId);
+    b.commit().catch(err => { closedHere.delete(m.encounterId); renderList(); const denied = err && err.code === "permission-denied", t = "NOT SAVED. " + (denied ? "You do not have permission to close this visit, or it has already been closed." : PCD.friendlyError(err)); $("clDone").className = "msg err"; $("clDone").textContent = t; alert(t); });
+    const done = "Visit " + (m.encounterNo || "") + " closed for " + (m.patientName || "the patient") + "." + (navigator.onLine === false ? " Closed on this phone; it is sent when the connection returns." : "");
+    clClose(); renderList(); $("clDone").className = "msg ok"; $("clDone").textContent = done; $("clDone").scrollIntoView({ block: "nearest" });
+  }
+  document.addEventListener("click", e => {
+    const t = e.target.closest("button"); if (!t) return;
+    if (t.dataset.closevisit) { const m = closeMeta[t.dataset.closevisit] || (clCtx && clCtx.meta); if (m) openClose(m); }
+    else if (t.id === "clGo") clGo(); else if (t.id === "clCancel") clClose();
+    else if (t.dataset.clopenvisit) { const u = "encounter.html?id=" + encodeURIComponent(t.dataset.clopenvisit) + "&tab=" + t.dataset.cltab; try { window.top.location.hash = u; } catch (x) { location.href = u; } }
+  });
 
   // ---------------------------------------------------------------- the dispensing panel
   async function openRow(id) {
@@ -675,6 +851,7 @@
       h += "</div>";
     }
     if (D.msg) h += '<div class="msg ' + D.msgClass + '">' + esc(D.msg) + "</div>";
+    if (can("treatment.prescribe") && D.order && D.order.encounterId && D.order.planId) h += '<button type="button" class="btn-small btn-secondary" data-act="addcons" style="margin-top:10px;width:100%">Add a consumable for this patient</button>';
     h += '<button type="button" class="btn-small btn-secondary" data-act="close" style="margin-top:10px;width:100%">Close without dispensing</button>';
     card.innerHTML = h + '<datalist id="drugList">' + drugs.map(d => '<option value="' + esc(d.name) + '">').join("") + "</datalist>";
   }
@@ -921,6 +1098,7 @@
     $("shopIndicator").textContent = "Pharmacy · " + facility.name;
     $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden");
     $("tabReports").classList.toggle("hidden", !can("dispense.report"));
+    $("cnBar").classList.toggle("hidden", !can("treatment.prescribe"));   // Stage C: only users who may prescribe can request a consumable
     queue = PCD.Queue(window.localStorage, "mcDispQ:" + me.id + ":" + facilityId);
     $("hMonth").value = $("rMonth").value = localDay().slice(0, 7);
     renderSync();
@@ -998,6 +1176,7 @@
   });
   $("actCard").addEventListener("click", e => {
     const b = e.target.closest("[data-act]"); if (!b || !D) return; const a = b.dataset.act;
+    if (a === "addcons") { const o = D.order || {}, i = info(D.row); openConsumable({ encounterId: o.encounterId, patientId: i.patientId, patientName: i.patientName, encounterNo: o.encounterNo, planId: o.planId }); return; }
     if (a === "close") { D = null; $("actCard").classList.add("hidden"); renderList(); }
     else if (a === "confirm") doConfirm();
     else if (a === "pay") { D.payMode = b.dataset.m; renderAct(); }
