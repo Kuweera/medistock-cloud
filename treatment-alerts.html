@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>if(window.top===window){location.replace("app.html#"+location.pathname.split("/").pop()+location.search);}</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2abfa0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MediStock">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<title>Treatment alerts — MediStock Cloud</title>
+<style>
+  :root{
+    --bg:#f4f7f5; --card:#ffffff; --text:#152420; --muted:#4b5f59;
+    --accent:#0f6b5c; --accent2:#2e7d32; --warn:#c97a1f; --danger:#b23b3b; --border:#dbe4e0;
+  }
+  html[data-theme="dark"]{
+    --bg:#0d1614; --card:#16211d; --text:#e7f2ee; --muted:#9fb6ae;
+    --accent:#2bbfa0; --accent2:#4fd07a; --warn:#e2a53d; --danger:#e2685f; --border:#2a3934;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:16px; padding-bottom:40px;
+  }
+  h1{font-size:19px; margin:0;}
+  .badge{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--border); color:var(--muted);}
+  .badge.online{color:var(--accent2);} .badge.offline{color:var(--danger);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--accent); font-weight:700;}
+  label{display:block; font-size:12px; color:var(--muted); margin:8px 0 3px;}
+  input, select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:8px;} .row > *{flex:1;}
+  button{border:none; border-radius:9px; font-size:14px; font-weight:600; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; padding:12px; margin-top:10px;}
+  .big-num{font-size:30px; font-weight:800; color:var(--accent2); text-align:center; margin:6px 0;}
+  .breakdown-line{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; border-bottom:1px solid var(--border);}
+  .breakdown-line:last-child{border-bottom:none; font-weight:700; margin-top:4px; padding-top:8px; border-top:2px solid var(--border);}
+  .v.pos{color:var(--accent2);} .v.neg{color:var(--danger);}
+  .ledger-row{padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-meta{font-size:11.5px; color:var(--muted);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:14px 0;}
+
+  /* ===== Shared MediStock Cloud navigation ===== */
+  .app-header{
+    position:sticky; top:0; z-index:20;
+    background:var(--accent); color:#fff;
+    margin:-16px -16px 14px; padding:16px 18px 14px;
+  }
+  .app-header h1{margin:0; font-size:19px; letter-spacing:.2px; font-weight:700; color:#fff;}
+  .app-header p{margin:2px 0 0; font-size:12.5px; color:rgba(255,255,255,.75);}
+  .nav-bar{
+    position:sticky; top:0; z-index:25;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--accent); color:#fff;
+    margin:-14px -16px 14px; padding:8px 6px; border-top:1px solid rgba(255,255,255,.15);
+  }
+  .hamburger-btn{
+    background:none; border:none; color:#fff; font-size:22px; line-height:1;
+    padding:8px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-bar-brand{
+    font-size:14px; font-weight:600; color:#fff; cursor:pointer;
+    padding:8px 10px; -webkit-tap-highlight-color:transparent;
+  }
+  .nav-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:29;}
+  .nav-overlay.visible{display:block;}
+  .nav-panel{
+    position:fixed; top:0; bottom:0; right:0; z-index:30;
+    width:78%; max-width:300px;
+    background:var(--accent);
+    display:flex; flex-direction:column; gap:4px;
+    padding:16px 10px; overflow-y:auto;
+    transform:translateX(105%);
+    transition:transform .22s ease;
+    box-shadow:0 0 20px rgba(0,0,0,.3);
+  }
+  .nav-panel.open{transform:translateX(0);}
+  .nav-panel-title{
+    color:rgba(255,255,255,.75); font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    margin:4px 6px 6px;
+  }
+  .nav-panel a{
+    display:block; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:12px 14px; margin-bottom:4px;
+    border-radius:10px; font-size:14.5px; font-weight:600; text-align:left;
+    text-decoration:none;
+  }
+  .nav-panel a.active{background:var(--card); color:var(--accent);}
+  .nav-panel .theme-toggle{
+    margin-top:10px; background:rgba(255,255,255,.1); color:#fff;
+    border:1px solid rgba(255,255,255,.2); padding:10px 14px; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer; text-align:left; width:100%;
+  }
+
+  /* ===== Users page ===== */
+  .hidden{display:none !important;}
+  .btn-small{padding:8px 12px; font-size:13px;}
+  .btn-secondary{background:transparent; color:var(--accent); border:1px solid var(--accent);}
+  .btn-danger-outline{background:transparent; color:var(--danger); border:1px solid var(--danger);}
+  .op{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;}
+  .op:last-child{margin-bottom:0;}
+  .op-name{font-weight:700; font-size:14.5px; display:flex; justify-content:space-between; gap:8px; align-items:center;}
+  .op-meta{font-size:12px; color:var(--muted); margin-top:3px; line-height:1.5;}
+  .tag{font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid var(--border);}
+  .tag.on{color:var(--accent2); border-color:var(--accent2);} .tag.off{color:var(--danger); border-color:var(--danger);}
+  .op-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .cred{background:var(--bg); border:1px dashed var(--accent); border-radius:10px; padding:12px; margin:10px 0; font-size:14px; line-height:1.7;}
+  .cred b{font-size:16px; letter-spacing:.5px;}
+  .msg{font-size:13px; margin-top:8px;} .msg.err{color:var(--danger);} .msg.ok{color:var(--accent2);}
+  .pill-row{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;}
+  .pill-btn{background:var(--card); color:var(--text); border:1px solid var(--border); padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:600;}
+  .pill-btn.selected{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .day-h{font-size:11.5px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.4px; margin:12px 0 4px;}
+  .ev{display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .ev:last-child{border-bottom:none;}
+  .ev-main{min-width:0;} .ev-text{overflow-wrap:anywhere;}
+  .ev-meta{font-size:11.5px; color:var(--muted);}
+  .ev-amt{font-weight:700; white-space:nowrap;} .ev-amt.out{color:var(--danger);}
+  .hint2{font-size:11.5px; color:var(--muted); line-height:1.5; margin-top:6px;}
+
+  /* ===== Patient Care ===== */
+  .sub{font-size:13px; margin:16px 0 2px; color:var(--accent); font-weight:700;}
+  .chk{display:flex; align-items:center; gap:10px; font-size:13.5px; color:var(--text); margin:8px 0;}
+  .chk input{width:22px; height:22px; flex:0 0 22px; padding:0; margin:0;}
+  .pt{padding:11px 0; border-bottom:1px solid var(--border); cursor:pointer;}
+  .pt:last-child{border-bottom:none;}
+  .pt-name{font-size:14.5px; font-weight:700; color:var(--text);}
+  .pt-meta{font-size:12.5px; color:var(--muted); margin-top:2px; line-height:1.5;}
+  .chip{display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:4px; vertical-align:middle; background:var(--border); color:var(--muted);}
+  .chip.ok{color:var(--accent2);} .chip.warn{color:var(--warn);} .chip.bad{color:var(--danger);}
+  .cand{border:1px solid var(--border); border-radius:10px; padding:10px; margin:8px 0;}
+  .cand.strong{border-color:var(--danger);}
+  .cand-head{font-size:14px; font-weight:700; color:var(--danger); margin-top:14px;}
+  .op-actions{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .op-actions button{flex:1; min-width:120px;}
+  .breakdown-line .v{text-align:right; max-width:62%;}
+
+  /* ===== Stage 3B: ranges and alert rules ===== */
+  .r2{display:flex; gap:8px;} .r2 > div{flex:1; min-width:0;}
+  .rbox{border:1px solid var(--border); border-radius:10px; padding:10px; margin:8px 0;}
+  .rwarn{background:var(--bg); border:1px solid var(--warn); border-radius:8px; padding:8px 10px; margin:8px 0; font-size:12.5px; line-height:1.5;}
+  .rline{font-size:12.5px; color:var(--muted); margin-top:3px; line-height:1.5; overflow-wrap:anywhere;}
+  .rline a{color:var(--accent);}
+  textarea.rt{min-height:60px;}
+  textarea{width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px; font-family:inherit;}
+  textarea:focus{outline:none; border-color:var(--accent);}
+  .back{display:inline-block; font-size:13px; color:var(--accent); margin:0 0 10px; text-decoration:none; font-weight:600;}
+  .alert-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--danger); color:var(--danger); font-size:13px; line-height:1.5; font-weight:600;}
+  .entry{padding:10px 0; border-bottom:1px solid var(--border);} .entry:last-child{border-bottom:none;}
+  .entry.struck .pt-name{text-decoration:line-through; color:var(--muted); font-weight:500;}
+  .pill-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}
+  /* ===== typed or picked dates ===== */
+  .dateField{position:relative; display:flex; gap:8px; align-items:center;}
+  .dateField input[type="text"]{flex:1; min-width:0;}
+  .cal-btn{flex:0 0 46px; height:40px; background:var(--card); border:1px solid var(--border); border-radius:8px; font-size:18px; padding:0;}
+  .cal-native{position:absolute; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0; padding:0;}
+  .info-box{margin-top:10px; padding:9px 11px; border-radius:9px; border:1px solid var(--accent); color:var(--text); font-size:13px; line-height:1.5;}
+  .perm-warn{font-size:12px; color:var(--warn); margin-bottom:8px; line-height:1.5;}
+</style>
+<script>
+(function(){
+  try{
+    var pref = localStorage.getItem('mcThemePreference') || 'auto';
+    var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }catch(e){}
+})();
+</script>
+
+<style>
+  .al{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;}
+  .al.bad{border-left:4px solid var(--danger);} .al.warn{border-left:4px solid var(--warn);} .al.info{border-left:4px solid var(--border);}
+  .al-name{font-weight:700; font-size:14.5px; display:flex; justify-content:space-between; gap:8px; align-items:center; flex-wrap:wrap;}
+  .al-line{font-size:13px; margin-top:4px; line-height:1.5; overflow-wrap:anywhere;}
+  .al-ack{font-size:12px; color:var(--muted); margin-top:3px; line-height:1.5;}
+  textarea{width:100%; min-height:60px; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:14px; font-family:inherit;}
+  .r2{display:flex; gap:8px;} .r2 > div{flex:1; min-width:0;}
+</style>
+</head>
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<body>
+
+<header class="app-header">
+  <h1>MediStock Cloud</h1>
+  <p>Patient Care · Treatment alerts</p>
+</header>
+<div class="nav-bar">
+  <button class="hamburger-btn" id="navToggle" aria-label="Menu" type="button">&#9776;</button>
+  <div class="nav-bar-brand" onclick="mcGo('dashboard.html')">🏠 Home</div>
+  <span class="badge" id="netBadge">checking…</span>
+</div>
+<div class="nav-overlay" id="navOverlay"></div>
+<nav class="nav-panel" id="navPanel">
+  <div class="nav-panel-title">Menu</div>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="charts.html">Charts</a>
+  <a href="sales.html">Sell</a>
+  <a href="inventory.html">Inventory</a>
+  <a href="purchases.html">Purchases</a>
+  <a href="batches.html">Batches</a>
+  <a href="stocktake.html">Stock Taking</a>
+  <a href="whattobuy.html">What to Buy</a>
+  <a href="expenses.html">Expenses</a>
+  <a href="credit.html">Credit / Loans</a>
+  <a href="cash-position.html">Cash Position</a>
+  <a href="suppliers.html">Suppliers</a>
+  <a href="users.html">Users</a>
+  <a href="shops.html">Shops</a>
+  <a href="settings.html">Settings</a>
+  <button type="button" class="theme-toggle" id="themeToggle">Theme</button>
+</nav>
+<script src="nav.js"></script>
+<script>
+  (function(){
+    var toggle = document.getElementById('navToggle');
+    var panel = document.getElementById('navPanel');
+    var overlay = document.getElementById('navOverlay');
+    function closeNav(){ panel.classList.remove('open'); overlay.classList.remove('visible'); }
+    function openNav(){ panel.classList.add('open'); overlay.classList.add('visible'); }
+    toggle && toggle.addEventListener('click', function(){
+      panel.classList.contains('open') ? closeNav() : openNav();
+    });
+    overlay && overlay.addEventListener('click', closeNav);
+
+    var themeBtn = document.getElementById('themeToggle');
+    var order = ['auto','light','dark'];
+    var labels = {auto:'\ud83c\udf13 Theme: Auto', light:'\u2600\ufe0f Theme: Light', dark:'\ud83c\udf19 Theme: Dark'};
+    function applyPref(pref){
+      var isDark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      if (themeBtn) themeBtn.textContent = labels[pref];
+    }
+    var current = localStorage.getItem('mcThemePreference') || 'auto';
+    applyPref(current);
+    themeBtn && themeBtn.addEventListener('click', function(){
+      current = order[(order.indexOf(current)+1) % order.length];
+      localStorage.setItem('mcThemePreference', current);
+      applyPref(current);
+    });
+  })();
+</script>
+
+<div class="hint" id="shopIndicator" style="margin-bottom:8px; font-size:11px; color:var(--muted);"></div>
+<div class="card hidden" id="gateCard"><div id="gateMsg" class="empty"></div></div>
+
+<div id="mainArea" class="hidden">
+  <div class="card">
+    <h2>This device</h2>
+    <div id="devBody" class="pt-meta" style="margin-top:0;">Checking…</div>
+    <label class="chk hidden" id="ownerBox" style="margin-top:10px;"><input type="checkbox" id="ownerOn"> Send dose alerts to this device (owner)</label>
+    <div class="hint2 hidden" id="ownerHint">The owner role holds every permission, so dose alerts reach an owner's device only when this is switched on, on that device.</div>
+  </div>
+
+  <div class="pill-row">
+    <button class="pill-btn selected" id="tAlerts" type="button">Needs attention</button>
+    <button class="pill-btn" id="tDna" type="button">Did not attend</button>
+    <button class="pill-btn hidden" id="tSet" type="button">Reminder timings</button>
+  </div>
+  <div class="msg" id="doneMsg"></div>
+
+  <div id="alertsArea">
+    <div class="card hidden" id="ackCard">
+      <h2 id="ackTitle">Acknowledge</h2>
+      <div class="pt-meta" id="ackSummary" style="margin-top:0;"></div>
+      <div class="hint2">Acknowledging means "I have seen this". It does not record the dose and does not stop an escalation. Record the dose in the treatment list.</div>
+      <label>Note (optional, up to 300 characters)</label><textarea id="ackNote" maxlength="300"></textarea>
+      <button class="btn-primary" id="ackGo" type="button">Acknowledge</button>
+      <button class="btn-small btn-secondary" id="ackCancel" type="button" style="width:100%; margin-top:8px;">Cancel</button>
+      <div class="msg" id="ackMsg"></div>
+    </div>
+    <div class="card"><h2>Needs attention</h2><div class="hint2" style="margin-top:0;" id="alertsHint"></div><div id="alertsList"></div></div>
+  </div>
+
+  <div id="dnaArea" class="hidden">
+    <div class="card"><h2>Did not attend</h2>
+      <div class="hint2" style="margin-top:0;">Patients recorded as not having come for a scheduled treatment. For staff to follow up. No contact details are shown here: open the patient record.</div>
+      <div id="dnaList"></div></div>
+  </div>
+
+  <div id="setArea" class="hidden">
+    <div class="card"><h2>Reminder timings</h2>
+      <div class="hint2" style="margin-top:0;">These are working times for this facility, not clinical values. Leave a box at its normal value to keep it.</div>
+      <div class="hint2" id="tzNote"></div>
+      <div class="r2"><div><label>Minutes before a dose is overdue</label><input type="text" inputmode="numeric" id="sGrace" autocomplete="off"></div><div><label>Minutes before a dose counts as due</label><input type="text" inputmode="numeric" id="sSoon" autocomplete="off"></div></div>
+      <div class="r2"><div><label>Minutes before escalating (0 = never)</label><input type="text" inputmode="numeric" id="sEsc" autocomplete="off"></div><div><label>Minutes of warning before an appointment (0 = none)</label><input type="text" inputmode="numeric" id="sAdv" autocomplete="off"></div></div>
+      <div class="hint2" id="sInfo"></div>
+      <button class="btn-primary" id="sSave" type="button">Save timings</button>
+      <div class="msg" id="sMsg"></div>
+    </div>
+  </div>
+</div>
+
+<script src="pc-ux.js"></script>
+<script src="pc-sched.js"></script>
+<script src="pc-remind.js"></script>
+<script type="module">
+  const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc: _getDoc, setDoc, updateDoc, collection, onSnapshot, serverTimestamp, query, where, limit, orderBy, getDocFromCache } = window.top.MC.api(window);
+  const _slowRace = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("slow connection")), ms); p.then(v => { clearTimeout(t); res(v); }, e => { clearTimeout(t); rej(e); }); });
+  async function getDocServerFirst(ref) {
+    if (navigator.onLine === false) { try { return await getDocFromCache(ref); } catch (e) {} }
+    try { return await _slowRace(_getDoc(ref), 2500); }
+    catch (e) { if (e && e.code === "permission-denied") throw e; try { return await getDocFromCache(ref); } catch (e2) { throw e; } }
+  }
+  async function getDoc(ref) { try { const c = await getDocFromCache(ref); if (c.exists()) return c; } catch (e) {} return getDocServerFirst(ref); }
+
+  const app = initializeApp({});
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  let me = null, role = null, businessId = null, facilityId = null, facility = null, perms = {}, myName = "";
+  let ev = {}, orders = null, settingsDoc = undefined, acks = [], acksLimited = false, unsubs = [], winSig = "", tab = "alerts", ackTarget = null, devStatus = null;
+  const can = k => role === "owner" || perms[k] === true;
+  const tz = () => (facility && facility.timezone) || "Africa/Kampala";
+  const ownerKey = () => "mcOwnerTreatmentAlerts:" + (me ? me.id : "x");
+  const ownerOn = () => { try { return localStorage.getItem(ownerKey()) === "1"; } catch (e) { return false; } };
+
+  function showGate(msg) { $("gateMsg").innerHTML = msg; $("gateCard").classList.remove("hidden"); $("mainArea").classList.add("hidden"); }
+  function stamp() { return { businessId: businessId, facilityId: facilityId, schemaVersion: 1, createdBy: me.id, createdAt: serverTimestamp(), clientCreatedAt: Date.now() }; }
+  function done(t, bad) { const el = $("doneMsg"); el.className = "msg " + (bad ? "err" : "ok"); el.textContent = t; }
+  function saveFailed(err) {
+    console.warn("save failed", err);
+    const denied = err && err.code === "permission-denied";
+    done("NOT SAVED. " + (denied ? "It was refused: someone may already have done this, or you do not have permission." : "This could not be saved. Check your internet connection and try again."), true);
+  }
+  function audit(action, path, extra) { setDoc(doc(collection(db, "pc_audit_logs")), Object.assign({}, stamp(), { actorUid: me.id, actorName: myName, action: action, recordPath: path, at: serverTimestamp() }, extra || {})).catch(() => {}); }
+  const ms = t => (t && typeof t.toMillis === "function") ? t.toMillis() : (typeof t === "number" ? t : null);
+  const hhmm = t => (t == null ? "" : PCS.utcToLocal(t, tz()).time);
+  const dayOf = t => (t == null ? "" : PCS.utcToLocal(t, tz()).date);
+
+  // ---------- data (the same four things every device holds: events, orders, settings, acknowledgements)
+  function allEvents() { const out = []; Object.keys(ev).forEach(d => ev[d].forEach(e => out.push(e))); return out; }
+  function stop() { unsubs.splice(0).forEach(u => { try { u(); } catch (e) {} }); }
+  function start() {
+    const days = PCRM.windowDays(Date.now(), tz()), sig = days.join(",");
+    if (sig === winSig) return; stop(); winSig = sig; ev = {}; const rl = () => render();
+    const bad = err => { $("alertsList").innerHTML = '<div class="empty">' + esc(err && err.code === "permission-denied" ? "You do not have permission to view treatments." : "The treatments could not be loaded. Check your internet connection and try again.") + "</div>"; };
+    const base = c => [collection(db, c), where("businessId", "==", businessId), where("facilityId", "==", facilityId)];
+    days.forEach(d => unsubs.push(onSnapshot(query.apply(null, base("pc_treatment_events").concat([where("plannedDay", "==", d), limit(500)])), s => { ev[d] = s.docs.map(x => ({ id: x.id, ...x.data() })); rl(); }, bad)));
+    unsubs.push(onSnapshot(query.apply(null, base("pc_treatment_orders").concat([where("status", "==", "active"), limit(500)])), s => { orders = s.docs.map(x => ({ id: x.id, ...x.data() })); rl(); }, bad));
+    unsubs.push(onSnapshot(doc(db, "pc_reminder_settings", facilityId), s => { settingsDoc = s.exists() ? s.data() : null; fillSettings(); rl(); }, () => { settingsDoc = null; }));
+    let unAck = null; const listenAcks = ordered => {
+      const qs = base("pc_reminder_acks"); if (ordered) qs.push(orderBy("createdAt", "desc")); qs.push(limit(1000));
+      unAck = onSnapshot(query.apply(null, qs), s => { acks = s.docs.map(x => ({ id: x.id, ...x.data() })); acksLimited = !ordered; rl(); },
+        e => { if (ordered && e && e.code === "failed-precondition") { try { unAck(); } catch (x) {} listenAcks(false); } });
+    };
+    listenAcks(true); unsubs.push(() => { if (unAck) unAck(); });
+  }
+
+  // ---------- this device
+  async function refreshDevice() {
+    const N = window.top.MCNotify; let h = "";
+    if (!N) h = "Background alerts are not available here.";
+    else {
+      let st = null; try { st = await N.treatmentStatus(); } catch (e) { st = null; }
+      devStatus = st;
+      if (!st || !st.native) h = "Background alerts work only in the MediStock Cloud app for Android. In a browser, this list updates while the page is open.";
+      else if (st.permission !== "granted") h = "Notifications are switched off for MediStock on this device. Turn them on in the device settings (Apps, MediStock Cloud, Notifications).";
+      else if (!st.attached) h = "Treatment alerts are not active on this device. They need Patient Care to be switched on for your facility and a treatment permission.";
+      else h = "Treatment alerts scheduled on this device: " + st.scheduled + (st.overflow ? " (including one summary for " + st.overflow + " later ones)" : "") + ". Each alert shows only a count and a time, and the list below is the full picture.";
+      if (st && st.error) h += " Problem: " + st.error;
+      if (st && st.acksLimited) h += " Some older acknowledgements may not be shown until the administrator adds the newest-first index for acknowledgements.";
+    }
+    h += " The times on this page use " + (facility && facility.timezone ? "this facility's time zone (" + facility.timezone + ")" : "Africa/Kampala, because this facility has no time zone set") + ".";
+    $("devBody").textContent = h;
+    $("ownerBox").classList.toggle("hidden", role !== "owner"); $("ownerHint").classList.toggle("hidden", role !== "owner"); $("ownerOn").checked = ownerOn();
+  }
+
+  // ---------- the list
+  const user = () => ({ uid: me.id, role: role, perms: perms, ownerAlertsOn: ownerOn() });
+  function lineOf(a, now) {
+    const mins = Math.round((now - a.plannedAt) / 60000), ago = mins >= 0 ? mins + " min ago" : "in " + (-mins) + " min", at = a.plannedText;
+    switch (a.level) {
+      case "dose_due": return "Due at " + at + " (" + ago + "). Not recorded yet.";
+      case "dose_overdue": return "Overdue: planned for " + at + " (" + ago + "). Not recorded.";
+      case "dose_escalated": return "Escalated: still not recorded. Planned for " + at + " (" + ago + ").";
+      case "appointment_soon": return "Appointment at " + at + " (" + ago + "). Not arrived yet.";
+      case "appointment_overdue": return "Not arrived: the appointment was at " + at + " (" + ago + ").";
+      case "missed_recorded": return "Staff recorded this as missed. Planned for " + at + ".";
+      case "did_not_attend": return "Recorded as did not attend. Planned for " + at + ".";
+    }
+    return "";
+  }
+  function ackLine(a) {
+    if (!a.ack) return "";
+    const t = ms(a.ack.at); return "Acknowledged by " + (a.ack.byName || "a team member") + (t ? " at " + hhmm(t) : "") + (a.ack.note ? ": " + a.ack.note : "");
+  }
+  function render() {
+    if (!me || !$("mainArea") || $("mainArea").classList.contains("hidden")) return; start();
+    const now = Date.now(), list = $("alertsList");
+    if (orders === null) { list.innerHTML = '<div class="empty">Loading…</div>'; return; }
+    const alerts = PCRM.derive({ events: allEvents(), orders: orders, settings: settingsDoc, acks: acks, now: now, tz: tz() }), vis = PCRM.visible(alerts, user());
+    $("tAlerts").textContent = "Needs attention" + (vis.length ? " (" + new Set(vis.map(a => a.eventId)).size + ")" : "");
+    $("alertsHint").textContent = role === "owner" && !ownerOn() ? "Dose alerts are switched off for the owner on this device. Switch them on under \"This device\"." : "Alerts are worked out on this device from the treatment data it holds. Unrecorded doses stay \"overdue\"; only staff can record one as missed.";
+    if (!vis.length) { list.innerHTML = '<div class="empty">Nothing needs attention right now.</div>'; }
+    else {
+      const byEv = {}; vis.forEach(a => { (byEv[a.eventId] = byEv[a.eventId] || []).push(a); });
+      list.innerHTML = Object.keys(byEv).map(k => byEv[k]).map(g => {   // derive() already orders the alerts most urgent first
+        const top = g[0], sev = g.some(a => a.severity === "bad") ? "bad" : g.some(a => a.severity === "warn") ? "warn" : "info";
+        let h = '<div class="al ' + sev + '"><div class="al-name"><span>' + esc(top.patientName || "Patient") + '</span><span>' + g.map(a => '<span class="chip ' + (a.severity === "info" ? "" : a.severity) + '">' + esc(a.label) + "</span>").join("") + "</span></div>";
+        h += '<div class="al-line">' + esc(top.what) + (top.kind ? " · " + esc(top.kind) : "") + "</div>";
+        g.forEach(a => { h += '<div class="al-line">' + esc(lineOf(a, now)) + (a.scope.as === "administer" && a.level === "dose_escalated" ? " (sent to the prescriber)" : "") + "</div>"; const al = ackLine(a); if (al) h += '<div class="al-ack">' + esc(al) + "</div>"; });
+        h += '<div class="op-actions">' + g.filter(a => !a.ack && (can("treatment.administer") || can("treatment.prescribe"))).map(a => '<button type="button" class="btn-small btn-secondary" data-ack="' + esc(a.id) + '">Acknowledge: ' + esc(a.label) + "</button>").join("") + '<button type="button" class="btn-small btn-secondary" data-go="treatment.html">Open treatment list</button></div></div>';
+        return h;
+      }).join("");
+    }
+    const dna = PCRM.didNotAttend(allEvents(), tz());
+    $("tDna").textContent = "Did not attend" + (dna.length ? " (" + dna.length + ")" : "");
+    $("dnaList").innerHTML = !dna.length ? '<div class="empty">Nobody is recorded as not attending in the last few days.</div>' : dna.map(x => '<div class="al info"><div class="al-name"><span>' + esc(x.patientName || "Patient") + '</span><span class="chip">Did not attend</span></div><div class="al-line">' + esc(x.what) + " · planned " + esc(x.plannedDay) + " " + esc(x.plannedText) + (x.byName ? " · recorded by " + esc(x.byName) : "") + '</div><div class="op-actions"><button type="button" class="btn-small btn-secondary" data-patient="' + esc(x.patientId) + '">Open patient</button></div></div>').join("");
+  }
+
+  // ---------- acknowledge
+  function openAck(id) {
+    const a = PCRM.visible(PCRM.derive({ events: allEvents(), orders: orders || [], settings: settingsDoc, acks: acks, now: Date.now(), tz: tz() }), user()).find(x => x.id === id); if (!a) return;
+    ackTarget = a; $("ackTitle").textContent = "Acknowledge: " + a.label; $("ackSummary").textContent = (a.patientName || "Patient") + " · " + a.what + " · " + lineOf(a, Date.now()); $("ackNote").value = ""; $("ackMsg").textContent = ""; $("ackCard").classList.remove("hidden"); $("ackCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function confirmAck() {
+    const a = ackTarget; if (!a) return; const m = $("ackMsg"); m.className = "msg err";
+    if (!can("treatment.administer") && !can("treatment.prescribe")) { m.textContent = "You do not have permission to acknowledge."; return; }
+    const note = $("ackNote").value.trim(); if (note.length > 300) { m.textContent = "The note is too long (at most 300 characters)."; return; }
+    const d = Object.assign(stamp(), { eventId: a.eventId, orderId: a.orderId, patientId: a.patientId, level: a.level, ackBy: me.id, ackByName: myName || "" }); if (note) d.note = note;
+    setDoc(doc(db, "pc_reminder_acks", a.ackId), d).catch(saveFailed); audit("reminder.ack", "pc_reminder_acks/" + a.ackId, { eventId: a.eventId, level: a.level });
+    ackTarget = null; $("ackCard").classList.add("hidden"); done("Saved on this device. Others see it when this device is online. It does not record the dose."); render();
+  }
+
+  // ---------- timings (settings.manage)
+  function fillSettings() {
+    if (!$("sGrace") || document.activeElement && ["sGrace", "sSoon", "sEsc", "sAdv"].indexOf(document.activeElement.id) >= 0) return;
+    const s = PCRM.settingsOf(settingsDoc || null); $("sGrace").value = s.graceMin; $("sSoon").value = s.soonMin; $("sEsc").value = s.escalateAfterMin; $("sAdv").value = s.appointmentAdvanceMin;
+    $("sInfo").textContent = (settingsDoc ? "" : "No timings saved yet: the normal timings are in use. ") + (s.graceMin !== 30 || s.soonMin !== 30 ? "The treatment list still shows \"Late\" after 30 minutes until it is updated to use these timings." : "");
+    $("tzNote").textContent = facility && facility.timezone ? "" : "This facility has no time zone set, so Africa/Kampala is used for times.";
+  }
+  function saveSettings() {
+    const m = $("sMsg"); m.className = "msg err"; if (!can("settings.manage")) { m.textContent = "You do not have permission to change the timings."; return; }
+    const f = { graceMin: $("sGrace").value, soonMin: $("sSoon").value, escalateAfterMin: $("sEsc").value, appointmentAdvanceMin: $("sAdv").value }, errs = PCRM.settingsErrors(f);
+    if (errs.length) { m.textContent = errs.join(" "); return; }
+    const fields = PCRM.settingsFields(f), before = PCRM.settingsOf(settingsDoc || null), ref = doc(db, "pc_reminder_settings", facilityId);
+    if (settingsDoc) updateDoc(ref, Object.assign({}, fields, { updatedBy: me.id, updatedAt: serverTimestamp() })).catch(saveFailed);
+    else setDoc(ref, Object.assign(stamp(), fields)).catch(saveFailed);
+    audit("reminder.settings", "pc_reminder_settings/" + facilityId, { before: { graceMin: before.graceMin, soonMin: before.soonMin, escalateAfterMin: before.escalateAfterMin, appointmentAdvanceMin: before.appointmentAdvanceMin }, after: fields });
+    m.className = "msg ok"; m.textContent = "Saved on this device. Every device uses the new timings once it is online."; done("Timings saved.");
+  }
+
+  function showTab(t) {
+    tab = t; ["alerts", "dna", "set"].forEach(k => { $(k + "Area").classList.toggle("hidden", k !== t); });
+    $("tAlerts").classList.toggle("selected", t === "alerts"); $("tDna").classList.toggle("selected", t === "dna"); $("tSet").classList.toggle("selected", t === "set");
+  }
+  $("tAlerts").onclick = () => showTab("alerts"); $("tDna").onclick = () => showTab("dna"); $("tSet").onclick = () => showTab("set");
+  $("ackGo").onclick = confirmAck; $("ackCancel").onclick = () => { ackTarget = null; $("ackCard").classList.add("hidden"); }; $("sSave").onclick = saveSettings;
+  $("ownerOn").addEventListener("change", () => { const on = $("ownerOn").checked; try { if (window.top.MCNotify && window.top.MCNotify.setOwnerTreatmentAlerts) window.top.MCNotify.setOwnerTreatmentAlerts(on); else localStorage.setItem(ownerKey(), on ? "1" : ""); } catch (e) {} render(); refreshDevice(); });
+  document.addEventListener("click", e => {
+    const a = e.target.closest("[data-ack]"); if (a) { openAck(a.dataset.ack); return; }
+    const g = e.target.closest("[data-go]"); if (g) { window.mcGo(g.dataset.go); return; }
+    const p = e.target.closest("[data-patient]"); if (p) window.mcGo("patient.html?id=" + encodeURIComponent(p.dataset.patient));
+  });
+
+  function begin() {
+    if (!facility || !(Array.isArray(facility.enabledServices) && facility.enabledServices.indexOf("patient_care") >= 0)) { showGate("Patient Care is not switched on for " + esc(facility ? facility.name : "this shop") + "."); return; }
+    if (!(can("treatment.administer") || can("treatment.prescribe") || can("settings.manage"))) { showGate("You do not have access to treatment alerts. Ask the owner to give you access in Users."); return; }
+    $("shopIndicator").textContent = "Patient Care · " + facility.name;
+    $("gateCard").classList.add("hidden"); $("mainArea").classList.remove("hidden"); $("tSet").classList.toggle("hidden", !can("settings.manage"));
+    start(); fillSettings(); refreshDevice(); setInterval(render, 30000); setInterval(refreshDevice, 20000);
+  }
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.mcGo("login.html"); return; }
+    let snap;
+    try { snap = await getDoc(doc(db, "users", user.uid)); } catch (e) { showGate("Could not load your account. Check your connection and reopen this page."); return; }
+    if (!snap.exists()) { window.mcGo("login.html"); return; }
+    me = { id: user.uid, ...snap.data() };
+    if (me.active === false) { await auth.signOut(); window.mcGo("login.html?disabled=1"); return; }
+    role = me.role; businessId = me.businessId; perms = me.perms || {}; myName = me.name || "";
+    if (role === "owner") {
+      let started = false;
+      onSnapshot(query(collection(db, "shops"), where("businessId", "==", businessId)), s => {
+        const shops = {}; s.docs.forEach(d => { shops[d.id] = { id: d.id, ...d.data() }; });
+        const ids = Object.keys(shops).sort((a, b) => String(shops[a].name).localeCompare(String(shops[b].name))), want = localStorage.getItem("mc_activeShopId");
+        facilityId = shops[want] ? want : ids[0]; facility = facilityId ? shops[facilityId] : null;
+        if (!started) { started = true; begin(); }
+      });
+    } else {
+      facilityId = me.shopId;
+      try { const sh = await getDoc(doc(db, "shops", facilityId)); facility = sh.exists() ? { id: sh.id, ...sh.data() } : null; } catch (e) { facility = null; }
+      begin();
+    }
+  });
+</script>
+</body>
+</html>

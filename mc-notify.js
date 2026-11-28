@@ -5,6 +5,8 @@
    - Expiring: 30, 14, 7 days before and on the day, grouped into one alert per day. Expired stock: 8:00 reminder.
    - Credit: day before and on the due date, plus an 8:00 overdue reminder.
    - Unsynced: if changes have not reached the server for 24 hours.
+   - Treatment (Stage 4, contract section 19): doses and appointments that are due, overdue or escalated, from the treatment data this device already holds. Text carries counts and times only.
+     A treatment alert is "scheduled on this device"; this file never claims one was delivered.
    Tapping an alert opens the matching screen. */
 (function () {
   var Cap = window.Capacitor;
@@ -173,8 +175,86 @@
     } else ls(sk, null);
 
     want.sort(function (a, b) { return a.at - b.at; });
+    var trw = []; try { trw = trBuild(now); } catch (e) { TR.err = String((e && (e.message || e.code)) || e); trw = []; }
+    want = want.slice(0, MAX_SCHEDULED - trw.length).concat(trw);   // treatment first (at most TR_MAX), the other alerts keep the rest
+    want.sort(function (a, b) { return a.at - b.at; });
     return want.slice(0, MAX_SCHEDULED);
   }
+
+
+  // ------------------------------------------------------------ treatment reminders (Stage 4, contract section 19)
+  // The rules of what is due, overdue, escalated, acknowledged or stopped live in pc-remind.js (pure, tested). This part only loads the data and hands the plan to the notification plugin.
+  // Treatment reminders take priority up to TR_MAX of the 60 scheduled notifications; the other alerts keep the rest.
+  var TR_MAX = 40;
+  var TR = { api: null, unsubs: [], sig: "", ev: {}, orders: null, settings: null, acks: [], acksLimited: false, fac: null, lastPlan: null, err: "", loading: null, timer: null };
+  function loadScript(src) {
+    return new Promise(function (res, rej) { var s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = function () { rej(new Error("could not load " + src)); }; document.head.appendChild(s); });
+  }
+  function trPerms() { var p = MC.profile || {}, k = p.perms || {}; return p.role === "owner" || k["treatment.administer"] === true || k["treatment.prescribe"] === true; }
+  function trUser() { var p = MC.profile || {}; return { uid: uid(), role: p.role, perms: p.perms || {}, ownerAlertsOn: ls("mcOwnerTreatmentAlerts:" + uid()) === "1" }; }
+  function trFac() {
+    var p = MC.profile || {}; if (!p.businessId) return null;
+    var shops = rows("shops"), sh = null;
+    if (p.role === "owner") { var want = ls("mc_activeShopId"); sh = shops.filter(function (x) { return x.id === want; })[0] || shops.slice().sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); })[0] || null; }
+    else sh = shops.filter(function (x) { return x.id === p.shopId; })[0] || null;
+    if (!sh || !(Array.isArray(sh.enabledServices) && sh.enabledServices.indexOf("patient_care") >= 0)) return null;
+    return { businessId: p.businessId, id: sh.id, name: sh.name || "", tz: sh.timezone || "Africa/Kampala", tzSet: !!sh.timezone };
+  }
+  function trDetach() { TR.unsubs.splice(0).forEach(function (u) { try { u(); } catch (e) {} }); TR.sig = ""; TR.fac = null; TR.ev = {}; TR.orders = null; TR.settings = null; TR.acks = []; TR.acksLimited = false; TR.lastPlan = null; }
+  async function trAttach() {
+    try {
+      if (!native || !trPerms()) { if (TR.sig) trDetach(); return; }
+      if (!window.PCRM || !window.PCS) {
+        if (!TR.loading) TR.loading = (async function () { if (!window.PCS) await loadScript("pc-sched.js"); if (!window.PCRM) await loadScript("pc-remind.js"); })().catch(function (e) { TR.err = String(e && e.message || e); }).then(function () { TR.loading = null; });
+        await TR.loading; if (!window.PCRM || !window.PCS) return;
+      }
+      var fac = trFac(), days = fac ? PCRM.windowDays(Date.now(), fac.tz) : [], sig = fac ? [fac.businessId, fac.id, days.join(",")].join("|") : "";
+      if (sig === TR.sig) return;
+      trDetach(); TR.sig = sig; TR.fac = fac; TR.err = ""; if (!fac) return;
+      if (!TR.api) TR.api = MC.api(window);
+      var api = TR.api, db = api.getFirestore(), B = fac.businessId, F = fac.id, bad = function (e) { TR.err = String((e && (e.code || e.message)) || e); };
+      var map = function (s) { return s.docs.map(function (d) { var o = d.data(); o.id = d.id; return o; }); };
+      var base = function (c) { return [api.collection(db, c), api.where("businessId", "==", B), api.where("facilityId", "==", F)]; };
+      days.forEach(function (d) { TR.unsubs.push(api.onSnapshot(api.query.apply(null, base("pc_treatment_events").concat([api.where("plannedDay", "==", d), api.limit(500)])), function (s) { TR.ev[d] = map(s); soon(); }, bad)); });
+      TR.unsubs.push(api.onSnapshot(api.query.apply(null, base("pc_treatment_orders").concat([api.where("status", "==", "active"), api.limit(500)])), function (s) { TR.orders = map(s); soon(); }, bad));
+      TR.unsubs.push(api.onSnapshot(api.doc(db, "pc_reminder_settings", F), function (s) { TR.settings = s.exists() ? s.data() : null; soon(); }, bad));
+      // acknowledgements: the newest 1000 (needs the index on pc_reminder_acks: businessId, facilityId, createdAt desc). Without it, fall back to any 1000 and say so on the alerts page.
+      var unAck = null, listenAcks = function (ordered) {
+        var qs = base("pc_reminder_acks"); if (ordered) qs.push(api.orderBy("createdAt", "desc")); qs.push(api.limit(1000));
+        unAck = api.onSnapshot(api.query.apply(null, qs), function (s) { TR.acks = map(s); TR.acksLimited = !ordered; soon(); }, function (e) { if (ordered && e && e.code === "failed-precondition") { try { unAck(); } catch (x) {} listenAcks(false); } else bad(e); });
+      };
+      listenAcks(true); TR.unsubs.push(function () { if (unAck) unAck(); });
+      if (!TR.timer) TR.timer = setInterval(function () { if (TR.fac) soon(); }, 60000);   // levels start and days roll over while the app stays open
+    } catch (e) { TR.err = String((e && (e.message || e.code)) || e); }
+  }
+  // the plan for right now: pure engine, then what this device already did
+  function trBuild(now) {
+    if (!TR.fac || TR.orders === null || !window.PCRM) { TR.lastPlan = null; return []; }
+    var evs = []; Object.keys(TR.ev).forEach(function (d) { evs = evs.concat(TR.ev[d]); });
+    var k1 = "mcTrNotified:" + uid() + ":" + TR.fac.id, k2 = "mcTrSched:" + uid() + ":" + TR.fac.id, read = function (k) { try { return new Set(JSON.parse(ls(k) || "[]")); } catch (e) { return new Set(); } };
+    var plan = PCRM.plan({ events: evs, orders: TR.orders, settings: TR.settings, acks: TR.acks, now: now, tz: TR.fac.tz, user: trUser(), notified: read(k1), scheduledPrev: read(k2), max: TR_MAX });
+    TR.lastPlan = { plan: plan, k1: k1, k2: k2, notified: read(k1), at: now };
+    return plan.schedule.map(function (g) { return { key: g.key, at: new Date(g.at), title: g.title, body: g.body, target: "treatment-alerts.html" }; });
+  }
+  // after the schedule was accepted: show what is active and was never notified, then remember what this device has scheduled or shown
+  async function trCommit() {
+    var L = TR.lastPlan; if (!L) return;
+    try {
+      var p = L.plan, notified = L.notified;
+      for (var i = 0; i < p.showNow.length; i++) {
+        var g = p.showNow[i];
+        await LN.schedule({ notifications: [{ id: hash(g.key + "|" + g.items.join(",")), title: g.title, body: g.body, channelId: CHANNEL, smallIcon: ICON, iconColor: COLOR, extra: { target: "treatment-alerts.html" } }] });
+        g.items.forEach(function (k) { notified.add(k); });
+      }
+      var keep = new Set(p.activeKeys); notified.forEach(function (k) { if (!keep.has(k)) notified.delete(k); });
+      ls(L.k1, JSON.stringify(Array.from(notified))); ls(L.k2, JSON.stringify(p.scheduledKeys));
+    } catch (e) { TR.err = String((e && (e.message || e.code)) || e); }
+  }
+  N.setOwnerTreatmentAlerts = function (on) { ls("mcOwnerTreatmentAlerts:" + uid(), on ? "1" : null); soon(); };
+  N.treatmentStatus = async function () {
+    var st = await N.status(), L = TR.lastPlan;
+    return { native: native, permission: st.permission, attached: !!TR.fac, facility: TR.fac ? TR.fac.name : "", tzSet: TR.fac ? TR.fac.tzSet : true, ownerAlertsOn: trUser().ownerAlertsOn, scheduled: L ? L.plan.schedule.length : 0, overflow: L ? L.plan.overflow : 0, acksLimited: TR.acksLimited, error: TR.err };
+  };
 
   var busy = null, again = false;
   async function reconcile() {
@@ -187,6 +267,7 @@
         if (p && p.notifications && p.notifications.length) await LN.cancel({ notifications: p.notifications.map(function (n) { return { id: n.id }; }) });
         if (want.length) await LN.schedule({ notifications: want.map(function (w) { return { id: hash(w.key), title: w.title, body: w.body, schedule: { at: w.at, allowWhileIdle: true }, channelId: CHANNEL, smallIcon: ICON, iconColor: COLOR, extra: { target: w.target } }; }) });
         N.scheduled = want.length; N.lastError = "";
+        await trCommit();
       } catch (e) { N.lastError = String((e && (e.message || e.code)) || e); }
     })();
     await busy; busy = null;
@@ -194,7 +275,7 @@
   }
 
   var timer = null;
-  function soon() { if (timer) return; timer = setTimeout(function () { timer = null; checkLow().catch(function () {}); reconcile().catch(function () {}); }, 3000); }
+  function soon() { if (timer) return; timer = setTimeout(function () { timer = null; checkLow().catch(function () {}); trAttach().catch(function () {}).then(function () { return reconcile(); }).catch(function () {}); }, 3000); }
 
   // ------------------------------------------------------------ start, test, first-run tip
   function tip() {
@@ -246,5 +327,5 @@
     await show({ title: "MediStock test alert", body: "Tap me: I open the dashboard.", target: "dashboard.html" });
     return "Test alert sent. If you saw nothing, check that banners are ON for MediStock in the phone's notification settings.";
   };
-  N.rescan = async function () { await checkLow(); await reconcile(); return N.status(); };
+  N.rescan = async function () { await checkLow(); await trAttach(); await reconcile(); return N.status(); };
 })();
