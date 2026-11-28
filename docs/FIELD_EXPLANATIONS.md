@@ -241,6 +241,17 @@ These fields set up drafts. Nothing is used until a reviewer approves it, and th
 | Note (optional) | Optional | A note kept with the approval. |
 | Reason | Required (*) | Why it is rejected, discarded or retired. At least 3 characters. It is kept with the record. |
 
+## Treatment alerts (`treatment-alerts.html`)
+
+| Field | Required or optional | What it means |
+|---|---|---|
+| Send dose alerts to this device (owner) | Not marked | Owner only. The owner role holds every permission, so dose alerts reach an owner's device only when this is switched on, on that device. It is kept on this device only. |
+| Note (optional, up to 300 characters) | Optional | A short note kept with your acknowledgement. Acknowledging means "I have seen this"; it does not record the dose. |
+| Minutes before a dose is overdue | Required | Minutes after the planned time before a dose is shown as overdue. Whole number from 5 to 240. Normal: 30. |
+| Minutes before a dose counts as due | Required | Minutes before the planned time that a dose is shown as due. Whole number from 5 to 240. Normal: 30. |
+| Minutes before escalating (0 = never) | Required | Minutes after the planned time before the prescriber is told that a dose is still not recorded. 0 means never. When used, it must be later than the overdue time. Up to 720. |
+| Minutes of warning before an appointment (0 = none) | Required | Minutes before a facility-given appointment that staff are reminded. 0 means no advance reminder. Up to 1440. |
+
 ## Laboratory results (`laboratory.html`)
 
 | Field | Required or optional | What it means |
