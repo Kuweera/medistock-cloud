@@ -24,6 +24,7 @@
     ["investigations.html", "Test catalogue"],
     ["treatment.html", "Treatment & MAR"],
     ["dosing-rules.html", "Dosing rules"],
+    ["treatment-alerts.html", "Treatment alerts"],
     ["pharmacy.html", "Pharmacy"],
     ["guidelines.html", "Guidelines"],
     ["directory.html", "Facility Directory"],
